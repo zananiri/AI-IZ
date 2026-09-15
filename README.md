@@ -83,27 +83,45 @@ works via the PyMuPDF fallback; DOCX/PPTX/XLSX/image inputs require MinerU.
 
 ### 2. Download models (ONE-TIME, ONLINE step)
 
+First, verify the configured Qwen3-32B repo still matches the current
+Hugging Face listing (repo names/quantizations do change) and see the
+resulting `vllm serve` command:
+
+```bash
+pip install -U "huggingface_hub[cli]"
+python scripts/verify_vllm_launch.py
+```
+
+Then download everything -- the Qwen3-32B checkpoint (~20GB, via
+`huggingface-cli download`, into the standard HF hub cache so vLLM can
+resolve it by repo id while offline), the fastText `lid.176` language-ID
+model, spaCy's small pipelines for en/fr/es/it/de, Stanza's pipelines for
+ar/he, and PaddleOCR/PaddleOCR-VL/Surya's first-run weights:
+
 ```bash
 ./scripts/download_models.sh ./models
 ```
 
-This downloads: the fastText `lid.176` language-ID model, spaCy's small
-pipelines for en/fr/es/it/de, Stanza's pipelines for ar/he, and triggers
-PaddleOCR/PaddleOCR-VL/Surya's first-run weight downloads. Tesseract's
-language packs are installed via apt in `docker/Dockerfile.app`.
+The script skips (with a clear message) anything whose Python package isn't
+installed yet -- e.g. `pip install -e ".[lang]"` before it can fetch spaCy/
+Stanza models, `".[ocr]"` before PaddleOCR/Surya. It's safe to re-run after
+installing the missing extras; already-downloaded files are left in place.
+Tesseract's language packs are installed via apt in `docker/Dockerfile.app`
+(or your OS package manager outside Docker).
 
-Separately, download the Qwen3-32B quantized checkpoint:
-
-```bash
-huggingface-cli download <QWEN_MODEL_REPO> --local-dir ./hf_cache/qwen3-32b
-```
-
-Verify the exact repo name and the resulting launch command against the
-current model listing before deploying:
+**If you're deploying with `docker compose`**, run the script *inside* the
+app container instead of on the host, so the caches land in the same paths
+docker-compose.yml bind-mounts to `./hf_cache`, `./paddleocr_cache`, and
+`./stanza_cache` on disk:
 
 ```bash
-python scripts/verify_vllm_launch.py
+docker compose build app
+docker compose run --rm --no-deps app bash scripts/download_models.sh ./models
 ```
+
+This also downloads the Qwen weights into `./hf_cache`, which the `vllm`
+service mounts at the same path -- so one download step covers both
+services.
 
 ### 3. Configure
 

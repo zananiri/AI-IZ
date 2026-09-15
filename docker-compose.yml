@@ -6,7 +6,10 @@
 # default via --gpu-memory-utilization headroom.
 #
 # Nothing here reaches the internet at request time. Model weights must be
-# downloaded ahead of time into the volumes below (see README.md).
+# downloaded ahead of time into the volumes below -- these are host bind
+# mounts (not named Docker volumes) so `scripts/download_models.sh` and
+# `huggingface-cli download`, run on the HOST, land exactly where each
+# container expects them. See README.md.
 
 services:
   vllm:
@@ -22,7 +25,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - hf_cache:/root/.cache/huggingface
+      - ./hf_cache:/root/.cache/huggingface
     environment:
       - HF_HUB_OFFLINE=1  # inference-time: no network calls for model files
     deploy:
@@ -51,9 +54,13 @@ services:
       - ./data:/app/data
       - ./config:/app/config
       - ./assets:/app/assets
-      - model_cache:/root/.cache
+      - ./models:/app/models                        # fastText lid.176.bin (paths.fasttext_model_path)
+      - ./hf_cache:/root/.cache/huggingface          # shared with vllm: Surya weights + the tokenizer used for chunk budgeting both resolve repo ids via this same cache
+      - ./paddleocr_cache:/root/.paddleocr           # PaddleOCR/PaddleOCR-VL weights (its own cache dir, not under ~/.cache)
+      - ./stanza_cache:/root/stanza_resources        # Stanza ar/he pipelines
     environment:
       - DOCSLIDES_CONFIG=/app/config/config.yaml
+      - HF_HUB_OFFLINE=1
     deploy:
       resources:
         reservations:
@@ -61,7 +68,3 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]  # only exercised by the opportunistic GPU-OCR fallback
-
-volumes:
-  hf_cache:
-  model_cache:

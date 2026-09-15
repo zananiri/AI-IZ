@@ -7,6 +7,8 @@ __pycache__/
 data/
 models/
 hf_cache/
+paddleocr_cache/
+stanza_cache/
 .env
 *.pptx
 !tests/fixtures/*.pptx

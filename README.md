@@ -92,9 +92,11 @@ pip install -U "huggingface_hub[cli]"
 python scripts/verify_vllm_launch.py
 ```
 
-Then download everything -- the Qwen3-32B checkpoint (~20GB, via
-`huggingface-cli download`, into the standard HF hub cache so vLLM can
-resolve it by repo id while offline), the fastText `lid.176` language-ID
+Then download everything -- the Qwen3-32B checkpoint (~20GB, via `hf
+download` -- the `huggingface_hub` CLI was renamed from `huggingface-cli` to
+`hf` in newer releases; `download_models.sh` uses whichever is installed --
+into the standard HF hub cache so vLLM can resolve it by repo id while
+offline), the fastText `lid.176` language-ID
 model, spaCy's small pipelines for en/fr/es/it/de, Stanza's pipelines for
 ar/he, and PaddleOCR/PaddleOCR-VL/Surya's first-run weights:
 

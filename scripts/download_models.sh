@@ -39,17 +39,27 @@ QWEN_MODEL_REPO="${QWEN_MODEL_REPO:-Qwen/Qwen3-32B-AWQ}"
 echo "== Qwen3-32B (quantized) weights: $QWEN_MODEL_REPO (~20GB) =="
 echo "Verify this is still the repo you want (see scripts/verify_vllm_launch.py"
 echo "to check it against the current Hugging Face listing) before this runs."
-if command -v huggingface-cli >/dev/null 2>&1; then
+# `huggingface-cli` was renamed to `hf` in newer huggingface_hub releases;
+# prefer `hf` and fall back to the old name for older installs.
+if command -v hf >/dev/null 2>&1; then
+  HF_DOWNLOAD_CMD=(hf download)
+elif command -v huggingface-cli >/dev/null 2>&1; then
+  HF_DOWNLOAD_CMD=(huggingface-cli download)
+else
+  HF_DOWNLOAD_CMD=()
+fi
+
+if [ "${#HF_DOWNLOAD_CMD[@]}" -gt 0 ]; then
   # Deliberately NOT --local-dir: this downloads into the standard HF hub
   # cache layout (respecting $HF_HOME if set), which is what lets vLLM
   # resolve the model BY REPO ID while offline (HF_HUB_OFFLINE=1) -- both
   # locally and via the ./hf_cache bind mount in docker-compose.yml.
-  huggingface-cli download "$QWEN_MODEL_REPO" || SKIPPED+=("Qwen weights: $QWEN_MODEL_REPO")
+  "${HF_DOWNLOAD_CMD[@]}" "$QWEN_MODEL_REPO" || SKIPPED+=("Qwen weights: $QWEN_MODEL_REPO")
 else
-  echo "[skip] huggingface-cli not found. Install with:"
+  echo "[skip] Neither 'hf' nor 'huggingface-cli' found. Install with:"
   echo "       pip install -U \"huggingface_hub[cli]\""
   echo "       then re-run, or run directly:"
-  echo "       huggingface-cli download $QWEN_MODEL_REPO"
+  echo "       hf download $QWEN_MODEL_REPO"
   SKIPPED+=("Qwen weights: $QWEN_MODEL_REPO")
 fi
 echo

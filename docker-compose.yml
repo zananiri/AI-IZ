@@ -1,0 +1,67 @@
+# Two services, per the target architecture: vLLM serving Qwen3-32B, and the
+# app (FastAPI + Gradio UI + pipeline). Both are GPU-visible so the app's
+# opportunistic GPU-OCR fallback can run on the same card as vLLM without
+# ever being resident at the same time as a vLLM generation batch (see
+# src/docslides/ocr/gpu_arbiter.py) -- vLLM itself always owns the GPU by
+# default via --gpu-memory-utilization headroom.
+#
+# Nothing here reaches the internet at request time. Model weights must be
+# downloaded ahead of time into the volumes below (see README.md).
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    command:
+      - "--model=${QWEN_MODEL_REPO:-Qwen/Qwen3-32B-AWQ}"
+      - "--quantization=${QWEN_QUANTIZATION:-awq}"
+      - "--max-model-len=${QWEN_MAX_MODEL_LEN:-8192}"
+      - "--gpu-memory-utilization=${QWEN_GPU_MEM_UTIL:-0.90}"
+      - "--port=8000"
+      - "--guided-decoding-backend=${QWEN_GUIDED_BACKEND:-xgrammar}"
+      - "--enable-auto-tool-choice"
+    ports:
+      - "8000:8000"
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    environment:
+      - HF_HUB_OFFLINE=1  # inference-time: no network calls for model files
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    depends_on:
+      vllm:
+        condition: service_healthy
+    ports:
+      - "8080:8080"  # FastAPI (Gradio UI mounted at /ui)
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./assets:/app/assets
+      - model_cache:/root/.cache
+    environment:
+      - DOCSLIDES_CONFIG=/app/config/config.yaml
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]  # only exercised by the opportunistic GPU-OCR fallback
+
+volumes:
+  hf_cache:
+  model_cache:

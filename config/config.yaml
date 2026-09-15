@@ -1,0 +1,128 @@
+# docslides configuration
+# All model paths, thresholds, and language settings live here so the rest of
+# the codebase never hardcodes environment- or language-specific assumptions.
+
+llm:
+  base_url: "http://vllm:8000/v1"        # OpenAI-compatible endpoint served by vLLM
+  model: "Qwen/Qwen3-32B-AWQ"             # verify against the current model repo before deploying
+  api_key: "not-needed"                   # vLLM does not require a real key locally
+  request_timeout_s: 600
+  max_model_len: 8192
+  guided_decoding_backend: "xgrammar"     # xgrammar | outlines
+  # Per call-site defaults for the `enable_thinking` chat-template flag.
+  thinking_defaults:
+    outline_generation: true
+    slide_fill: false
+    translation: false
+    chat_general: true
+    tone_rewrite: true
+    chunk_summary: false
+  default_sampling:
+    temperature: 0.6
+    top_p: 0.92
+    max_tokens: 2048
+
+vllm_launch:
+  # Reference command used at deploy time to sanity-check the served model
+  # matches this config. See scripts/verify_vllm_launch.py.
+  quantization: "awq"                     # bf16 | awq | gptq
+  gpu_memory_utilization: 0.90
+  port: 8000
+
+paths:
+  data_dir: "./data"
+  upload_dir: "./data/uploads"
+  output_dir: "./data/outputs"
+  cache_dir: "./data/cache"
+  template_potx: "./assets/templates/default.potx"
+  glossary_dir: "./data/glossaries"
+
+languages:
+  supported: ["en", "fr", "es", "it", "de", "ar", "he"]
+  rtl: ["ar", "he"]
+  # spaCy/Stanza model identifiers per language, used by cleaning/segmentation.py
+  spacy_models:
+    en: "en_core_web_sm"
+    fr: "fr_core_news_sm"
+    es: "es_core_news_sm"
+    it: "it_core_news_sm"
+    de: "de_core_news_sm"
+  stanza_models:
+    # Stanza covers languages spaCy has no small pipeline for (ar, he).
+    ar: "ar"
+    he: "he"
+  fasttext_model_path: "./models/lid.176.bin"
+
+ocr:
+  # Engine routing per language. "primary" is tried first; "fallback_cpu" is a
+  # lightweight CPU fallback; "fallback_gpu" is the VLM-based escalation path
+  # used only when primary/fallback_cpu confidence is below threshold.
+  confidence_threshold: 0.80
+  engines_by_script:
+    latin:
+      languages: ["en", "fr", "es", "it", "de"]
+      primary: "paddleocr"
+      fallback_cpu: "tesseract"
+      fallback_gpu: "paddleocr_vl"
+    arabic:
+      languages: ["ar"]
+      primary: "paddleocr_vl"
+      fallback_cpu: "tesseract"      # ara.traineddata
+      fallback_gpu: "surya"
+    hebrew:
+      languages: ["he"]
+      primary: "surya"
+      fallback_cpu: "tesseract"      # heb.traineddata
+      fallback_gpu: "paddleocr_vl"
+  tesseract:
+    lang_codes:
+      en: "eng"
+      fr: "fra"
+      es: "spa"
+      it: "ita"
+      de: "deu"
+      ar: "ara"
+      he: "heb"
+  gpu_arbiter:
+    # Never hold a GPU OCR model resident while vLLM is actively generating a
+    # batch. The arbiter is a cooperative lock the OCR fallback must acquire
+    # before loading itself onto the GPU, and it yields immediately if vLLM
+    # reports an active generation.
+    poll_interval_s: 1.0
+    max_wait_s: 30.0
+
+scan_detection:
+  # Used by the PyMuPDF fallback when MinerU is unavailable for an input type.
+  min_chars_per_page_area: 0.0008   # extractable chars / page area (pt^2)
+
+cleaning:
+  header_footer_repetition_threshold: 0.6   # fraction of pages a line must repeat on
+  max_chunk_tokens: 1500
+  mask_categories: ["number", "unit", "named_entity", "placeholder", "formula"]
+
+translation:
+  glossary_max_terms: 200
+
+slides:
+  default_bullet_count: 4
+  max_bullets_per_slide: 6
+  layouts: ["title_bullets", "two_column", "section_header", "image_caption", "quote"]
+  schema_retry_attempts: 2
+
+tone_control:
+  professionalism_levels:
+    1: { label: "Casual", temp_cap: 1.0 }
+    2: { label: "Conversational", temp_cap: 0.9 }
+    3: { label: "Standard business", temp_cap: 0.8 }
+    4: { label: "Formal", temp_cap: 0.6 }
+    5: { label: "Executive/Legal", temp_cap: 0.4 }
+  creativity_levels:
+    1: { label: "Minimal", temperature: 0.2, top_p: 0.85 }
+    2: { label: "Low", temperature: 0.4, top_p: 0.90 }
+    3: { label: "Balanced", temperature: 0.6, top_p: 0.92 }
+    4: { label: "High", temperature: 0.85, top_p: 0.95 }
+    5: { label: "Maximum", temperature: 1.0, top_p: 0.97 }
+
+logging:
+  level: "INFO"
+  json: true

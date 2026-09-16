@@ -45,7 +45,22 @@ lang = [
     "stanza>=1.8",
 ]
 ingestion-mineru = [
-    "magic-pdf>=0.9",
+    # The bare "magic-pdf" install omits ultralytics/doclayout-yolo/
+    # rapid-table/shapely etc. -- everything the layout/table/formula models
+    # actually need at runtime -- gated behind this "full" extra instead.
+    "magic-pdf[full]>=0.9",
+    # magic-pdf[full] -> doclayout-yolo -> albumentations -> albucore pulls in
+    # stringzilla, whose releases >=4.0 ship no Windows wheel (sdist-only,
+    # requiring an MSVC C++ toolchain to build). Pin it to the last version
+    # with a win_amd64 wheel so `pip install` doesn't need a compiler on
+    # Windows; this still satisfies albucore's own ">=3.10.4" requirement.
+    "stringzilla==3.10.4",
+    # magic-pdf's default layout model (layoutlmv3) needs pycocotools (has a
+    # Windows wheel, fine) AND detectron2 (no Windows wheel, needs a full
+    # from-source MSVC/CUDA-matched build -- avoid it). Point
+    # ~/magic-pdf.json's "layout-config" at {"model": "doclayout_yolo"}
+    # instead (bundled in the [full] extra above, no detectron2 needed).
+    "pycocotools>=2.0",
 ]
 dev = [
     "pytest>=8.3",

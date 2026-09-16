@@ -49,9 +49,21 @@ class PaddleOCREngine:
         if paddle_lang not in self._instances:
             from paddleocr import PaddleOCR  # deferred import: heavy, optional dep
 
-            self._instances[paddle_lang] = PaddleOCR(
-                use_angle_cls=True, lang=paddle_lang, use_gpu=False, show_log=False
-            )
+            # paddleocr 3.x removed use_angle_cls/use_gpu/show_log (now
+            # use_textline_orientation/device, or just rely on defaults) --
+            # unrecognized kwargs raise ValueError rather than being ignored.
+            #
+            # enable_mkldnn=False works around a paddlepaddle>=3.3.0 regression
+            # in its oneDNN PIR (Program IR) executor on CPU: real inference
+            # crashes with "NotImplementedError: (Unimplemented)
+            # ConvertPirAttribute2RuntimeAttribute not support
+            # [pir::ArrayAttribute<pir::DoubleAttribute>]" the moment a model
+            # with double-array attributes (e.g. detection box thresholds)
+            # actually runs -- construction succeeds either way, so this only
+            # surfaces once you OCR something. Confirmed fixed upstream by
+            # pinning paddlepaddle==3.2.0, but disabling mkldnn avoids needing
+            # a downgrade. See https://github.com/PaddlePaddle/Paddle/issues/77340
+            self._instances[paddle_lang] = PaddleOCR(lang=paddle_lang, enable_mkldnn=False)
         return self._instances[paddle_lang]
 
     def recognize(self, png_bytes: bytes, lang: str) -> OCRResult:
@@ -60,14 +72,20 @@ class PaddleOCREngine:
 
         engine = self._get_instance(lang)
         image = np.array(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
-        result = engine.ocr(image, cls=True)
+        # paddleocr 3.x: .ocr(cls=...) is a deprecated .predict() alias that
+        # no longer accepts `cls`; .predict() also returns a differently
+        # shaped result (per-image dict-like objects with rec_texts/
+        # rec_scores lists) instead of the old [[box, (text, conf)], ...]
+        # nested-tuple format.
+        results = engine.predict(image)
 
         lines: list[str] = []
         confidences: list[float] = []
-        for page_result in result or []:
-            for _box, (text, conf) in page_result or []:
-                lines.append(text)
-                confidences.append(conf)
+        for page_result in results or []:
+            texts = page_result.get("rec_texts", []) if hasattr(page_result, "get") else []
+            scores = page_result.get("rec_scores", []) if hasattr(page_result, "get") else []
+            lines.extend(texts)
+            confidences.extend(scores)
 
         mean_conf = sum(confidences) / len(confidences) if confidences else 0.0
         return OCRResult(text="\n".join(lines), mean_confidence=mean_conf, engine=self.name)
@@ -109,7 +127,10 @@ class PaddleOCRVLEngine:
         if self._instance is None:
             from paddleocr import PaddleOCRVL  # deferred import: heavy, optional dep, GPU-resident
 
-            self._instance = PaddleOCRVL()
+            # enable_mkldnn=False: same paddlepaddle>=3.3.0 CPU oneDNN
+            # regression as PaddleOCREngine above -- applies here too since
+            # this falls back to CPU on any machine without a GPU.
+            self._instance = PaddleOCRVL(enable_mkldnn=False)
         return self._instance
 
     def recognize(self, png_bytes: bytes, lang: str) -> OCRResult:

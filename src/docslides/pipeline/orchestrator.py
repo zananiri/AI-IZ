@@ -5,6 +5,7 @@ stage for the chat UI's persistent status line.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from docslides.api.events import event_bus
@@ -66,6 +67,21 @@ async def _ocr_and_extract_pages(job_id: str, parsed: ParsedDocument) -> tuple[l
     return page_texts, page_languages
 
 
+async def extract_document_text(job_id: str, file_path: str | Path) -> tuple[str, str]:
+    """Parse + OCR + clean a document into a single text blob, for chat turns
+    that just need the content as context (translate/rewrite/ask questions)
+    rather than the full slide-generation pipeline below. Reuses the same
+    parsing/OCR/cleaning stages `run_pipeline` uses, minus chunking,
+    translation, and slide assembly."""
+    cfg = get_config()
+    await event_bus.publish_status(job_id, "Parsing document")
+    parsed = await asyncio.to_thread(parse_document, file_path)
+    page_texts, page_languages = await _ocr_and_extract_pages(job_id, parsed)
+    cleaned_pages = clean_pages(page_texts, page_languages, cfg.cleaning.header_footer_repetition_threshold)
+    dominant_lang = max(set(page_languages), key=page_languages.count) if page_languages else "en"
+    return "\n\n".join(cleaned_pages), dominant_lang
+
+
 async def run_pipeline(job_id: str, file_path: str | Path, target_lang: str) -> Path:
     cfg = get_config()
     client = get_client()
@@ -73,7 +89,7 @@ async def run_pipeline(job_id: str, file_path: str | Path, target_lang: str) -> 
 
     try:
         await event_bus.publish_status(job_id, "Parsing document")
-        parsed = parse_document(file_path)
+        parsed = await asyncio.to_thread(parse_document, file_path)
 
         page_texts, page_languages = await _ocr_and_extract_pages(job_id, parsed)
 

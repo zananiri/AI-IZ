@@ -3,6 +3,11 @@
 # the codebase never hardcodes environment- or language-specific assumptions.
 
 llm:
+  # "vllm" (NVIDIA GPU only, fastest) or "ollama" (CPU/CUDA/ROCm/Metal,
+  # portable). Override per-environment without editing this file via the
+  # DOCSLIDES_LLM_BACKEND / DOCSLIDES_LLM_BASE_URL / DOCSLIDES_LLM_MODEL env
+  # vars -- see docker-compose.portable.yml and scripts/setup.*.
+  backend: "vllm"
   base_url: "http://vllm:8000/v1"        # OpenAI-compatible endpoint served by vLLM
   model: "Qwen/Qwen3-32B-AWQ"             # verify against the current model repo before deploying
   api_key: "not-needed"                   # vLLM does not require a real key locally
@@ -21,6 +26,39 @@ llm:
     temperature: 0.6
     top_p: 0.92
     max_tokens: 2048
+
+legal:
+  # Legal tab: a 3-step pipeline (src/docslides/legal/pipeline.py) -- the
+  # orchestrator (Qwen) plans the research and reformulates the user's
+  # question in Hebrew, the Hebrew analyst (DictaLM, an Israeli-law
+  # specialist model) analyzes it in Hebrew, and the orchestrator verifies
+  # the result and translates the final answer back into whatever language
+  # the user asked in. These are independent deployments from the `llm:`
+  # section above -- point base_url at wherever each model actually runs.
+  orchestrator:
+    backend: "vllm"
+    base_url: "http://vllm:8000/v1"
+    model: "Qwen/Qwen3.5-32B-AWQ"                # verify against the current model repo before deploying
+    api_key: "not-needed"
+    request_timeout_s: 600
+    max_model_len: 8192
+    guided_decoding_backend: "xgrammar"
+    default_sampling:
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 2048
+  hebrew_analyst:
+    backend: "vllm"
+    base_url: "http://vllm-dictalm:8000/v1"       # separate deployment from the orchestrator above
+    model: "dicta-il/DictaLM-3.0-24B-Thinking"    # verify against the current model repo before deploying
+    api_key: "not-needed"
+    request_timeout_s: 900                        # thinking model -- generations run longer
+    max_model_len: 16384
+    guided_decoding_backend: "xgrammar"
+    default_sampling:
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 4096
 
 vllm_launch:
   # Reference command used at deploy time to sanity-check the served model

@@ -1,6 +1,10 @@
-"""Gradio chat interface: document upload -> slide generation with a
-persistent pipeline-status line, and a chat/tone-rewrite tab with a
-collapsible reasoning panel streamed separately from the final answer.
+"""Gradio chat interface: one chat tab handles everything -- ask questions,
+request translations/rewrites, or ask for a PowerPoint deck, optionally with
+an attached document (PDF/DOCX/PPTX/XLSX/image). The backend
+(api/routes_chat.py) classifies whether a turn with an attachment wants
+slides generated (handed off to the full pipeline) or something else
+(answered inline with the document as context) -- there's no separate
+"Document -> Slides" tab; ask for it in the chat instead.
 
 Talks to the FastAPI backend (docslides.api.main) over HTTP/SSE rather than
 calling pipeline internals directly, so the UI and API can scale/deploy
@@ -11,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import gradio as gr
 import httpx
@@ -18,11 +23,7 @@ import httpx
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
 
-API_BASE_URL = os.environ.get("DOCSLIDES_API_URL", "http://localhost:8080")
-
-
-def _language_choices() -> list[str]:
-    return get_config().languages.supported
+API_BASE_URL = os.environ.get("DOCSLIDES_API_URL", "http://localhost:8456")
 
 
 def _is_rtl_lang(lang: str | None) -> bool:
@@ -30,87 +31,45 @@ def _is_rtl_lang(lang: str | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Document -> Slides tab
+# Chat tab (documents, translation, rewriting, and slide generation all go
+# through here -- see module docstring)
 # ---------------------------------------------------------------------------
 
 
-def upload_and_generate(file_path: str, target_lang: str):
-    if not file_path:
-        yield "Please upload a document first.", None, gr.update()
-        return
-
+def _upload_file(file_path: str) -> dict:
+    """Uploads an attachment (picked via the message box's attach button) to
+    the backend and returns its server-side path/name. Raising gr.Error here
+    aborts the send and shows the failure to the user instead of silently
+    dropping the attachment."""
     with httpx.Client(timeout=60) as client:
         with open(file_path, "rb") as f:
-            upload_resp = client.post(f"{API_BASE_URL}/api/upload", files={"file": f})
-        upload_resp.raise_for_status()
-        server_path = upload_resp.json()["file_path"]
+            resp = client.post(f"{API_BASE_URL}/api/upload", files={"file": f})
+    resp.raise_for_status()
+    data = resp.json()
 
-        gen_resp = client.post(
-            f"{API_BASE_URL}/api/generate",
-            json={"file_path": server_path, "target_lang": target_lang},
-        )
-        gen_resp.raise_for_status()
-        job_id = gen_resp.json()["job_id"]
+    if "error" in data:
+        raise gr.Error(data["error"])
 
-    status_lines: list[str] = []
-    with httpx.Client(timeout=None) as client:
-        with client.stream("GET", f"{API_BASE_URL}/api/events/{job_id}") as resp:
-            event_kind = None
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                if line.startswith("event:"):
-                    event_kind = line.split(":", 1)[1].strip()
-                elif line.startswith("data:"):
-                    data = json.loads(line.split(":", 1)[1].strip())
-                    if event_kind == "status":
-                        status_lines.append(data["message"])
-                        yield "\n".join(status_lines[-8:]), None, gr.update(interactive=False)
-                    elif event_kind == "done":
-                        output_path = data.get("output_path")
-                        download_url = f"{API_BASE_URL}/api/download/{job_id}"
-                        status_lines.append("Done. Fetching file...")
-                        with httpx.Client(timeout=60) as dl_client:
-                            file_resp = dl_client.get(download_url)
-                            local_path = f"/tmp/{job_id}.pptx" if os.name != "nt" else f"{job_id}.pptx"
-                            with open(local_path, "wb") as f:
-                                f.write(file_resp.content)
-                        yield "\n".join(status_lines), local_path, gr.update(interactive=True)
-                    elif event_kind == "error":
-                        status_lines.append(f"ERROR: {data['message']}")
-                        yield "\n".join(status_lines), None, gr.update(interactive=True)
-
-
-def build_generate_tab() -> None:
-    with gr.Tab("Document -> Slides"):
-        gr.Markdown("Upload a document and generate a PowerPoint deck in the target language.")
-        with gr.Row():
-            file_input = gr.File(label="Document", file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg"])
-            target_lang = gr.Dropdown(choices=_language_choices(), value="en", label="Target language")
-        generate_btn = gr.Button("Generate slides", variant="primary")
-        status_box = gr.Textbox(label="Pipeline status", lines=10, interactive=False)
-        output_file = gr.File(label="Generated .pptx")
-
-        generate_btn.click(
-            fn=upload_and_generate,
-            inputs=[file_input, target_lang],
-            outputs=[status_box, output_file, generate_btn],
-        )
-
-
-# ---------------------------------------------------------------------------
-# Chat / tone-rewrite tab
-# ---------------------------------------------------------------------------
+    return {"path": data["file_path"], "name": data["original_filename"]}
 
 
 def _stream_job(job_id: str, history: list, rtl_hint: bool):
-    """`history` must already include the user's turn as the last row, e.g.
-    `[..., [user_message, None]]` -- the assistant's response is streamed
-    into that row's second element in place."""
+    """`history` must already include the user's turn as the last entry, in
+    Gradio's "messages" format (`gr.Chatbot` in Gradio 6.x only accepts
+    `[{"role": "user"|"assistant", "content": str}, ...]` -- the old
+    `[[user, bot], ...]` "tuples" format this UI used before Gradio 6 is no
+    longer supported and silently breaks every send). The assistant's turn
+    is appended fresh each yield rather than mutated in place.
+
+    Handles four event kinds on the shared job SSE stream: "status" (pipeline
+    progress, e.g. during slide generation -- shown as a single evolving
+    line until real content starts), "reasoning_delta"/"content_delta" (the
+    streamed chat answer), and "done" (which carries `output_path` when the
+    turn was a slide-generation request, turned into a download link)."""
     reasoning_text = ""
     content_text = ""
-    base_history = history[:-1]
-    user_turn = history[-1][0]
+    status_text = ""
+    started_streaming = False
 
     with httpx.Client(timeout=None) as client:
         with client.stream("GET", f"{API_BASE_URL}/api/chat-events/{job_id}") as resp:
@@ -122,40 +81,78 @@ def _stream_job(job_id: str, history: list, rtl_hint: bool):
                     event_kind = line.split(":", 1)[1].strip()
                 elif line.startswith("data:"):
                     data = json.loads(line.split(":", 1)[1].strip())
-                    if event_kind == "reasoning_delta":
+                    if event_kind == "status":
+                        status_text = data["message"]
+                    elif event_kind == "reasoning_delta":
+                        started_streaming = True
                         reasoning_text += data["text"]
                     elif event_kind == "content_delta":
+                        started_streaming = True
                         content_text += data["text"]
                         detected = detect_language(content_text[:200])
                         rtl_hint = _is_rtl_lang(detected)
-                    elif event_kind in ("done", "error"):
-                        if event_kind == "error":
-                            content_text += f"\n\n[error: {data.get('message')}]"
+                    elif event_kind == "done":
+                        output_path = data.get("output_path")
+                        if output_path:
+                            download_url = f"{API_BASE_URL}/api/download/{job_id}"
+                            content_text = f"Your presentation is ready: [Download {Path(output_path).name}]({download_url})"
+                            started_streaming = True
+                        break
+                    elif event_kind == "error":
+                        content_text += f"\n\n⚠️ {data.get('message')}"
+                        started_streaming = True
                         break
 
-                    new_history = base_history + [[user_turn, content_text]]
+                    display_text = content_text if started_streaming else f"_{status_text}..._"
+                    new_history = history + [{"role": "assistant", "content": display_text}]
                     yield (
-                        gr.update(value=new_history, rtl=rtl_hint),
+                        gr.update(value=new_history),
                         gr.update(value=reasoning_text, visible=bool(reasoning_text), rtl=rtl_hint),
-                        gr.update(value=""),
+                        gr.update(value=None),
                     )
 
 
-def send_chat_message(message: str, history: list):
-    history = history + [[message, None]]
+def send_chat_message(message: dict, history: list):
+    """`message` is a `gr.MultimodalTextbox` payload: `{"text": str, "files":
+    [local_path, ...]}`. Attachments are picked via that box's own attach
+    button rather than a separate upload widget, and are per-message (no
+    cross-turn "stays attached" state) -- upload happens here, right before
+    the turn is sent."""
+    text = (message.get("text") or "").strip()
+    files = message.get("files") or []
+    if not text and not files:
+        yield history, gr.update(), gr.update()
+        return
+
+    attachment = _upload_file(files[0]) if files else None
+
+    display_message = text
+    if attachment:
+        display_message = f"📎 {attachment['name']}\n\n{text}" if text else f"📎 {attachment['name']}"
+    history = history + [{"role": "user", "content": display_message}]
+
+    payload: dict = {
+        "messages": [
+            {
+                "role": "user",
+                "content": text or f"(No message -- I just attached {attachment['name'] if attachment else 'a file'}.)",
+            }
+        ]
+    }
+    if attachment:
+        payload["attachment_path"] = attachment["path"]
+
     with httpx.Client(timeout=60) as client:
-        resp = client.post(
-            f"{API_BASE_URL}/api/chat",
-            json={"messages": [{"role": "user", "content": message}]},
-        )
+        resp = client.post(f"{API_BASE_URL}/api/chat", json=payload)
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
 
     yield from _stream_job(job_id, history, rtl_hint=False)
 
 
-def send_tone_rewrite(text: str, task_description: str, professionalism: int, creativity: int, history: list):
-    history = history + [[f"[Rewrite request] {text}", None]]
+def send_tone_rewrite(message: dict, task_description: str, professionalism: int, creativity: int, history: list):
+    text = (message.get("text") or "").strip()
+    history = history + [{"role": "user", "content": f"[Rewrite request] {text}"}]
     with httpx.Client(timeout=60) as client:
         resp = client.post(
             f"{API_BASE_URL}/api/tone-rewrite",
@@ -173,54 +170,173 @@ def send_tone_rewrite(text: str, task_description: str, professionalism: int, cr
 
 
 def build_chat_tab() -> None:
-    with gr.Tab("Chat"):
-        chatbot = gr.Chatbot(label="Chat")
-        reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
+    chatbot = gr.Chatbot(label="Chat")
+    reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
 
-        with gr.Row():
-            msg_box = gr.Textbox(label="Message", scale=4)
-            send_btn = gr.Button("Send", scale=1)
+    with gr.Row():
+        msg_box = gr.MultimodalTextbox(
+            label="Message",
+            scale=4,
+            placeholder='Ask a question, request a translation or rewrite, or say "make this into a presentation" -- attach a document (PDF, DOCX, PPTX, XLSX, image) with the 📎 button',
+            file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff"],
+            file_count="single",
+            sources=["upload"],
+        )
+        send_btn = gr.Button("Send", scale=1)
 
-        with gr.Accordion("Tone control (for rewrite requests)", open=False):
-            gr.Markdown(
-                "Professionalism drives wording/register (system prompt); "
-                "Creativity drives sampling randomness only."
-            )
-            professionalism_slider = gr.Slider(
-                1, 5, value=3, step=1,
-                label="Professionalism: 1=Casual, 2=Conversational, 3=Standard business, 4=Formal, 5=Executive/Legal",
-            )
-            creativity_slider = gr.Slider(
-                1, 5, value=3, step=1,
-                label="Creativity: 1=Minimal, 2=Low, 3=Balanced, 4=High, 5=Maximum",
-            )
-            task_description_box = gr.Textbox(
-                label="What are you rewriting?", placeholder="e.g. Rewrite this email"
-            )
-            rewrite_btn = gr.Button("Rewrite with tone controls")
+    with gr.Accordion("Tone control (for pasted-text rewrite requests)", open=False):
+        gr.Markdown(
+            "Professionalism drives wording/register (system prompt); "
+            "Creativity drives sampling randomness only. Paste text into the "
+            "message box above, set your tone, then use this button instead "
+            "of Send."
+        )
+        professionalism_slider = gr.Slider(
+            1, 5, value=3, step=1,
+            label="Professionalism: 1=Casual, 2=Conversational, 3=Standard business, 4=Formal, 5=Executive/Legal",
+        )
+        creativity_slider = gr.Slider(
+            1, 5, value=3, step=1,
+            label="Creativity: 1=Minimal, 2=Low, 3=Balanced, 4=High, 5=Maximum",
+        )
+        task_description_box = gr.Textbox(
+            label="What are you rewriting?", placeholder="e.g. Rewrite this email"
+        )
+        rewrite_btn = gr.Button("Rewrite with tone controls")
 
-        send_btn.click(
-            fn=send_chat_message,
-            inputs=[msg_box, chatbot],
-            outputs=[chatbot, reasoning_panel, msg_box],
-        )
-        msg_box.submit(
-            fn=send_chat_message,
-            inputs=[msg_box, chatbot],
-            outputs=[chatbot, reasoning_panel, msg_box],
-        )
-        rewrite_btn.click(
-            fn=send_tone_rewrite,
-            inputs=[msg_box, task_description_box, professionalism_slider, creativity_slider, chatbot],
-            outputs=[chatbot, reasoning_panel, msg_box],
-        )
+    send_btn.click(
+        fn=send_chat_message,
+        inputs=[msg_box, chatbot],
+        outputs=[chatbot, reasoning_panel, msg_box],
+    )
+    msg_box.submit(
+        fn=send_chat_message,
+        inputs=[msg_box, chatbot],
+        outputs=[chatbot, reasoning_panel, msg_box],
+    )
+    rewrite_btn.click(
+        fn=send_tone_rewrite,
+        inputs=[msg_box, task_description_box, professionalism_slider, creativity_slider, chatbot],
+        outputs=[chatbot, reasoning_panel, msg_box],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Legal tab -- a 3-step pipeline (see api/routes_legal.py, legal/pipeline.py):
+# an orchestrator model plans the research and reformulates the question in
+# Hebrew, a Hebrew legal-domain model (DictaLM) analyzes it in Hebrew, and
+# the orchestrator verifies the result and translates the final answer back
+# into whatever language the user asked in. Citations/relevant laws are kept
+# out of the chat bubble and shown in a side panel instead.
+# ---------------------------------------------------------------------------
+
+
+def _format_citations(citations: list[str], relevant_laws: list[str]) -> str:
+    if not citations and not relevant_laws:
+        return "_No citations yet._"
+    sections = []
+    if relevant_laws:
+        sections.append("**Relevant laws**\n" + "\n".join(f"- {law}" for law in relevant_laws))
+    if citations:
+        sections.append("**Citations**\n" + "\n".join(f"- {c}" for c in citations))
+    return "\n\n".join(sections)
+
+
+def _stream_legal_job(job_id: str, history: list):
+    """Same SSE event contract as `_stream_job`, plus a "citations" event
+    kind (the verification stage's structured citations/relevant-laws
+    output) routed to the side panel instead of the chat bubble."""
+    content_text = ""
+    status_text = ""
+    started_streaming = False
+    citations_md = "_No citations yet._"
+
+    with httpx.Client(timeout=None) as client:
+        with client.stream("GET", f"{API_BASE_URL}/api/legal-events/{job_id}") as resp:
+            event_kind = None
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                if line.startswith("event:"):
+                    event_kind = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data = json.loads(line.split(":", 1)[1].strip())
+                    if event_kind == "status":
+                        status_text = data["message"]
+                    elif event_kind == "content_delta":
+                        started_streaming = True
+                        content_text += data["text"]
+                    elif event_kind == "citations":
+                        citations_md = _format_citations(data.get("citations", []), data.get("relevant_laws", []))
+                    elif event_kind == "done":
+                        break
+                    elif event_kind == "error":
+                        content_text += f"\n\n⚠️ {data.get('message')}"
+                        started_streaming = True
+                        break
+
+                    detected = detect_language(content_text[:200]) if started_streaming else None
+                    display_text = content_text if started_streaming else f"_{status_text}..._"
+                    new_history = history + [{"role": "assistant", "content": display_text}]
+                    yield (
+                        gr.update(value=new_history, rtl=_is_rtl_lang(detected)),
+                        gr.update(value=None),
+                        gr.update(value=citations_md),
+                    )
+
+
+def send_legal_message(message: str, history: list):
+    message = (message or "").strip()
+    if not message:
+        yield history, gr.update(), gr.update()
+        return
+
+    history = history + [{"role": "user", "content": message}]
+    payload = {"messages": [{"role": "user", "content": message}]}
+
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(f"{API_BASE_URL}/api/legal-chat", json=payload)
+        resp.raise_for_status()
+        job_id = resp.json()["job_id"]
+
+    yield from _stream_legal_job(job_id, history)
+
+
+def build_legal_tab() -> None:
+    with gr.Row():
+        with gr.Column(scale=3):
+            legal_chatbot = gr.Chatbot(label="Legal Assistant")
+            with gr.Row():
+                legal_msg_box = gr.Textbox(
+                    label="Legal question",
+                    scale=4,
+                    placeholder="Ask a legal question in any language -- researched against Israeli law via a Hebrew legal-analysis model",
+                )
+                legal_send_btn = gr.Button("Send", scale=1)
+        with gr.Column(scale=1):
+            gr.Markdown("### Citations & Relevant Laws")
+            citations_panel = gr.Markdown(value="_No citations yet._")
+
+    legal_send_btn.click(
+        fn=send_legal_message,
+        inputs=[legal_msg_box, legal_chatbot],
+        outputs=[legal_chatbot, legal_msg_box, citations_panel],
+    )
+    legal_msg_box.submit(
+        fn=send_legal_message,
+        inputs=[legal_msg_box, legal_chatbot],
+        outputs=[legal_chatbot, legal_msg_box, citations_panel],
+    )
 
 
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title="docslides") as demo:
-        gr.Markdown("# docslides -- offline multilingual document-to-PowerPoint")
-        build_generate_tab()
-        build_chat_tab()
+    with gr.Blocks(title="AI Workbench - Ibrahim Z.") as demo:
+        gr.Markdown("# AI Workbench - Ibrahim Z.")
+        with gr.Tabs():
+            with gr.Tab("Chat"):
+                build_chat_tab()
+            with gr.Tab("Legal"):
+                build_legal_tab()
     return demo
 
 

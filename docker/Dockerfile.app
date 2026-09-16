@@ -36,6 +36,6 @@ RUN python -m spacy download en_core_web_sm \
     && python -m spacy download de_core_news_sm
 
 ENV DOCSLIDES_CONFIG=/app/config/config.yaml
-EXPOSE 8080
+EXPOSE 8456
 
 CMD ["python", "-m", "docslides.api.main"]

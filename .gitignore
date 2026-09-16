@@ -10,5 +10,6 @@ hf_cache/
 paddleocr_cache/
 stanza_cache/
 .env
+.env.local
 *.pptx
 !tests/fixtures/*.pptx

@@ -1,0 +1,41 @@
+# Portable path: no NVIDIA GPU required. Ollama runs NATIVELY on the host
+# (installed by scripts/setup.ps1 / setup.sh) rather than in a container --
+# Docker on macOS can't pass Apple Silicon's Metal GPU through to a
+# container, so running Ollama in Docker there would silently fall back to
+# CPU-only. Running it on the host lets Ollama use whatever acceleration is
+# actually available (Metal on Mac, CUDA/ROCm on Windows/Linux, or CPU).
+#
+# This compose file starts ONLY the app container, pointed at the host's
+# Ollama via host.docker.internal. Start Ollama first (it installs itself as
+# a background service on both Windows and macOS, so `ollama serve` is
+# usually already running -- see scripts/setup.*).
+#
+# Usage:
+#   docker compose -f docker-compose.portable.yml up -d
+#
+# Compare with docker-compose.yml (vLLM + app, NVIDIA GPU required, faster).
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    ports:
+      - "8456:8456"  # FastAPI (Gradio UI mounted at /ui)
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./assets:/app/assets
+      - ./models:/app/models
+      - ./hf_cache:/root/.cache/huggingface
+      - ./paddleocr_cache:/root/.paddleocr
+      - ./stanza_cache:/root/stanza_resources
+    environment:
+      - DOCSLIDES_CONFIG=/app/config/config.yaml
+      - HF_HUB_OFFLINE=1
+      - DOCSLIDES_APP_PORT=8456
+      - DOCSLIDES_LLM_BACKEND=ollama
+      - DOCSLIDES_LLM_BASE_URL=http://host.docker.internal:11434
+      - DOCSLIDES_LLM_MODEL=${OLLAMA_MODEL:-qwen3:32b}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux needs this; Docker Desktop (Win/Mac) provides it natively

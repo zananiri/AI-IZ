@@ -7,6 +7,9 @@
     enabled, the model's <think>...</think> block streamed separately from
     the final answer. Rendered as a collapsible reasoning panel above the
     streaming final answer.
+  * "citations" -- Legal tab only: the structured citations/relevant-laws
+    output of the verification stage (see legal/pipeline.py), rendered in a
+    side panel rather than the chat bubble.
 
 Each job/chat-turn gets its own asyncio.Queue so multiple concurrent
 requests don't cross-talk.
@@ -24,13 +27,21 @@ import orjson
 
 @dataclass
 class Event:
-    kind: Literal["status", "reasoning_delta", "content_delta", "done", "error"]
+    kind: Literal["status", "reasoning_delta", "content_delta", "citations", "done", "error"]
     data: dict
     ts: float = field(default_factory=time.time)
 
-    def to_sse(self) -> str:
-        payload = orjson.dumps(self.data).decode("utf-8")
-        return f"event: {self.kind}\ndata: {payload}\n\n"
+    def to_sse_message(self) -> dict:
+        """`sse_starlette`'s `EventSourceResponse` expects each yielded item to
+        be a dict (or `ServerSentEvent`/bytes) that IT formats into SSE wire
+        format -- NOT an already-formatted "event: ...\\ndata: ...\\n\\n"
+        string. Handing it a pre-formatted string gets treated as one opaque
+        multi-line `data` value, and since SSE requires multi-line data to be
+        split into repeated `data: ` lines, sse_starlette re-wraps every line
+        of our own formatting with another `data: ` prefix -- silently
+        corrupting the stream (every line comes out as `data: event: ...`,
+        `data: data: {...}`, etc.), which is exactly what happened here."""
+        return {"event": self.kind, "data": orjson.dumps(self.data).decode("utf-8")}
 
 
 class EventBus:
@@ -59,14 +70,21 @@ class EventBus:
     async def publish_error(self, job_id: str, message: str) -> None:
         await self.publish(job_id, Event(kind="error", data={"message": message}))
 
-    async def stream(self, job_id: str) -> AsyncIterator[str]:
+    async def stream(self, job_id: str) -> AsyncIterator[dict]:
         queue = self.get(job_id)
         while True:
             event = await queue.get()
-            yield event.to_sse()
+            yield event.to_sse_message()
             if event.kind in ("done", "error"):
                 self._queues.pop(job_id, None)
                 break
 
 
 event_bus = EventBus()
+
+# Job-id -> generated .pptx path. Shared between routes_pptx.py (kicked off
+# from the old dedicated tab, kept for direct API use) and routes_chat.py
+# (kicked off when a chat turn's attached file is classified as a slides
+# request) so /api/download/{job_id} works the same way regardless of which
+# route started the job.
+job_outputs: dict[str, str] = {}

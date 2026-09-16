@@ -49,7 +49,7 @@ services:
       vllm:
         condition: service_healthy
     ports:
-      - "8080:8080"  # FastAPI (Gradio UI mounted at /ui)
+      - "8456:8456"  # FastAPI (Gradio UI mounted at /ui)
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -61,6 +61,7 @@ services:
     environment:
       - DOCSLIDES_CONFIG=/app/config/config.yaml
       - HF_HUB_OFFLINE=1
+      - DOCSLIDES_APP_PORT=8456
     deploy:
       resources:
         reservations:

@@ -1,10 +1,23 @@
 """Document parsing with per-page scan-vs-native classification.
 
-MinerU (magic-pdf) is the primary parser for PDF/DOCX/PPTX/XLSX/images: it
-classifies each page individually and only scanned pages are routed to OCR.
+MinerU (magic-pdf) is the primary parser for PDF/DOCX/PPTX/XLSX/images. It
+does the layout-aware native-text extraction (paragraph/table/formula
+reconstruction), but we never trust its own OCR step -- when no `lang` is
+given it silently defaults to a Chinese-biased model
+(magic_pdf's `models_config.yml` "ch_lite" entry), and empirically it always
+attempts to OCR-fill any character-less region internally regardless of the
+`ocr=` flag passed to `doc_analyze` (that flag only tags per-page metadata,
+it does not disable the internal gap-filling pass). So instead: we run
+MinerU in its native/"TXT" mode, then independently reclassify every page
+ourselves with the same chars-per-area heuristic the PyMuPDF fallback below
+uses, computed straight from MinerU's own reported page size. Any page that
+heuristic calls scanned has its MinerU-produced text DISCARDED (it may be
+wrong-language OCR garbage) and gets rendered to an image instead, for our
+own multilingual OCR routing in `ocr/router.py` to handle.
+
 If MinerU is not installed, or the input type isn't one MinerU handles, we
-fall back to PyMuPDF text-layer extraction with a per-page heuristic
-(extractable chars per page area) to decide which pages still need OCR.
+fall back to PyMuPDF text-layer extraction with that same per-page heuristic
+to decide which pages still need OCR.
 
 Nothing here assumes a single language for the whole document -- language
 detection happens per page/segment in `language_detect.py`, after parsing.
@@ -12,7 +25,9 @@ detection happens per page/segment in `language_detect.py`, after parsing.
 
 from __future__ import annotations
 
-import io
+import json
+import tempfile
+from collections import defaultdict
 from pathlib import Path
 
 from docslides.config import get_config
@@ -27,9 +42,17 @@ except ImportError:  # pragma: no cover
     fitz = None
 
 try:
-    # magic-pdf is MinerU's package name on PyPI.
-    from magic_pdf.pipe.UNIPipe import UNIPipe  # type: ignore
-    from magic_pdf.pipe.OCRPipe import OCRPipe  # type: ignore
+    # magic-pdf is MinerU's package name on PyPI. Current (>=1.x) API:
+    # read_api builds a Dataset from a file, doc_analyze runs layout/formula/
+    # OCR model inference over it, and the InferenceResult's pipe_txt_mode
+    # produces the actual per-page text/layout ("PipeResult"). The old
+    # magic_pdf.pipe.UNIPipe/OCRPipe classes this adapter used to target were
+    # removed entirely somewhere before 1.3.x -- see git history for that
+    # version if you need to compare against an even older magic-pdf release.
+    from magic_pdf.config.enums import SupportedPdfParseMethod  # noqa: F401
+    from magic_pdf.data.data_reader_writer import FileBasedDataReader, FileBasedDataWriter  # noqa: F401
+    from magic_pdf.data.read_api import read_local_images, read_local_office, read_local_pdfs  # noqa: F401
+    from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze  # noqa: F401
 
     MINERU_AVAILABLE = True
 except ImportError:  # pragma: no cover
@@ -42,15 +65,23 @@ RENDER_DPI = 200
 def parse_document(file_path: str | Path) -> ParsedDocument:
     file_path = Path(file_path)
     suffix = file_path.suffix.lower()
+    mineru_error: Exception | None = None
 
     if MINERU_AVAILABLE and suffix in MINERU_SUPPORTED_SUFFIXES:
         try:
             return _parse_with_mineru(file_path)
         except Exception as exc:  # noqa: BLE001 -- deliberately broad: fall back on any parser failure
+            mineru_error = exc
             logger.warning("mineru_parse_failed_falling_back", path=str(file_path), error=str(exc))
 
     if suffix == ".pdf":
         return _parse_pdf_with_pymupdf(file_path)
+
+    if mineru_error is not None:
+        raise ValueError(
+            f"No parser available for '{file_path.name}': MinerU is installed but failed to "
+            f"parse this file, and PyMuPDF fallback only supports PDF. MinerU error: {mineru_error}"
+        ) from mineru_error
 
     raise ValueError(
         f"No parser available for '{file_path.name}': MinerU is "
@@ -59,40 +90,94 @@ def parse_document(file_path: str | Path) -> ParsedDocument:
     )
 
 
-def _parse_with_mineru(file_path: Path) -> ParsedDocument:
-    """Adapter over MinerU's per-page pipeline.
+def _load_mineru_dataset(file_path: Path):
+    """Build MinerU's Dataset object for the given input type.
 
-    MinerU's `UNIPipe` classifies each page as text-based or OCR-needed as
-    part of its layout analysis (`pdf_type` / per-page `need_ocr` markers in
-    its middle-JSON output). We request its analysis, then translate that
-    per-page verdict into our own `Page` model rather than letting MinerU run
-    its own (non-multilingual-aware) OCR step -- our OCR routing in
-    `ocr/router.py` handles language-specific engine selection instead.
-
-    NOTE: MinerU's Python API has changed across releases; verify this
-    adapter against the installed `magic-pdf` version's UNIPipe signature
-    before relying on it in production (see README "Model setup" section).
+    DOCX/PPTX go through MinerU's own LibreOffice-based converter
+    (`read_local_office`). XLSX isn't in that function's own suffix filter,
+    but its underlying conversion primitive is format-agnostic (any type
+    LibreOffice's `--convert-to pdf` handles), so we call it directly. Both
+    need `soffice` (LibreOffice) on PATH -- see scripts/setup.* .
     """
-    pdf_bytes = file_path.read_bytes()
-    pipe = UNIPipe(pdf_bytes, {"_pdf_type": "", "model_list": []}, image_writer=None)
-    pipe.pipe_classify()
-    pipe.pipe_analyze()
-    middle_json = pipe.pipe_mk_uni_format(img_parent_path="", drop_mode="none")
+    suffix = file_path.suffix.lower()
+    if suffix in {".docx", ".pptx"}:
+        return read_local_office(str(file_path))[0]
+    if suffix in {".png", ".jpg", ".jpeg", ".tiff"}:
+        return read_local_images(str(file_path), suffixes=[suffix])[0]
+    if suffix == ".xlsx":
+        return _load_xlsx_dataset(file_path)
+    return read_local_pdfs(str(file_path))[0]
 
+
+def _load_xlsx_dataset(file_path: Path):
+    from magic_pdf.data.dataset import PymuDocDataset
+    from magic_pdf.utils.office_to_pdf import ConvertToPdfError, convert_file_to_pdf
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        try:
+            convert_file_to_pdf(str(file_path), tmp_dir)
+        except ConvertToPdfError as exc:
+            raise RuntimeError(f"LibreOffice conversion failed for '{file_path.name}': {exc}") from exc
+        pdf_path = Path(tmp_dir) / f"{file_path.stem}.pdf"
+        return PymuDocDataset(FileBasedDataReader("").read(str(pdf_path)))
+
+
+def _render_scanned_pages(doc, page_count: int, source_engine: str) -> list[Page]:
+    """Image-only input: MinerU itself reports no native-text method is even
+    possible for it, so there's nothing for a layout/native-text pass to
+    find -- skip straight to rendering for our own OCR pipeline."""
     pages: list[Page] = []
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf") if fitz else None
-
-    for i, page_info in enumerate(middle_json.get("pdf_info", [])):
-        needs_ocr = bool(page_info.get("need_ocr", False))
-        native_text = "\n".join(
-            block.get("text", "")
-            for block in page_info.get("preproc_blocks", [])
-            if "text" in block
-        )
+    for i in range(page_count):
         image = None
-        if needs_ocr and doc is not None:
+        if doc is not None:
             pix = doc[i].get_pixmap(dpi=RENDER_DPI)
             image = PageImage(png_bytes=pix.tobytes("png"), dpi=RENDER_DPI)
+        pages.append(Page(index=i, kind=PageKind.SCANNED, native_text="", image=image, source_engine=source_engine))
+    return pages
+
+
+def _parse_with_mineru(file_path: Path) -> ParsedDocument:
+    ds = _load_mineru_dataset(file_path)
+
+    if SupportedPdfParseMethod.TXT not in ds.supported_methods():
+        doc = fitz.open(stream=ds.data_bits(), filetype="pdf") if fitz else None
+        pages = _render_scanned_pages(doc, len(ds), source_engine="mineru")
+        logger.info("mineru_parse_complete", path=str(file_path), pages=len(pages), image_only=True)
+        return ParsedDocument(source_path=str(file_path), pages=pages)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        image_writer = FileBasedDataWriter(tmp_dir)
+        # Always TXT mode / ocr=False: see module docstring for why we never
+        # rely on MinerU's own OCR step, even for pages it ends up filling
+        # in internally anyway -- we reclassify and discard below instead.
+        infer_result = ds.apply(doc_analyze, ocr=False, lang=None)
+        pipe_result = infer_result.pipe_txt_mode(image_writer, debug_mode=False)
+        middle = json.loads(pipe_result.get_middle_json())
+        content_items = pipe_result.get_content_list(image_dir_or_bucket_prefix="images")
+
+    text_by_page: dict[int, list[str]] = defaultdict(list)
+    for item in content_items:
+        text = item.get("text")
+        if text:
+            text_by_page[item.get("page_idx", 0)].append(text)
+
+    cfg = get_config().scan_detection
+    doc = fitz.open(stream=ds.data_bits(), filetype="pdf") if fitz else None
+
+    pages: list[Page] = []
+    for i, page_info in enumerate(middle.get("pdf_info", [])):
+        width, height = page_info.get("page_size", [0, 0])
+        area = max(width * height, 1.0)
+        native_text = "\n".join(text_by_page.get(i, []))
+        chars_per_area = len(native_text.strip()) / area
+
+        needs_ocr = chars_per_area < cfg.min_chars_per_page_area
+        image = None
+        if needs_ocr:
+            native_text = ""  # discard MinerU's own possibly-wrong-language OCR fill-in
+            if doc is not None:
+                pix = doc[i].get_pixmap(dpi=RENDER_DPI)
+                image = PageImage(png_bytes=pix.tobytes("png"), dpi=RENDER_DPI)
 
         pages.append(
             Page(

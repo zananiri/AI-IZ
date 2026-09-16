@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -9,10 +10,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from docslides.api.routes_chat import router as chat_router
+from docslides.api.routes_legal import router as legal_router
 from docslides.api.routes_pptx import router as pptx_router
 from docslides.api.routes_upload import router as upload_router
 from docslides.config import get_config
-from docslides.llm.client import get_client
+from docslides.llm.client import aclose_all_clients
 from docslides.logging_setup import configure_logging
 
 
@@ -21,7 +23,7 @@ async def lifespan(app: FastAPI):
     configure_logging()
     get_config()
     yield
-    await get_client().aclose()
+    await aclose_all_clients()
 
 
 app = FastAPI(title="docslides", lifespan=lifespan)
@@ -36,6 +38,7 @@ app.add_middleware(
 app.include_router(upload_router)
 app.include_router(pptx_router)
 app.include_router(chat_router)
+app.include_router(legal_router)
 
 
 @app.get("/health")
@@ -58,7 +61,8 @@ _mount_ui()
 
 
 def run() -> None:
-    uvicorn.run("docslides.api.main:app", host="0.0.0.0", port=8080, reload=False)
+    port = int(os.environ.get("DOCSLIDES_APP_PORT", "8456"))
+    uvicorn.run("docslides.api.main:app", host="0.0.0.0", port=port, reload=False)
 
 
 if __name__ == "__main__":

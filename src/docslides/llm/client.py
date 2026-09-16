@@ -1,13 +1,18 @@
-"""Thin client around vLLM's OpenAI-compatible /v1/chat/completions endpoint.
+"""Thin client around the configured LLM backend: vLLM's OpenAI-compatible
+/v1/chat/completions (NVIDIA GPU only) or Ollama's native /api/chat (CPU/
+CUDA/ROCm/Metal -- the portable path). See `config.llm.backend`.
 
 Responsibilities:
-  * Toggle Qwen3's `enable_thinking` chat-template flag per call site.
-  * Drive guided/structured JSON decoding (xgrammar or outlines backend) for
-    every content-generation call -- callers never regex-parse free text.
+  * Toggle Qwen3's "thinking" mode per call site, however the active backend
+    exposes that knob (vLLM: chat_template_kwargs; Ollama: `think`).
+  * Drive structured JSON decoding for every content-generation call --
+    callers never regex-parse free text (vLLM: guided_json extra_body;
+    Ollama: top-level `format` JSON Schema).
   * Validate JSON responses against a pydantic schema and retry with an
     error-correction prompt on failure.
-  * Stream chat turns and split the raw token stream into `reasoning` (the
-    contents of <think>...</think>) and `content` deltas for the UI.
+  * Stream chat turns and split reasoning from content for the UI, using
+    each backend's own wire format (SSE + <think> tags for vLLM; newline-
+    delimited JSON with a separate `thinking` field for Ollama).
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
-from docslides.config import get_config
+from docslides.config import LLMConfig, get_config
 from docslides.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -64,17 +69,38 @@ class LLMCallSite:
         "chat_general",
         "tone_rewrite",
         "chunk_summary",
+        "legal_orchestration",
+        "legal_hebrew_analysis",
+        "legal_verification",
     ]
 
 
 class QwenClient:
-    def __init__(self) -> None:
+    """Talks to either vLLM's OpenAI-compatible API or Ollama's native API,
+    selected by `config.llm.backend`. vLLM is NVIDIA-GPU-only but fastest;
+    Ollama runs on CPU or whatever acceleration the host exposes (CUDA/ROCm/
+    Metal), which is what makes the app portable to non-NVIDIA machines. The
+    two APIs differ enough (endpoint path, request shape, structured-JSON
+    mechanism, streaming wire format, and how "thinking" tokens are exposed)
+    that this class branches on `self._backend` rather than pretending
+    they're the same protocol.
+    """
+
+    def __init__(self, llm_cfg: LLMConfig | None = None) -> None:
+        """`llm_cfg` picks which model this client talks to -- defaults to
+        the general-purpose `config.llm` section, but callers needing a
+        different deployment (e.g. the Legal tab's orchestrator/Hebrew-
+        analyst models, see llm/client.py's `get_legal_*_client`) pass their
+        own `LLMConfig` instead."""
         cfg = get_config()
         self._cfg = cfg
+        self._llm_cfg = llm_cfg or cfg.llm
+        self._backend = self._llm_cfg.backend
+        self._chat_path = "/chat/completions" if self._backend == "vllm" else "/api/chat"
         self._client = httpx.AsyncClient(
-            base_url=cfg.llm.base_url,
-            timeout=cfg.llm.request_timeout_s,
-            headers={"Authorization": f"Bearer {cfg.llm.api_key}"},
+            base_url=self._llm_cfg.base_url,
+            timeout=self._llm_cfg.request_timeout_s,
+            headers={"Authorization": f"Bearer {self._llm_cfg.api_key}"},
         )
 
     async def aclose(self) -> None:
@@ -83,7 +109,7 @@ class QwenClient:
     def _enable_thinking(self, call_site: LLMCallSite, override: bool | None) -> bool:
         if override is not None:
             return override
-        return getattr(self._cfg.llm.thinking_defaults, call_site.name)
+        return getattr(self._llm_cfg.thinking_defaults, call_site.name)
 
     def _build_payload(
         self,
@@ -94,21 +120,45 @@ class QwenClient:
         guided_json_schema: dict[str, Any] | None,
         stream: bool,
     ) -> dict[str, Any]:
-        sampling = sampling or SamplingParams(**self._cfg.llm.default_sampling.model_dump())
-        payload: dict[str, Any] = {
-            "model": self._cfg.llm.model,
+        sampling = sampling or SamplingParams(**self._llm_cfg.default_sampling.model_dump())
+        thinking = self._enable_thinking(call_site, enable_thinking)
+        common: dict[str, Any] = {
+            "model": self._llm_cfg.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "temperature": sampling.temperature,
-            "top_p": sampling.top_p,
-            "max_tokens": sampling.max_tokens,
             "stream": stream,
-            "chat_template_kwargs": {"enable_thinking": self._enable_thinking(call_site, enable_thinking)},
+        }
+
+        if self._backend == "vllm":
+            payload: dict[str, Any] = {
+                **common,
+                "temperature": sampling.temperature,
+                "top_p": sampling.top_p,
+                "max_tokens": sampling.max_tokens,
+                "chat_template_kwargs": {"enable_thinking": thinking},
+            }
+            if guided_json_schema is not None:
+                payload["extra_body"] = {
+                    "guided_json": guided_json_schema,
+                    "guided_decoding_backend": self._llm_cfg.guided_decoding_backend,
+                }
+            return payload
+
+        # Ollama's native /api/chat: sampling params live under "options"
+        # (Modelfile PARAMETER names), "think" toggles reasoning directly
+        # (no chat-template-string juggling), and structured output is a
+        # top-level "format" field holding the raw JSON Schema dict.
+        payload = {
+            **common,
+            "think": thinking,
+            "options": {
+                "temperature": sampling.temperature,
+                "top_p": sampling.top_p,
+                "num_predict": sampling.max_tokens,
+                "num_ctx": self._llm_cfg.max_model_len,
+            },
         }
         if guided_json_schema is not None:
-            payload["extra_body"] = {
-                "guided_json": guided_json_schema,
-                "guided_decoding_backend": self._cfg.llm.guided_decoding_backend,
-            }
+            payload["format"] = guided_json_schema
         return payload
 
     @staticmethod
@@ -146,11 +196,19 @@ class QwenClient:
                 guided_json_schema=schema.model_json_schema(),
                 stream=False,
             )
-            resp = await self._client.post("/chat/completions", json=payload)
+            resp = await self._client.post(self._chat_path, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            raw_content = data["choices"][0]["message"]["content"]
-            _, content = self._split_thinking(raw_content)
+            if self._backend == "vllm":
+                raw_content = data["choices"][0]["message"]["content"]
+                _, content = self._split_thinking(raw_content)
+            else:
+                message = data["message"]
+                content = message["content"]
+                if not message.get("thinking"):
+                    # Older Ollama builds / models that ignore "think" still
+                    # emit reasoning inline as <think> tags in content.
+                    _, content = self._split_thinking(content)
 
             try:
                 parsed = json.loads(content)
@@ -187,55 +245,87 @@ class QwenClient:
         sampling: SamplingParams | None = None,
         enable_thinking: bool | None = None,
     ) -> AsyncIterator[StreamDelta]:
-        """Stream a chat turn, splitting <think>...</think> from the final answer."""
+        """Stream a chat turn, yielding separate reasoning/content deltas."""
         payload = self._build_payload(
             messages, call_site, sampling, enable_thinking, guided_json_schema=None, stream=True
         )
+        async with self._client.stream("POST", self._chat_path, json=payload) as resp:
+            resp.raise_for_status()
+            if self._backend == "vllm":
+                async for delta in self._stream_vllm(resp):
+                    yield delta
+            else:
+                async for delta in self._stream_ollama(resp):
+                    yield delta
 
+    @staticmethod
+    async def _stream_vllm(resp: httpx.Response) -> AsyncIterator[StreamDelta]:
+        """vLLM's OpenAI-compatible SSE stream embeds reasoning inline as
+        <think>...</think> tags in the content deltas -- split on them as
+        they arrive, buffering only across a tag boundary."""
         in_thinking = False
         thinking_closed = False
         buffer = ""
 
-        async with self._client.stream("POST", "/chat/completions", json=payload) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line or not line.startswith("data:"):
-                    continue
-                data_str = line[len("data:") :].strip()
-                if data_str == "[DONE]":
-                    break
-                chunk = json.loads(data_str)
-                delta = chunk["choices"][0].get("delta", {})
-                token = delta.get("content")
-                if not token:
-                    continue
-                buffer += token
+        async for line in resp.aiter_lines():
+            if not line or not line.startswith("data:"):
+                continue
+            data_str = line[len("data:") :].strip()
+            if data_str == "[DONE]":
+                break
+            chunk = json.loads(data_str)
+            delta = chunk["choices"][0].get("delta", {})
+            token = delta.get("content")
+            if not token:
+                continue
+            buffer += token
 
-                # Drain buffer, splitting on <think>/</think> boundaries.
-                while buffer:
-                    if not in_thinking and not thinking_closed and buffer.lstrip().startswith("<think>"):
-                        idx = buffer.index("<think>")
-                        buffer = buffer[idx + len("<think>") :]
-                        in_thinking = True
-                        continue
-                    if in_thinking and "</think>" in buffer:
-                        idx = buffer.index("</think>")
-                        if idx > 0:
-                            yield StreamDelta(kind="reasoning", text=buffer[:idx])
-                        buffer = buffer[idx + len("</think>") :]
-                        in_thinking = False
-                        thinking_closed = True
-                        continue
-                    kind = "reasoning" if in_thinking else "content"
-                    yield StreamDelta(kind=kind, text=buffer)
-                    buffer = ""
+            while buffer:
+                if not in_thinking and not thinking_closed and buffer.lstrip().startswith("<think>"):
+                    idx = buffer.index("<think>")
+                    buffer = buffer[idx + len("<think>") :]
+                    in_thinking = True
+                    continue
+                if in_thinking and "</think>" in buffer:
+                    idx = buffer.index("</think>")
+                    if idx > 0:
+                        yield StreamDelta(kind="reasoning", text=buffer[:idx])
+                    buffer = buffer[idx + len("</think>") :]
+                    in_thinking = False
+                    thinking_closed = True
+                    continue
+                kind = "reasoning" if in_thinking else "content"
+                yield StreamDelta(kind=kind, text=buffer)
+                buffer = ""
 
         if buffer:
             kind = "reasoning" if in_thinking else "content"
             yield StreamDelta(kind=kind, text=buffer)
 
+    @staticmethod
+    async def _stream_ollama(resp: httpx.Response) -> AsyncIterator[StreamDelta]:
+        """Ollama's /api/chat stream is newline-delimited JSON (not SSE); each
+        line already separates `message.thinking` from `message.content`, so
+        no tag-splitting is needed here -- only models that actually honor
+        the "think" request field populate `thinking` distinctly."""
+        async for line in resp.aiter_lines():
+            if not line.strip():
+                continue
+            chunk = json.loads(line)
+            message = chunk.get("message") or {}
+            thinking = message.get("thinking")
+            if thinking:
+                yield StreamDelta(kind="reasoning", text=thinking)
+            content = message.get("content")
+            if content:
+                yield StreamDelta(kind="content", text=content)
+            if chunk.get("done"):
+                break
+
 
 _client_singleton: QwenClient | None = None
+_legal_orchestrator_singleton: QwenClient | None = None
+_legal_hebrew_singleton: QwenClient | None = None
 
 
 def get_client() -> QwenClient:
@@ -243,3 +333,30 @@ def get_client() -> QwenClient:
     if _client_singleton is None:
         _client_singleton = QwenClient()
     return _client_singleton
+
+
+def get_legal_orchestrator_client() -> QwenClient:
+    """Qwen: plans the Legal tab's research and reformulates the question in
+    Hebrew, then verifies/translates the final answer. See legal/pipeline.py."""
+    global _legal_orchestrator_singleton
+    if _legal_orchestrator_singleton is None:
+        _legal_orchestrator_singleton = QwenClient(get_config().legal.orchestrator)
+    return _legal_orchestrator_singleton
+
+
+def get_legal_hebrew_client() -> QwenClient:
+    """DictaLM: does the actual Hebrew-language legal analysis. See
+    legal/pipeline.py."""
+    global _legal_hebrew_singleton
+    if _legal_hebrew_singleton is None:
+        _legal_hebrew_singleton = QwenClient(get_config().legal.hebrew_analyst)
+    return _legal_hebrew_singleton
+
+
+async def aclose_all_clients() -> None:
+    """Closes whichever of the above singletons were actually instantiated,
+    without creating new ones just to close them -- called once at app
+    shutdown (see api/main.py's lifespan)."""
+    for client in (_client_singleton, _legal_orchestrator_singleton, _legal_hebrew_singleton):
+        if client is not None:
+            await client.aclose()

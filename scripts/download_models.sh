@@ -36,6 +36,11 @@ require_module() {
 
 QWEN_MODEL_REPO="${QWEN_MODEL_REPO:-Qwen/Qwen3-32B-AWQ}"
 
+if [ "${SKIP_QWEN:-0}" = "1" ]; then
+  echo "== Qwen3-32B (vLLM/Hugging Face weights): skipped (SKIP_QWEN=1) =="
+  echo "   (Ollama backend selected -- the chat model was already pulled via 'ollama pull'.)"
+  echo
+else
 echo "== Qwen3-32B (quantized) weights: $QWEN_MODEL_REPO (~20GB) =="
 echo "Verify this is still the repo you want (see scripts/verify_vllm_launch.py"
 echo "to check it against the current Hugging Face listing) before this runs."
@@ -63,6 +68,7 @@ else
   SKIPPED+=("Qwen weights: $QWEN_MODEL_REPO")
 fi
 echo
+fi
 
 echo "== fastText language-id model (lid.176, ~125MB) =="
 if [ -f "$MODELS_DIR/lid.176.bin" ]; then
@@ -110,11 +116,21 @@ echo
 echo "== PaddleOCR PP-OCRv6 / PaddleOCR-VL model weights =="
 if require_module paddleocr; then
   echo "Triggering first-use download for each language (writes to ~/.paddleocr)..."
+  # paddleocr 3.x removed use_angle_cls/show_log/use_gpu (now
+  # use_textline_orientation/device, or just rely on defaults) -- kwargs it
+  # doesn't recognize raise ValueError rather than being ignored, so keep
+  # this call minimal and version-tolerant.
   python - <<'EOF' || true
 from paddleocr import PaddleOCR, PaddleOCRVL
 for lang in ["en", "fr", "es", "it", "de", "german"]:
-    PaddleOCR(use_angle_cls=True, lang=lang, use_gpu=False, show_log=False)
-PaddleOCRVL()
+    try:
+        PaddleOCR(lang=lang)
+    except Exception as exc:
+        print(f"[warn] PaddleOCR(lang={lang!r}) failed: {exc}")
+try:
+    PaddleOCRVL()
+except Exception as exc:
+    print(f"[warn] PaddleOCRVL() failed: {exc}")
 EOF
 else
   echo "[skip] paddleocr is not installed in this Python environment."
@@ -126,13 +142,15 @@ echo
 echo "== Surya OCR (Hebrew primary, Arabic GPU fallback) =="
 if require_module surya; then
   echo "Triggering first-use download from Hugging Face..."
+  # surya-ocr's API was rewritten around its "Predictor" classes
+  # (surya.detection.DetectionPredictor / surya.recognition.
+  # RecognitionPredictor); the old surya.model.* module path is gone.
+  # Predictor.__init__ loads (and thus downloads) weights eagerly.
   python - <<'EOF' || true
-from surya.model.detection import segformer
-from surya.model.recognition.model import load_model
-from surya.model.recognition.processor import load_processor
-segformer.load_model()
-load_model()
-load_processor()
+from surya.detection import DetectionPredictor
+from surya.recognition import RecognitionPredictor
+DetectionPredictor()
+RecognitionPredictor()
 EOF
 else
   echo "[skip] surya (surya-ocr) is not installed in this Python environment."
@@ -148,10 +166,58 @@ echo "OS package manager (or the UB-Mannheim installer on Windows, selecting"
 echo "the same language packs during setup)."
 echo
 
-echo "== MinerU (magic-pdf) layout/OCR-classification models =="
-echo "Follow MinerU's own model-download instructions for the installed"
-echo "magic-pdf version (its download script/CLI varies by release):"
-echo "  https://github.com/opendatalab/MinerU"
+echo "== MinerU (magic-pdf) layout/table/formula model weights =="
+if require_module magic_pdf; then
+  MINERU_DIR="$MODELS_DIR/mineru"
+  mkdir -p "$MINERU_DIR"
+  python - <<EOF || SKIPPED+=("MinerU model weights (see warning above)")
+import json
+from pathlib import Path
+from huggingface_hub import snapshot_download
+
+models_dir = Path("$MINERU_DIR")
+try:
+    snapshot_download(repo_id="opendatalab/PDF-Extract-Kit-1.0", local_dir=str(models_dir / "pek"))
+    snapshot_download(repo_id="hantian/layoutreader", local_dir=str(models_dir / "lr"))
+except Exception as exc:
+    print(f"[warn] MinerU model download failed: {exc}")
+    print("       Repo IDs drift across magic-pdf releases -- check the current")
+    print("       instructions at https://github.com/opendatalab/MinerU for the")
+    print("       installed version and download manually.")
+    raise SystemExit(1)
+
+config_path = Path.home() / "magic-pdf.json"
+config = {}
+if config_path.exists():
+    try:
+        config = json.loads(config_path.read_text())
+    except Exception:
+        config = {}
+# "models-dir" must point at the "models" subfolder INSIDE the
+# PDF-Extract-Kit-1.0 download (it expects Layout/, MFD/, MFR/, TabRec/
+# directly inside it -- see resources/model_config/model_configs.yaml --
+# and the repo itself nests those one level under its own "models/" dir,
+# not at its root). layoutreader is a separate, optional key: magic_pdf
+# falls back to downloading hantian/layoutreader from Hugging Face at
+# runtime if this path doesn't exist, so it's a soft dependency.
+config["models-dir"] = str(models_dir / "pek" / "models")
+config["layoutreader-model-dir"] = str(models_dir / "lr")
+config.setdefault("device-mode", "cpu")
+# magic_pdf's default layout model (layoutlmv3) needs detectron2, which has
+# no prebuilt wheel on most platforms and is painful to build from source.
+# doclayout_yolo is bundled in the [full] extra and needs no detectron2 --
+# use it instead.
+config.setdefault("layout-config", {"model": "doclayout_yolo"})
+config_path.write_text(json.dumps(config, indent=2))
+print(f"wrote {config_path}")
+EOF
+  echo "Patching known magic-pdf/fasttext upstream bugs (see scripts/patch_mineru.py)..."
+  python scripts/patch_mineru.py
+else
+  echo "[skip] magic_pdf is not installed in this Python environment."
+  echo "       Run: pip install -e \".[ingestion-mineru]\"  (then re-run this script)"
+  SKIPPED+=("MinerU model weights [magic_pdf not installed]")
+fi
 echo
 
 if [ "${#SKIPPED[@]}" -eq 0 ]; then

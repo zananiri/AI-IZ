@@ -47,8 +47,17 @@ async def _vllm_is_busy(metrics_url: str, client: httpx.AsyncClient) -> bool:
 
 
 async def wait_for_gpu_opportunity() -> None:
-    """Block (with polling) until vLLM appears idle, or `max_wait_s` elapses."""
+    """Block (with polling) until vLLM appears idle, or `max_wait_s` elapses.
+
+    This arbitration is vLLM-specific (it polls vLLM's Prometheus metrics
+    endpoint, which Ollama does not expose in the same shape). When the
+    configured backend is Ollama there is no equivalent signal to poll, so
+    this is a no-op -- Ollama's own scheduler handles resource contention
+    between the chat model and anything else touching the GPU it's on.
+    """
     cfg = get_config()
+    if cfg.llm.backend != "vllm":
+        return
     metrics_url = cfg.llm.base_url.rsplit("/v1", 1)[0] + "/metrics"
     arbiter_cfg = cfg.ocr.gpu_arbiter
 

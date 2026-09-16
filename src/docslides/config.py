@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -26,6 +26,9 @@ class ThinkingDefaults(BaseModel):
     chat_general: bool = True
     tone_rewrite: bool = True
     chunk_summary: bool = False
+    legal_orchestration: bool = True
+    legal_hebrew_analysis: bool = True
+    legal_verification: bool = False
 
 
 class SamplingDefaults(BaseModel):
@@ -35,6 +38,12 @@ class SamplingDefaults(BaseModel):
 
 
 class LLMConfig(BaseModel):
+    # "vllm" talks to vLLM's OpenAI-compatible /v1/chat/completions with its
+    # guided_json/chat_template_kwargs extensions (NVIDIA GPU only). "ollama"
+    # talks to Ollama's native /api/chat, which runs on CPU or whatever
+    # acceleration the host exposes (CUDA/ROCm/Metal) -- see
+    # src/docslides/llm/client.py for the protocol differences.
+    backend: Literal["vllm", "ollama"] = "vllm"
     base_url: str
     model: str
     api_key: str = "not-needed"
@@ -43,6 +52,19 @@ class LLMConfig(BaseModel):
     guided_decoding_backend: str = "xgrammar"
     thinking_defaults: ThinkingDefaults = Field(default_factory=ThinkingDefaults)
     default_sampling: SamplingDefaults = Field(default_factory=SamplingDefaults)
+
+
+class LegalConfig(BaseModel):
+    """Model configs for the Legal tab's 3-step pipeline (see
+    src/docslides/legal/pipeline.py): `orchestrator` plans the research and
+    reformulates the question in Hebrew and later verifies/translates the
+    final answer; `hebrew_analyst` (DictaLM) does the actual legal analysis,
+    in Hebrew. Each is a full `LLMConfig` -- they're independent deployments
+    (different model, possibly different host/backend) from the general
+    `llm:` section above, not a variant of it."""
+
+    orchestrator: LLMConfig
+    hebrew_analyst: LLMConfig
 
 
 class PathsConfig(BaseModel):
@@ -150,6 +172,7 @@ class VLLMLaunchConfig(BaseModel):
 
 class AppConfig(BaseModel):
     llm: LLMConfig
+    legal: LegalConfig
     vllm_launch: VLLMLaunchConfig = Field(default_factory=VLLMLaunchConfig)
     paths: PathsConfig
     languages: LanguagesConfig
@@ -167,10 +190,28 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+# Lets the setup scripts / GUI launcher / docker-compose.portable.yml switch
+# between the vLLM and Ollama backends without maintaining a second full
+# config.yaml -- config/config.yaml stays the single source of truth for
+# everything else (languages, OCR routing, sampling defaults, ...).
+_LLM_ENV_OVERRIDES = {
+    "DOCSLIDES_LLM_BACKEND": "backend",
+    "DOCSLIDES_LLM_BASE_URL": "base_url",
+    "DOCSLIDES_LLM_MODEL": "model",
+}
+
+
+def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
+    llm_overrides = {key: os.environ[env] for env, key in _LLM_ENV_OVERRIDES.items() if env in os.environ}
+    if llm_overrides:
+        raw = {**raw, "llm": {**raw.get("llm", {}), **llm_overrides}}
+    return raw
+
+
 @lru_cache(maxsize=1)
 def get_config(path: str | Path | None = None) -> AppConfig:
     cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
-    raw = _load_yaml(cfg_path)
+    raw = _apply_env_overrides(_load_yaml(cfg_path))
     cfg = AppConfig.model_validate(raw)
     cfg.paths.ensure_exist()
     return cfg

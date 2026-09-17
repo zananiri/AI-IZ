@@ -103,8 +103,11 @@ Re-running either script is safe -- already-downloaded files are left in place.
 ```
 
 When the Ollama backend is selected, the script writes `.env.local` with the
-three env vars (`DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL`) that override
-`config/config.yaml`'s vLLM defaults -- see [Hardware requirements](#hardware-requirements).
+`DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` triple (general chat model) plus
+matching `DOCSLIDES_LEGAL_ORCHESTRATOR_*` / `DOCSLIDES_LEGAL_HEBREW_*` triples
+for the Legal tab's two independent deployments (orchestrator model, and the
+Hebrew-analyst model, DictaLM) -- all overriding `config/config.yaml`'s vLLM
+defaults. See [Hardware requirements](#hardware-requirements).
 
 After setup, use **`gui/DocSlides.bat`** (Windows) or **`gui/DocSlides.command`**
 (macOS) to start/stop everything and watch live status (backend, app, Docker)
@@ -212,9 +215,12 @@ Edit `config/config.yaml`:
 - `ocr.confidence_threshold` -- when to escalate to the GPU OCR fallback
 - Any per-language model paths under `languages.*`
 
-Or leave `config.yaml` as-is and override just the LLM section via env vars
-(`DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL`) -- this is what `.env.local`
-(written by the setup scripts) and `docker-compose.portable.yml` do.
+Or leave `config.yaml` as-is and override the LLM sections via env vars --
+`DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` for the general model, and
+`DOCSLIDES_LEGAL_ORCHESTRATOR_*` / `DOCSLIDES_LEGAL_HEBREW_*` for the Legal
+tab's orchestrator and Hebrew-analyst (DictaLM) deployments -- this is what
+`.env.local` (written by the setup scripts) and `docker-compose.portable.yml`
+do.
 
 ### 4. Run
 

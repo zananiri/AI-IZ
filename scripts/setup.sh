@@ -13,9 +13,12 @@
 #   ./scripts/setup.sh [models_dir]
 #
 # Env overrides:
-#   QWEN_MODEL_REPO   vLLM path model repo. default: Qwen/Qwen3-32B-AWQ
-#   OLLAMA_MODEL      Ollama path model tag. default: qwen3:32b
-#   FORCE_BACKEND     "vllm" or "ollama" -- skip GPU auto-detection
+#   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-32B-AWQ
+#   OLLAMA_MODEL         Ollama path model tag (general + Legal orchestrator).
+#                        default: qwen3:32b
+#   OLLAMA_DICTALM_MODEL Ollama path model tag for the Legal tab's Hebrew
+#                        analyst. default: dicta-il/DictaLM-3.0-24B-Thinking
+#   FORCE_BACKEND        "vllm" or "ollama" -- skip GPU auto-detection
 #   SKIP_MINERU=1     skip the magic-pdf (MinerU) extra -- it has a known
 #                     dependency conflict with gradio's huggingface-hub pin
 #                     (see the warning this script prints). PDF ingestion
@@ -141,18 +144,32 @@ else
       echo "       https://ollama.com/library/qwen3 and retry: ollama pull <tag>"
       SKIPPED+=("ollama pull $OLLAMA_MODEL")
     }
+
+    OLLAMA_DICTALM_MODEL="${OLLAMA_DICTALM_MODEL:-dicta-il/DictaLM-3.0-24B-Thinking}"
+    echo "Pulling $OLLAMA_DICTALM_MODEL (Legal tab's Hebrew analyst, ~13-20GB)..."
+    ollama pull "$OLLAMA_DICTALM_MODEL" || {
+      echo "[warn] 'ollama pull $OLLAMA_DICTALM_MODEL' failed. Check the exact tag at"
+      echo "       https://ollama.com/dicta-il/DictaLM-3.0-24B-Thinking and retry: ollama pull <tag>"
+      SKIPPED+=("ollama pull $OLLAMA_DICTALM_MODEL")
+    }
   fi
 
   # Read by the GUI launcher / any local (non-Docker) run of the app so
-  # config/config.yaml's vLLM default is overridden without editing it.
-  # docker-compose.portable.yml sets the same three vars itself, so it does
-  # not read this file.
+  # config/config.yaml's vLLM defaults (general llm: + Legal orchestrator/
+  # hebrew_analyst) are overridden without editing it. docker-compose.
+  # portable.yml sets the same vars itself, so it does not read this file.
   cat > .env.local <<EOF
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OLLAMA_MODEL
+DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
+DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
+DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OLLAMA_MODEL
+DOCSLIDES_LEGAL_HEBREW_BACKEND=ollama
+DOCSLIDES_LEGAL_HEBREW_BASE_URL=http://localhost:11434
+DOCSLIDES_LEGAL_HEBREW_MODEL=$OLLAMA_DICTALM_MODEL
 EOF
-  echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL)"
+  echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL, legal hebrew_analyst=$OLLAMA_DICTALM_MODEL)"
 fi
 echo
 

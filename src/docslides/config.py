@@ -193,18 +193,46 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 # Lets the setup scripts / GUI launcher / docker-compose.portable.yml switch
 # between the vLLM and Ollama backends without maintaining a second full
 # config.yaml -- config/config.yaml stays the single source of truth for
-# everything else (languages, OCR routing, sampling defaults, ...).
+# everything else (languages, OCR routing, sampling defaults, ...). The Legal
+# tab's orchestrator/hebrew_analyst are independent deployments (see
+# LegalConfig) and get their own override triples so they can be pointed at
+# Ollama separately from -- or together with -- the general `llm:` section.
 _LLM_ENV_OVERRIDES = {
     "DOCSLIDES_LLM_BACKEND": "backend",
     "DOCSLIDES_LLM_BASE_URL": "base_url",
     "DOCSLIDES_LLM_MODEL": "model",
 }
+_LEGAL_ORCHESTRATOR_ENV_OVERRIDES = {
+    "DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND": "backend",
+    "DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL": "base_url",
+    "DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL": "model",
+}
+_LEGAL_HEBREW_ENV_OVERRIDES = {
+    "DOCSLIDES_LEGAL_HEBREW_BACKEND": "backend",
+    "DOCSLIDES_LEGAL_HEBREW_BASE_URL": "base_url",
+    "DOCSLIDES_LEGAL_HEBREW_MODEL": "model",
+}
+
+
+def _env_overrides(env_map: dict[str, str]) -> dict[str, str]:
+    return {key: os.environ[env] for env, key in env_map.items() if env in os.environ}
 
 
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
-    llm_overrides = {key: os.environ[env] for env, key in _LLM_ENV_OVERRIDES.items() if env in os.environ}
+    llm_overrides = _env_overrides(_LLM_ENV_OVERRIDES)
     if llm_overrides:
         raw = {**raw, "llm": {**raw.get("llm", {}), **llm_overrides}}
+
+    orchestrator_overrides = _env_overrides(_LEGAL_ORCHESTRATOR_ENV_OVERRIDES)
+    hebrew_overrides = _env_overrides(_LEGAL_HEBREW_ENV_OVERRIDES)
+    if orchestrator_overrides or hebrew_overrides:
+        legal = raw.get("legal", {})
+        if orchestrator_overrides:
+            legal = {**legal, "orchestrator": {**legal.get("orchestrator", {}), **orchestrator_overrides}}
+        if hebrew_overrides:
+            legal = {**legal, "hebrew_analyst": {**legal.get("hebrew_analyst", {}), **hebrew_overrides}}
+        raw = {**raw, "legal": legal}
+
     return raw
 
 

@@ -26,7 +26,12 @@
     "vllm" or "ollama" -- skip NVIDIA GPU auto-detection and use this backend.
 
 .PARAMETER OllamaModel
-    Model tag to pull when the Ollama backend is selected. Default: qwen3:32b
+    Model tag to pull when the Ollama backend is selected (general chat model
+    + Legal tab orchestrator). Default: qwen3:32b
+
+.PARAMETER OllamaDictalmModel
+    Model tag to pull for the Legal tab's Hebrew analyst when the Ollama
+    backend is selected. Default: dicta-il/DictaLM-3.0-24B-Thinking
 
 .EXAMPLE
     .\scripts\setup.ps1
@@ -42,7 +47,8 @@ param(
     [string]$QwenModelRepo = "Qwen/Qwen3-32B-AWQ",
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
-    [string]$OllamaModel = "qwen3:32b"
+    [string]$OllamaModel = "qwen3:32b",
+    [string]$OllamaDictalmModel = "dicta-il/DictaLM-3.0-24B-Thinking"
 )
 
 $ErrorActionPreference = "Continue"
@@ -215,18 +221,32 @@ if ($Backend -eq "vllm") {
             Write-Host "       https://ollama.com/library/qwen3 and retry: ollama pull <tag>" -ForegroundColor Yellow
             $Skipped.Add("ollama pull $OllamaModel")
         }
+
+        Write-Host "Pulling $OllamaDictalmModel (Legal tab's Hebrew analyst, ~13-20GB)..."
+        ollama pull $OllamaDictalmModel
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[warn] 'ollama pull $OllamaDictalmModel' failed. Check the exact tag at" -ForegroundColor Yellow
+            Write-Host "       https://ollama.com/dicta-il/DictaLM-3.0-24B-Thinking and retry: ollama pull <tag>" -ForegroundColor Yellow
+            $Skipped.Add("ollama pull $OllamaDictalmModel")
+        }
     }
 
     # Read by the GUI launcher / any local (non-Docker) run of the app so
-    # config/config.yaml's vLLM default is overridden without editing it.
-    # docker-compose.portable.yml sets the same three vars itself, so it does
-    # not read this file.
+    # config/config.yaml's vLLM defaults (general llm: + Legal orchestrator/
+    # hebrew_analyst) are overridden without editing it. docker-compose.
+    # portable.yml sets the same vars itself, so it does not read this file.
     @"
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OllamaModel
+DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
+DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
+DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
+DOCSLIDES_LEGAL_HEBREW_BACKEND=ollama
+DOCSLIDES_LEGAL_HEBREW_BASE_URL=http://localhost:11434
+DOCSLIDES_LEGAL_HEBREW_MODEL=$OllamaDictalmModel
 "@ | Set-Content -Path ".env.local" -Encoding utf8
-    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, model=$OllamaModel)"
+    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, model=$OllamaModel, legal hebrew_analyst=$OllamaDictalmModel)"
 }
 Write-Host ""
 

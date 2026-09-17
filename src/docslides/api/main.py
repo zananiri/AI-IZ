@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -18,10 +19,22 @@ from docslides.llm.client import aclose_all_clients
 from docslides.logging_setup import configure_logging
 
 
+def _silence_benign_proactor_errors(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    # On Windows, ProactorEventLoop logs a ConnectionResetError when a peer
+    # drops the connection while a pipe transport is being torn down. The
+    # request has already completed by then, so it's noise, not a failure.
+    exception = context.get("exception")
+    if isinstance(exception, ConnectionResetError):
+        return
+    loop.default_exception_handler(context)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
     get_config()
+    if os.name == "nt":
+        asyncio.get_running_loop().set_exception_handler(_silence_benign_proactor_errors)
     yield
     await aclose_all_clients()
 

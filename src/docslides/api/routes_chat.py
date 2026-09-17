@@ -58,7 +58,8 @@ class ChatRequest(BaseModel):
 
 
 class ToneRewriteRequest(BaseModel):
-    text: str
+    text: str = ""  # ignored if attachment_path is set -- the attachment's text is rewritten instead
+    attachment_path: str | None = None  # server-side path from a prior /api/upload call
     task_description: str = "Rewrite the following text."
     professionalism: int
     creativity: int
@@ -126,6 +127,7 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
         else:
             messages = [ChatMessage(role=m["role"], content=m["content"]) for m in req.messages]
 
+        await event_bus.publish_status(job_id, "Waiting for model response")
         async for delta in client.stream_chat(messages, LLMCallSite("chat_general")):
             kind = "reasoning_delta" if delta.kind == "reasoning" else "content_delta"
             await event_bus.publish(job_id, Event(kind=kind, data={"text": delta.text}))
@@ -134,10 +136,34 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
         await event_bus.publish_error(job_id, str(exc))
 
 
-async def _stream_and_publish(job_id: str, messages: list[ChatMessage], call_site: LLMCallSite, sampling=None) -> None:
+async def _run_tone_rewrite(job_id: str, req: ToneRewriteRequest) -> None:
+    """Rewrites either the pasted `text` or, when the same message box's
+    attach button was used instead, the attached document's extracted text --
+    the two are mutually exclusive inputs to the same "what am I rewriting"
+    slot, not separate features."""
     client = get_client()
     try:
-        async for delta in client.stream_chat(messages, call_site, sampling=sampling):
+        task_description = req.task_description
+        text_to_rewrite = req.text
+
+        if req.attachment_path:
+            document_text, _ = await extract_document_text(job_id, req.attachment_path)
+            budget = int(get_config().llm.max_model_len * _ATTACHMENT_CONTEXT_TOKEN_FRACTION)
+            text_to_rewrite = _fit_to_token_budget(document_text, budget)
+            if req.text:
+                # Typed text alongside an attachment is extra instruction, not the rewrite target.
+                task_description = f"{req.task_description}\n\nAdditional instructions: {req.text}"
+
+        tone = ToneSettings(professionalism=req.professionalism, creativity=req.creativity)
+        system_prompt = compose_rewrite_system_prompt(tone, task_description)
+        sampling = resolve_sampling_params(tone)
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=text_to_rewrite),
+        ]
+
+        await event_bus.publish_status(job_id, "Waiting for model response")
+        async for delta in client.stream_chat(messages, LLMCallSite("tone_rewrite"), sampling=sampling):
             kind = "reasoning_delta" if delta.kind == "reasoning" else "content_delta"
             await event_bus.publish(job_id, Event(kind=kind, data={"text": delta.text}))
         await event_bus.publish_done(job_id)
@@ -159,17 +185,7 @@ async def tone_rewrite(req: ToneRewriteRequest) -> dict:
     job_id = uuid.uuid4().hex[:12]
     event_bus.create(job_id)
 
-    tone = ToneSettings(professionalism=req.professionalism, creativity=req.creativity)
-    system_prompt = compose_rewrite_system_prompt(tone, req.task_description)
-    sampling = resolve_sampling_params(tone)
-    messages = [
-        ChatMessage(role="system", content=system_prompt),
-        ChatMessage(role="user", content=req.text),
-    ]
-
-    asyncio.create_task(
-        _stream_and_publish(job_id, messages, LLMCallSite("tone_rewrite"), sampling=sampling)
-    )
+    asyncio.create_task(_run_tone_rewrite(job_id, req))
     return {"job_id": job_id}
 
 

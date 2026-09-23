@@ -183,6 +183,29 @@ def summarize(questions: list[EvalQuestion], before: dict, after: dict) -> dict:
     return summary
 
 
+def backfill_answer_texts(before: dict, after: dict) -> None:
+    """Runs recorded before the fix saved answer text under "answer", which the
+    after-RAG per-part score (also "answer") then overwrote. Moves surviving
+    text to "answer_text", and recovers lost after-RAG text from the
+    pipeline's audit log entry for that question."""
+    for run in (before, after):
+        for record in run.values():
+            if "answer_text" not in record and isinstance(record.get("answer"), str):
+                record["answer_text"] = record["answer"]
+    for qid, record in after.items():
+        if record.get("answer_text") or not record.get("audit_path"):
+            continue
+        path = Path(record["audit_path"])
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            entry = json.loads(line)
+            if entry.get("job_id") == f"eval-{qid}":
+                from docslides.legal.citations import strip_citations
+
+                record["answer_text"] = strip_citations(entry["output"]["answer_draft"])
+
+
 def _pct(value: float | None) -> str:
     return "–" if value is None else f"{value:.0f}%"
 
@@ -226,7 +249,7 @@ def render_report(meta: dict, questions: list[EvalQuestion], before: dict, after
         for label, run in (("Before RAG", before.get(q.id)), ("After RAG", after.get(q.id))):
             if not run:
                 continue
-            lines += ["", f"**{label}** ({run.get('classification') or run.get('verdict')}): {run.get('answer', '')}"]
+            lines += ["", f"**{label}** ({run.get('classification') or run.get('verdict')}): {run.get('answer_text', '')}"]
             if run.get("judge_explanation"):
                 lines.append(f"  - judge: {run['judge_explanation']}")
             if run.get("fact_coverage") is not None:

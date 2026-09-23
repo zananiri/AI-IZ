@@ -26,6 +26,7 @@ from dataclasses import dataclass
 
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
+from docslides.legal import amendments
 from docslides.legal.models import ChunkMetadata, LegalChunk, SourceOrigin, SourceType, Status
 from docslides.legal.structure import Section, extract_cross_references
 from docslides.logging_setup import get_logger
@@ -121,6 +122,8 @@ def _part_suffix(language: str, index: int, count: int) -> str:
 def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: str) -> list[LegalChunk]:
     budget = get_config().legal.ingestion.chunk_max_tokens
     known_sections = {s.number for s in sections}
+    toc = amendments.parse_toc(next((s.text for s in sections if s.number == "preamble"), ""))
+    key = amendments.law_key(meta.law_name)
     chunks: list[LegalChunk] = []
 
     for section in sections:
@@ -142,6 +145,7 @@ def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: st
 
             for index, body in enumerate(bodies, start=1):
                 multipart = len(bodies) > 1
+                amended = amendments.extract_amendment(section.title, body, toc) if section.number != "preamble" else None
                 header = breadcrumb + (_part_suffix(meta.language, index, len(bodies)) if multipart else "")
                 chunks.append(
                     LegalChunk(
@@ -168,6 +172,8 @@ def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: st
                             part_count=len(bodies),
                             cross_references=refs,
                             gazette=meta.gazette,
+                            law_key=key,
+                            amends=amendments.encode([amended]) if amended else [],
                         ),
                     )
                 )

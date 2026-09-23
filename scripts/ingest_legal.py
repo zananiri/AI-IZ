@@ -23,6 +23,7 @@ Nothing reaches the index without going through a staged batch:
     # 4. Check the index against the signed bundle
     python scripts/ingest_legal.py verify
     python scripts/ingest_legal.py dups              # near-duplicate chunks, to tune dedupe
+    python scripts/ingest_legal.py retag             # add amendment links to laws indexed before they existed
 
 Approving needs DOCSLIDES_LEGAL_BUNDLE_KEY set (the HMAC key the bundle is
 signed with). Set the same value for the API process so it can verify it.
@@ -33,6 +34,7 @@ Needs the optional `legal` dependency group: pip install -e ".[legal]"
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -136,6 +138,40 @@ def cmd_retract(args) -> int:
     return 0
 
 
+def cmd_retag(args) -> int:
+    """Recomputes law_key + amends (legal/amendments.py) for chunks already in
+    the index, from their stored text and breadcrumb -- for laws indexed before
+    amendment tagging existed. Metadata-only: neither field is covered by the
+    signed hashes, so nothing is re-embedded or re-signed."""
+    from collections import defaultdict
+
+    from docslides.legal import amendments, retrieval
+
+    by_version: dict[tuple[str, str], list] = defaultdict(list)
+    for chunk_id, text, meta in retrieval.all_chunks():
+        by_version[(meta["law_id"], meta["effective_date_start"])].append((chunk_id, text, meta))
+
+    ids, metas, tagged = [], [], 0
+    for rows in by_version.values():
+        preamble = "\n".join(t.split("\n\n", 1)[-1] for _, t, m in rows if m["section_number"] == "preamble")
+        toc = amendments.parse_toc(preamble)
+        for chunk_id, text, meta in rows:
+            last = meta.get("breadcrumb", "").split(" > ")[-1]
+            title = last.split(" — ", 1)[1] if " — " in last else None
+            ref = None if meta["section_number"] == "preamble" else amendments.extract_amendment(title, text, toc)
+            new = {
+                **meta,
+                "law_key": amendments.law_key(meta["law_name"]),
+                "amends": json.dumps(amendments.encode([ref]) if ref else [], ensure_ascii=False),
+            }
+            tagged += bool(ref)
+            ids.append(chunk_id)
+            metas.append(new)
+    retrieval.update_metadatas(ids, metas)
+    print(f"Retagged {len(ids)} chunks across {len(by_version)} law version(s); {tagged} amend another law.")
+    return 0
+
+
 def cmd_dups(args) -> int:
     """Chunk pairs of the same law version whose embeddings are suspiciously
     close -- to eyeball when tuning dedupe. Exact duplicates are already
@@ -229,6 +265,9 @@ def main() -> int:
     p.add_argument("effective_date_start", help="YYYY-MM-DD, as in the version's chunk ids")
     p.add_argument("--reviewer")
     p.set_defaults(func=cmd_retract)
+
+    p = sub.add_parser("retag", help="recompute amendment links (law_key / amends) for indexed chunks")
+    p.set_defaults(func=cmd_retag)
 
     p = sub.add_parser("dups", help="list near-duplicate chunk pairs within each law version")
     p.add_argument("--low", type=float, default=0.90)

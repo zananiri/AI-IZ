@@ -76,14 +76,14 @@ async def run_before(questions, out: Path) -> dict:
         try:
             answer = await ev.ask_baseline(qwen, q)
         except Exception as exc:  # noqa: BLE001
-            results[q.id] = {"answer": "", "error": str(exc), "classification": "error"}
+            results[q.id] = {"answer_text": "", "error": str(exc), "classification": "error"}
             _save(out, results)
             continue
         graded = await _grade(qwen, q, answer)
         graded["classification"] = ev.classify_baseline(
             q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"]
         )
-        results[q.id] = {"answer": answer, "seconds": round(time.monotonic() - started), **graded}
+        results[q.id] = {"answer_text": answer, "seconds": round(time.monotonic() - started), **graded}
         _save(out, results)
         _log(f"BEFORE {q.id}: {graded['classification']}")
     return results
@@ -109,7 +109,7 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
         try:
             turn = await run_legal_turn(q.question, dicta_tier, f"eval-{q.id}", status, use_dicta=use_dicta)
         except Exception as exc:  # noqa: BLE001
-            results[q.id] = {"answer": "", "error": str(exc), "verdict": "incorrect", "score": 0.0,
+            results[q.id] = {"answer_text": "", "error": str(exc), "verdict": "incorrect", "score": 0.0,
                              "passed": False, "retrieval": 0.0 if q.group != "C" else None,
                              "citation": 0.0 if q.group != "C" else None}
             _save(out, results)
@@ -124,7 +124,7 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
             q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"], retrieved_texts, cited_texts
         )
         results[q.id] = {
-            "answer": answer,
+            "answer_text": answer,
             "seconds": round(time.monotonic() - started),
             "escalation_reasons": turn.escalation_reasons,
             "cited": [f"{n['law']} {n['section']} ({'verified' if n['verified'] else 'unverified'})"
@@ -178,6 +178,7 @@ async def main_async(args) -> int:
     finally:
         await aclose_all_clients()
 
+    ev.backfill_answer_texts(before, after)
     summary = ev.summarize(questions, before, after)
     _save(run_dir / "summary.json", summary)
     report = ev.render_report(meta, questions, before, after, summary)

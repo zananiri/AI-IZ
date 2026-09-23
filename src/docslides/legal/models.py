@@ -63,11 +63,13 @@ class ChunkMetadata:
     reviewed_by: str | None = None
     cross_references: list[str] = field(default_factory=list)
     gazette: str | None = None  # e.g. "ספר החוקים 3546" -- lets "what did amendment X change" match
+    law_key: str = ""  # normalized law identity, matches amendments to this law (legal/amendments.py)
+    amends: list[dict] = field(default_factory=list)  # what this chunk amends in other laws
 
     def to_chroma(self) -> dict[str, str | int]:
         flat: dict[str, str | int] = {}
         for key, value in asdict(self).items():
-            if key == "cross_references":
+            if key in ("cross_references", "amends"):
                 flat[key] = json.dumps(value, ensure_ascii=False)
             elif value is None:
                 flat[key] = ""
@@ -79,6 +81,7 @@ class ChunkMetadata:
     def from_chroma(cls, meta: dict) -> ChunkMetadata:
         values = dict(meta)
         values["cross_references"] = json.loads(values.get("cross_references") or "[]")
+        values["amends"] = json.loads(values.get("amends") or "[]")
         for key in ("chapter", "part", "subsection_number", "effective_date_end", "reviewed_by", "gazette"):
             values[key] = values.get(key) or None
         known = cls.__dataclass_fields__

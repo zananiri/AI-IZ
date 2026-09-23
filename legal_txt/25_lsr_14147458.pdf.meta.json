@@ -1,0 +1,18 @@
+{
+  "law_name": "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026",
+  "effective_date_start": "2026-07-16",
+  "effective_date_end": null,
+  "status": "current",
+  "source_type": "statute",
+  "source_origin": "knesset",
+  "language": "he",
+  "gazette": "ספר החוקים 3546",
+  "_derived": [
+    "law_name",
+    "effective_date_start",
+    "source_type",
+    "source_origin",
+    "gazette"
+  ],
+  "_note": "Auto-derived by scripts/ingest_legal_txt.py -- check the fields listed in _derived (especially effective_date_start), edit them, and re-run the script to re-index."
+}

@@ -291,7 +291,8 @@ def _format_legal_footnotes(footnotes: list[dict]) -> str:
             if note.get("verified")
             else "⚠️ **not verified**: " + "; ".join(note.get("problems", []))
         )
-        entries.append(f"**[{note['number']}]** {law_section}  \n_{details}_  \n{verified}")
+        amended = "".join(f"  \n⚠️ amended: {a}" for a in note.get("amended_by", []))
+        entries.append(f"**[{note['number']}]** {law_section}  \n_{details}_  \n{verified}{amended}")
     return "\n\n".join(entries)
 
 

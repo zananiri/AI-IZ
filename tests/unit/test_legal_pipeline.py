@@ -85,6 +85,7 @@ def wire(monkeypatch, tmp_path):
         return _retrieval()
 
     monkeypatch.setattr(pipeline, "retrieve", fake_retrieve)
+    monkeypatch.setattr(pipeline, "amendment_index", lambda: {})  # never touch the real vector DB
 
     def install(qwen, dicta):
         monkeypatch.setattr(pipeline, "get_legal_orchestrator_client", lambda: qwen)

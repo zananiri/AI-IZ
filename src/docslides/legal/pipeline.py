@@ -29,7 +29,7 @@ from dataclasses import asdict, dataclass, field
 
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
-from docslides.legal import audit, prompts
+from docslides.legal import amendments, audit, prompts
 from docslides.legal.citations import (
     CitationLockError,
     expand_citations,
@@ -43,7 +43,12 @@ from docslides.legal.citations import (
 )
 from docslides.legal.models import ChunkMetadata
 from docslides.legal.numeric_check import unsupported_numbers
-from docslides.legal.retrieval import RetrievalResult, RetrievedLegalChunk, retrieve
+from docslides.legal.retrieval import (
+    RetrievalResult,
+    RetrievedLegalChunk,
+    amendment_index,
+    retrieve,
+)
 from docslides.legal.validation import check_draft_citations, clean_memorandum, validate_memorandum
 from docslides.llm.client import (
     ChatMessage,
@@ -445,6 +450,17 @@ def _footnotes(final_text: str, evidence: dict[str, ChunkMetadata], checks: list
     return display, [notes[n] for n in sorted(notes)]
 
 
+def _amendment_notes(evidence: dict[str, ChunkMetadata]) -> dict[str, list]:
+    """source_id -> later indexed amendments to that provision's law (legal/amendments.py)."""
+    try:
+        index = amendment_index()
+    except Exception as exc:  # noqa: BLE001 -- a missing index must not block answering
+        logger.warning("legal_amendment_index_unavailable", error=str(exc))
+        return {}
+    notes = {sid: amendments.notes_for(meta, index) for sid, meta in evidence.items()}
+    return {sid: n for sid, n in notes.items() if n}
+
+
 async def _localized_notice(qwen: QwenClient, reply_language: str) -> str:
     if reply_language in _GATE_FAILED_NOTICE:
         return _GATE_FAILED_NOTICE[reply_language]
@@ -499,7 +515,8 @@ async def run_legal_turn(
     retrieval = await asyncio.to_thread(retrieve, retrieval_query)
     grouped = retrieval.by_source_id()
     evidence = {source_id: parts[0].metadata for source_id, parts in grouped.items()}
-    evidence_text = prompts.format_evidence(grouped)
+    amendment_notes = _amendment_notes(evidence)
+    evidence_text = prompts.format_evidence(grouped, amendment_notes)
     retrieved = [
         {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "text": c.text, "distance": c.distance, "via": c.via}
         for c in retrieval.chunks
@@ -510,6 +527,7 @@ async def run_legal_turn(
         "bundle_verification": retrieval.bundle_verification,
         "best_distance": retrieval.best_distance,
         "low_relevance": retrieval.low_relevance,
+        "amendment_notes": {sid: [n.describe() for n in notes] for sid, notes in amendment_notes.items()},
         "rejected_chunk_ids": retrieval.rejected_chunk_ids,
         "duplicate_chunk_ids": retrieval.duplicate_chunk_ids,
         "chunks": [
@@ -581,6 +599,17 @@ async def run_legal_turn(
     }
 
     reasons = _escalation_reasons(draft, memo, retrieval, evidence, checks, draft_failures)
+    amended_citations = sorted({
+        f"{evidence[c.source_id].law_name} סעיף {evidence[c.source_id].section_number}: "
+        + "; ".join(n.describe() for n in amendment_notes[c.source_id] if n.touches_section)
+        for c in checks
+        if any(n.touches_section for n in amendment_notes.get(c.source_id, []))
+    })
+    if amended_citations:
+        reasons.append(
+            "Cites provisions a later indexed law amended -- confirm which version applies to the facts' date: "
+            + " | ".join(amended_citations)
+        )
 
     # Numeric grounding: every number the answer states must be in what it cites.
     cited_ids = {c.source_id for c in parse_citations(final_text)}
@@ -594,6 +623,8 @@ async def run_legal_turn(
         notes.append("Check these figures against the law: " + ", ".join(ungrounded))
 
     display, footnotes = _footnotes(final_text, evidence, checks)
+    for note in footnotes:
+        note["amended_by"] = [n.describe() for n in amendment_notes.get(note["source_id"], [])]
     output = {
         "research_memorandum": memo.model_dump(),
         "answer_draft": final_text,

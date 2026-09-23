@@ -282,6 +282,15 @@ before the new one takes effect and marks it `amended`. Both stay searchable
 for questions about past dates. `ingest_legal.py retract <law_id> <date>`
 removes a version and re-opens the one before it.
 
+**Amending laws are linked to the laws they amend.** Each section of an
+amending law is tagged with the law, amendment number and sections it changes
+(read from its title and the gazette's "תיקונים עקיפים" list). When an answer
+draws on a provision that a later indexed law amended, the model is told the
+amendment and its effective date -- the old text isn't discarded, because a
+lawyer usually needs the version in force when the facts happened -- and an
+answer citing a section the amendment itself changed escalates. Run
+`python scripts/ingest_legal.py retag` once for laws indexed before this existed.
+
 Every answer is appended to `data/legal/audit/<date>.jsonl` (question,
 models and DictaLM tier, retrieved chunks, memorandum/draft/polish attempts,
 verification results). Those files hold users' questions verbatim.

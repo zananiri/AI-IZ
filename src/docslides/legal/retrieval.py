@@ -114,6 +114,24 @@ def update_metadatas(chunk_ids: list[str], metadatas: list[dict]) -> None:
         _get_collection().update(ids=chunk_ids, metadatas=metadatas)
 
 
+_amendment_cache: dict = {}
+
+
+def amendment_index() -> dict:
+    """target law key -> amendments indexed for it (legal/amendments.py),
+    rebuilt only when the signed bundle changes (every approval rewrites it)."""
+    from pathlib import Path
+
+    from docslides.legal import amendments
+
+    manifest = Path(get_config().legal.ingestion.bundle_manifest)
+    stamp = (manifest.stat().st_mtime if manifest.exists() else 0.0, collection_count())
+    if _amendment_cache.get("stamp") != stamp:
+        metadatas = _get_collection().get(include=["metadatas"]).get("metadatas") or []
+        _amendment_cache.update(stamp=stamp, index=amendments.build_index(metadatas))
+    return _amendment_cache["index"]
+
+
 def collection_count() -> int:
     return _get_collection().count()
 

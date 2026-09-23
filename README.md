@@ -74,6 +74,22 @@ nothing above the LLM client needs to know which backend is active.
 Qwen3-32B is heavy even quantized (~20GB); on a CPU-only or modest machine,
 override `llm.model` to a smaller Ollama tag (e.g. `qwen3:8b`) for usable
 latency -- set `OLLAMA_MODEL`/`-OllamaModel` when running the setup script.
+`scripts/setup.*` now does this automatically on the Ollama path when it
+detects under ~48GB of RAM (unless you pass `OLLAMA_MODEL`/`-OllamaModel`
+explicitly): below that threshold, qwen3:32b's ~20GB GGUF plus llama.cpp's
+CPU "repack" buffer (a second, similarly sized buffer briefly resident while
+loading) reliably fails to allocate (`std::bad_alloc` /
+`ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate ...` in
+Ollama's server log) -- which looks like the chat/Legal tabs hanging or not
+responding rather than an install error. The setup scripts also set
+`OLLAMA_MAX_LOADED_MODELS=1` so the Legal tab's two Ollama deployments
+(Qwen orchestrator + DictaLM) evict each other instead of both trying to
+stay resident at once. DictaLM only runs for Hebrew questions/answers, at
+the tier picked in the Legal tab: Heavy (`DictaLM-3.0-24B-Thinking`, ~14GB)
+or Light (12B). The tab checks free RAM/VRAM and suggests Light when Heavy
+won't fit, but never switches on its own; Heavy on CPU works, at roughly
+1-2 tok/s on a modest laptop (`legal.dicta_tiers.heavy.llm.request_timeout_s`
+is 1800s for that reason).
 
 OCR runs on CPU by default (PaddleOCR PP-OCRv6, Tesseract). Only the
 low-confidence VLM-OCR fallback (PaddleOCR-VL / Surya) touches the GPU, and
@@ -105,9 +121,9 @@ Re-running either script is safe -- already-downloaded files are left in place.
 When the Ollama backend is selected, the script writes `.env.local` with the
 `DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` triple (general chat model) plus
 matching `DOCSLIDES_LEGAL_ORCHESTRATOR_*` / `DOCSLIDES_LEGAL_HEBREW_*` triples
-for the Legal tab's two independent deployments (orchestrator model, and the
-Hebrew-analyst model, DictaLM) -- all overriding `config/config.yaml`'s vLLM
-defaults. See [Hardware requirements](#hardware-requirements).
+for the Legal tab's independent deployments (Qwen orchestrator, and the Heavy
+DictaLM tier; `DOCSLIDES_LEGAL_DICTA_LIGHT_*` points the Light tier) -- all
+overriding `config/config.yaml`'s vLLM defaults. See [Hardware requirements](#hardware-requirements).
 
 After setup, use **`gui/DocSlides.bat`** (Windows) or **`gui/DocSlides.command`**
 (macOS) to start/stop everything and watch live status (backend, app, Docker)
@@ -154,6 +170,14 @@ will print a pip dependency-conflict warning -- both packages still import,
 but this is a real, unresolved upstream clash, not a false positive. If it
 causes problems in practice, run MinerU ingestion as a separate process/venv
 instead of sharing one with the FastAPI/Gradio app.
+
+The `canon` extra (`chromadb`, `sentence-transformers`, `beautifulsoup4`) is
+needed for the **Canon GPT** tab -- a RAG pipeline over the Code of Canon
+Law, the Code of Canons of the Eastern Churches, and Vatican City State
+civil law (see `src/docslides/canon/`). It's only required to run
+`scripts/ingest_canon_law.py` (a one-time/offline step that builds the local
+vector store at `data/canon_vectordb/`, see the script's docstring) and to
+serve the tab itself; the rest of the app imports fine without it.
 
 ### 2. Download models (ONE-TIME, ONLINE step)
 
@@ -217,10 +241,50 @@ Edit `config/config.yaml`:
 
 Or leave `config.yaml` as-is and override the LLM sections via env vars --
 `DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` for the general model, and
-`DOCSLIDES_LEGAL_ORCHESTRATOR_*` / `DOCSLIDES_LEGAL_HEBREW_*` for the Legal
-tab's orchestrator and Hebrew-analyst (DictaLM) deployments -- this is what
+`DOCSLIDES_LEGAL_ORCHESTRATOR_*` / `DOCSLIDES_LEGAL_HEBREW_*` (Heavy tier) /
+`DOCSLIDES_LEGAL_DICTA_LIGHT_*` for the Legal tab's Qwen and DictaLM
+deployments -- this is what
 `.env.local` (written by the setup scripts) and `docker-compose.portable.yml`
 do.
+
+### Legal tab: building the Israeli-law index
+
+The Legal tab answers only from sources that were staged, reviewed and
+signed into its local index, so it has nothing to cite until you add some.
+It never fetches from the web: get official texts yourself, within each
+site's terms of use.
+
+```bash
+pip install -e ".[legal]"
+export DOCSLIDES_LEGAL_BUNDLE_KEY=<long random secret>   # same value for the API process
+# Official texts: data/legal/sources/<file>.txt|.docx|.pdf + <file>.meta.json
+python scripts/ingest_legal.py stage data/legal/sources/<file>.txt --dry-run   # check the parsed structure
+python scripts/ingest_legal.py stage-sources
+# Memos / firm / client documents: drop them in uploads/
+python scripts/ingest_legal.py stage-uploads
+python scripts/ingest_legal.py list --status pending
+python scripts/ingest_legal.py approve <batch_id> --reviewer "Adv. Name"      # uploads require --reviewer
+python scripts/ingest_legal.py verify
+```
+
+**Quick path for law PDFs:** drop them into `legal_txt/` at the project root
+and run `python scripts/ingest_legal_txt.py` (add `--watch` to keep polling,
+`--dry-run` to preview, `--prune` to remove laws whose PDF you deleted). Each
+new or changed PDF is indexed straight away as an official source. A PDF
+without a `.meta.json` gets one derived from its title (law name, 1 January of
+the title's year, statute/Knesset or regulation/Reshumot). Check it, fix
+`effective_date_start` in particular, and re-run to re-index. Scanned PDFs, and
+PDFs whose Hebrew text layer is stored in reversed (visual) order, are refused.
+
+**Superseding is automatic:** approving a newer version of a law (same law,
+later `effective_date_start`) sets the older version's end date to the day
+before the new one takes effect and marks it `amended`. Both stay searchable
+for questions about past dates. `ingest_legal.py retract <law_id> <date>`
+removes a version and re-opens the one before it.
+
+Every answer is appended to `data/legal/audit/<date>.jsonl` (question,
+models and DictaLM tier, retrieved chunks, memorandum/draft/polish attempts,
+verification results). Those files hold users' questions verbatim.
 
 ### 4. Run
 

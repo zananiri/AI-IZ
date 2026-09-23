@@ -62,9 +62,25 @@ MINERU_SUPPORTED_SUFFIXES = {".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", 
 RENDER_DPI = 200
 
 
+def _parse_plain_text(file_path: Path) -> ParsedDocument:
+    """.txt needs no layout/OCR parsing -- e.g. the General GPT chat box
+    attaches a plain-text file when a paste is large enough that the browser/
+    Gradio turns it into an attachment instead of inline text (see
+    ui/gradio_app.py's msg_box). Treated as a single native-text page; the
+    per-page language detection and chunking downstream don't care that it
+    isn't actually paginated."""
+    text = file_path.read_text(encoding="utf-8", errors="replace")
+    page = Page(index=0, kind=PageKind.NATIVE_TEXT, native_text=text, source_engine="plaintext")
+    return ParsedDocument(source_path=str(file_path), pages=[page])
+
+
 def parse_document(file_path: str | Path) -> ParsedDocument:
     file_path = Path(file_path)
     suffix = file_path.suffix.lower()
+
+    if suffix == ".txt":
+        return _parse_plain_text(file_path)
+
     mineru_error: Exception | None = None
 
     if MINERU_AVAILABLE and suffix in MINERU_SUPPORTED_SUFFIXES:

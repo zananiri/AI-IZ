@@ -1,86 +1,608 @@
-"""Three-step Legal tab pipeline: an orchestrator model (Qwen) plans the
-research and reformulates the question in Hebrew, a Hebrew legal-domain
-model (DictaLM, an Israeli-law specialist) analyzes it in Hebrew, and the
-orchestrator verifies the result and translates the final answer back into
-whichever language the user asked in. Every prompt sent to the Hebrew
-analyst is in Hebrew -- it's only ever asked a Hebrew question and only
-ever answers one; citations and relevant-law names are left in Hebrew (their
-natural language) all the way through, since they're shown in their own
-panel rather than translated prose.
+"""Legal tab pipeline: grounded RAG over Israeli law.
+
+    language routing -> [he] DictaLM query normalization -> retrieval
+    -> Pass A research memorandum (Qwen) -> validation gate
+    -> Pass B draft (Qwen) -> citation verification (structural + entailment)
+    -> citation lock -> [he] DictaLM polish -> semantic equivalence (Qwen)
+    -> final citation integrity re-check -> numeric grounding check -> audit log
+
+Qwen does all research, drafting and verification. DictaLM, at the tier
+the user picked, only runs when Hebrew is involved: normalizing a Hebrew
+query, and polishing a Hebrew reply. Every instruction it gets is in Hebrew
+(legal/prompts.py). The reply is always in the question's language.
+
+Nothing flagged is resolved silently. A memorandum that fails the gate is
+revised, and if it still fails no draft is written: the turn escalates.
+Citations that fail verification are sent back for a redraft, and if they
+still fail they stay marked unverified and the turn escalates. A polish
+that breaks the citation lock or fails the equivalence check is retried,
+and if it still fails the unpolished (verified) draft is delivered and the
+rejection is recorded.
 """
 
 from __future__ import annotations
 
-from docslides.llm.client import ChatMessage, LLMCallSite, QwenClient, SamplingParams
-from docslides.llm.schemas import HebrewLegalFindings, LegalFinalAnswer, LegalQueryPlan
+import asyncio
+import re
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict, dataclass, field
 
-_ORCHESTRATOR_SYSTEM_PROMPT = (
-    "You are the orchestrator for a legal-research assistant specializing in Israeli law. "
-    "Given the conversation so far, reformulate the user's latest question into a precise, "
-    "self-contained legal-research query written in Hebrew -- this will be handed verbatim to "
-    "a Hebrew-language Israeli-law analysis model with no other context, so it must include "
-    "anything from earlier turns the model would need, and be phrased the way a real Israeli "
-    "legal research query would be. Do not answer the question yourself."
+from docslides.config import get_config
+from docslides.ingestion.language_detect import detect_language
+from docslides.legal import audit, prompts
+from docslides.legal.citations import (
+    CitationLockError,
+    expand_citations,
+    lock,
+    lock_problems,
+    parse_citations,
+    render_with_footnotes,
+    sentence_before,
+    strip_citations,
+    unlock,
 )
-
-_HEBREW_ANALYST_SYSTEM_PROMPT = (
-    "אתה עוזר משפטי מומחה בדין הישראלי. ענה על השאלה המשפטית הבאה בעברית בלבד, "
-    "באופן מדויק, מבוסס ומנומק. ציין בנפרד את כל האסמכתאות (פסקי דין ומקורות משפטיים) "
-    "ואת כל החוקים/הסעיפים הרלוונטיים עליהם התבססת."
+from docslides.legal.models import ChunkMetadata
+from docslides.legal.numeric_check import unsupported_numbers
+from docslides.legal.retrieval import RetrievalResult, RetrievedLegalChunk, retrieve
+from docslides.legal.validation import check_draft_citations, clean_memorandum, validate_memorandum
+from docslides.llm.client import (
+    ChatMessage,
+    LLMCallSite,
+    QwenClient,
+    SamplingParams,
+    get_legal_dicta_client,
+    get_legal_orchestrator_client,
 )
+from docslides.llm.schemas import (
+    EntailmentVerdict,
+    EquivalenceReport,
+    LegalDraft,
+    ReplyLanguage,
+    ResearchMemorandum,
+)
+from docslides.logging_setup import get_logger
+
+logger = get_logger(__name__)
+
+StatusFn = Callable[[str], Awaitable[None]]
+
+_GATE_FAILED_NOTICE = {
+    "en": "I couldn't produce a validated research memorandum for this question from the indexed sources, "
+    "so no draft answer was written. The question has been flagged for review by a licensed attorney.",
+    "he": "לא ניתן היה להפיק מזכר מחקר מאומת לשאלה זו מתוך המקורות שבמאגר, ולכן לא נוסחה טיוטת תשובה. "
+    "השאלה סומנה לבדיקה של עורך דין מוסמך.",
+    "ar": "تعذّر إعداد مذكرة بحث قانوني موثّقة لهذا السؤال من المصادر المفهرسة، لذلك لم تتم صياغة مسودة "
+    "إجابة. تم تحويل السؤال لمراجعة محامٍ مرخّص.",
+    "fr": "Je n'ai pas pu établir, à partir des sources indexées, un mémorandum de recherche validé pour cette "
+    "question ; aucun projet de réponse n'a donc été rédigé. La question a été signalée pour examen par un "
+    "avocat habilité.",
+}
 
 
-async def analyze_legal_query(client: QwenClient, messages: list[ChatMessage]) -> LegalQueryPlan:
-    system = ChatMessage(role="system", content=_ORCHESTRATOR_SYSTEM_PROMPT)
-    return await client.complete_json(
-        [system, *messages],
-        LLMCallSite("legal_orchestration"),
-        schema=LegalQueryPlan,
-        sampling=SamplingParams(temperature=0.2, max_tokens=512),
+@dataclass
+class CitationCheck:
+    index: int
+    claim_id: str
+    source_id: str
+    relation: str
+    sentence: str
+    structural_problems: list[str]
+    verdict: str | None = None
+    explanation: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return not self.structural_problems and self.verdict == "entailed"
+
+
+@dataclass
+class LegalTurnResult:
+    output: dict  # spec section 9 schema
+    display_answer: str
+    footnotes: list[dict]
+    reply_language: str
+    escalation_reasons: list[str]
+    polish_status: str  # not_applicable | accepted | rejected_used_draft
+    dicta_tier: str
+    dicta_model: str
+    dicta_used: bool
+    audit_path: str
+    notes: list[str] = field(default_factory=list)
+    retrieved_chunks: list[dict] = field(default_factory=list)  # chunk_id, source_id, text, distance, via
+
+
+# --- language ------------------------------------------------------------------
+
+
+def _dominant_rtl_script(text: str) -> str | None:
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return None
+    hebrew = sum("֐" <= c <= "׿" for c in letters)
+    arabic = sum("؀" <= c <= "ۿ" or "ݐ" <= c <= "ݿ" for c in letters)
+    if hebrew / len(letters) >= 0.5:
+        return "he"
+    if arabic / len(letters) >= 0.5:
+        return "ar"
+    return None
+
+
+async def detect_reply_language(qwen: QwenClient, query: str) -> str:
+    """Hebrew/Arabic are unambiguous by script. Anything else goes to Qwen,
+    because the local detector is restricted to config.languages.supported
+    and would force e.g. a Russian question into the nearest supported
+    language -- the spec forbids defaulting away from the asker's language."""
+    script = _dominant_rtl_script(query)
+    if script:
+        return script
+    try:
+        result = await qwen.complete_json(
+            [ChatMessage("system", prompts.LANGUAGE_ID_PROMPT), ChatMessage("user", query)],
+            LLMCallSite("legal_language_id"),
+            schema=ReplyLanguage,
+            sampling=SamplingParams(temperature=0.0, max_tokens=32),
+        )
+        code = result.language.strip().lower()[:2]
+        if re.fullmatch(r"[a-z]{2}", code):
+            return code
+    except Exception as exc:  # noqa: BLE001 -- fall back to the local detector
+        logger.warning("legal_language_id_failed", error=str(exc))
+    return detect_language(query) or "en"
+
+
+# --- DictaLM stages --------------------------------------------------------------
+
+
+async def normalize_hebrew_query(dicta: QwenClient, query: str) -> tuple[str, str | None]:
+    """Returns (query to retrieve with, rejection reason if Dicta's output was discarded)."""
+    normalized = await dicta.complete_text(
+        [ChatMessage("system", prompts.DICTA_NORMALIZATION_PROMPT), ChatMessage("user", query)],
+        LLMCallSite("legal_query_normalization"),
+        sampling=SamplingParams(temperature=0.0, max_tokens=512),
     )
+    if not normalized or _dominant_rtl_script(normalized) != "he":
+        return query, "normalized output was empty or not Hebrew"
+    ratio = len(normalized) / max(len(query), 1)
+    if not 0.5 <= ratio <= 2.5:
+        return query, f"normalized output length changed by {ratio:.1f}x -- likely answered or rewrote the question"
+    return normalized, None
 
 
-async def run_hebrew_legal_analysis(client: QwenClient, hebrew_query: str) -> HebrewLegalFindings:
-    system = ChatMessage(role="system", content=_HEBREW_ANALYST_SYSTEM_PROMPT)
-    return await client.complete_json(
-        [system, ChatMessage(role="user", content=hebrew_query)],
-        LLMCallSite("legal_hebrew_analysis"),
-        schema=HebrewLegalFindings,
-        sampling=SamplingParams(temperature=0.2, max_tokens=4096),
+# --- Pass A ------------------------------------------------------------------------
+
+
+def _question_block(query: str, normalized: str | None) -> str:
+    block = f"User's question (original):\n{query}"
+    if normalized and normalized != query:
+        block += f"\n\nNormalized Hebrew form of the question (text form only, same meaning):\n{normalized}"
+    return block
+
+
+async def research_memorandum(
+    qwen: QwenClient, evidence_text: str, question: str, evidence: dict[str, ChunkMetadata], attempts_log: list
+) -> tuple[ResearchMemorandum | None, list[str]]:
+    max_revisions = get_config().legal.pipeline.max_memo_revisions
+    messages = [
+        ChatMessage("system", prompts.RESEARCH_MEMO_PROMPT),
+        ChatMessage("user", f"<evidence_set>\n{evidence_text}\n</evidence_set>\n\n{question}"),
+    ]
+    errors: list[str] = ["no memorandum produced"]
+    memo: ResearchMemorandum | None = None
+    for attempt in range(1 + max_revisions):
+        try:
+            memo = await qwen.complete_json(
+                messages,
+                LLMCallSite("legal_research_memo"),
+                schema=ResearchMemorandum,
+                sampling=SamplingParams(temperature=0.1, top_p=0.9, max_tokens=3072),
+            )
+            memo = clean_memorandum(memo)
+        except Exception as exc:  # noqa: BLE001 -- schema failure after retries counts as a failed attempt
+            errors = [f"memorandum generation failed: {exc}"]
+            attempts_log.append({"attempt": attempt + 1, "memorandum": None, "errors": errors})
+            continue
+        errors = validate_memorandum(memo, evidence)
+        attempts_log.append({"attempt": attempt + 1, "memorandum": memo.model_dump(), "errors": errors})
+        if not errors:
+            return memo, []
+        messages = [
+            *messages[:2],
+            ChatMessage("assistant", memo.model_dump_json()),
+            ChatMessage(
+                "user",
+                "The memorandum failed validation and cannot go forward to drafting. Fix every problem below "
+                "and return the complete corrected memorandum:\n- " + "\n- ".join(errors),
+            ),
+        ]
+    return memo, errors
+
+
+# --- Pass B + verification ------------------------------------------------------
+
+
+async def _entailment(
+    qwen: QwenClient, check: CitationCheck, claim_text: str, parts: list[RetrievedLegalChunk], sem: asyncio.Semaphore
+) -> None:
+    source_text = "\n".join(p.text for p in parts)
+    async with sem:
+        try:
+            result = await qwen.complete_json(
+                [
+                    ChatMessage("system", prompts.ENTAILMENT_PROMPT),
+                    ChatMessage(
+                        "user",
+                        f"Claim ({check.claim_id}): {claim_text}\n\nDraft sentence: {check.sentence}\n\n"
+                        f"Asserted relation: {check.relation}\n\n<evidence source_id=\"{check.source_id}\">\n"
+                        f"{source_text}\n</evidence>",
+                    ),
+                ],
+                LLMCallSite("legal_citation_verification"),
+                schema=EntailmentVerdict,
+                sampling=SamplingParams(temperature=0.0, max_tokens=512),
+            )
+            check.verdict, check.explanation = result.verdict, result.explanation
+        except Exception as exc:  # noqa: BLE001 -- an unverifiable citation is a failed citation
+            check.verdict, check.explanation = "not_entailed", f"verification call failed: {exc}"
+
+
+async def verify_citations(
+    qwen: QwenClient, draft: str, memo: ResearchMemorandum, retrieval: RetrievalResult, evidence: dict[str, ChunkMetadata]
+) -> list[CitationCheck]:
+    grouped = retrieval.by_source_id()
+    claims = {c.claim_id: c.text for c in memo.governing_law}
+    structural = check_draft_citations(draft, memo, evidence)
+    checks = [
+        CitationCheck(
+            index=i,
+            claim_id=c.claim_id,
+            source_id=c.source_id,
+            relation=c.relation,
+            sentence=sentence_before(draft, c.start),
+            structural_problems=structural.get(i, []),
+        )
+        for i, c in enumerate(parse_citations(draft))
+    ]
+    sem = asyncio.Semaphore(get_config().legal.pipeline.entailment_concurrency)
+    await asyncio.gather(
+        *(
+            _entailment(qwen, check, claims[check.claim_id], grouped[check.source_id], sem)
+            for check in checks
+            if not check.structural_problems
+        )
     )
+    return checks
 
 
-async def verify_and_finalize(
-    client: QwenClient,
-    original_message: str,
-    user_lang: str,
-    hebrew_query: str,
-    findings: HebrewLegalFindings,
-) -> LegalFinalAnswer:
-    system = ChatMessage(
-        role="system",
-        content=(
-            "You are the verification stage of a legal-research assistant. You are given the user's "
-            "original question, the Hebrew legal query it was translated into, and a Hebrew-language "
-            "legal analysis (with citations and relevant laws) produced by an Israeli-law specialist "
-            "model. Verify the analysis actually answers the original question, then write the final "
-            f"answer in this language (ISO 639-1 code): '{user_lang}'. Keep citations and relevant law "
-            "names exactly as given, in Hebrew -- translate only the prose answer."
+def _citation_failures(checks: list[CitationCheck]) -> list[str]:
+    failures = []
+    for check in checks:
+        if check.ok:
+            continue
+        reasons = check.structural_problems or [f"{check.verdict}: {check.explanation}"]
+        failures.append(f"citation #{check.index + 1} ({check.claim_id} -> {check.source_id}): {'; '.join(reasons)}")
+    return failures
+
+
+async def draft_answer(
+    qwen: QwenClient,
+    reply_language: str,
+    evidence_text: str,
+    question: str,
+    memo: ResearchMemorandum,
+    retrieval: RetrievalResult,
+    evidence: dict[str, ChunkMetadata],
+    attempts_log: list,
+) -> tuple[LegalDraft, list[CitationCheck], list[str]]:
+    """Returns (draft, its citation checks, failures still unresolved after the last revision)."""
+    max_revisions = get_config().legal.pipeline.max_draft_revisions
+    messages = [
+        ChatMessage("system", prompts.draft_prompt(reply_language)),
+        ChatMessage(
+            "user",
+            f"<evidence_set>\n{evidence_text}\n</evidence_set>\n\n{question}\n\n"
+            f"Validated research memorandum:\n{memo.model_dump_json(indent=1)}",
         ),
+    ]
+    for attempt in range(1 + max_revisions):
+        draft = await qwen.complete_json(
+            messages,
+            LLMCallSite("legal_draft"),
+            schema=LegalDraft,
+            sampling=SamplingParams(temperature=0.2, top_p=0.9, max_tokens=2048),
+        )
+        as_written = draft.model_dump_json()  # short-form tokens, for the revision turn
+        draft.answer_draft = expand_citations(draft.answer_draft, evidence)
+        checks = await verify_citations(qwen, draft.answer_draft, memo, retrieval, evidence)
+        failures = _citation_failures(checks)
+        no_citations = not checks and bool(memo.supporting_authority)
+        if no_citations:
+            failures.append("the draft contains no [[CITE]] tokens although the memorandum has supporting authority")
+        attempts_log.append(
+            {"attempt": attempt + 1, "draft": draft.model_dump(), "citation_checks": [asdict(c) for c in checks]}
+        )
+        if not failures or attempt == max_revisions:
+            return draft, checks, failures
+        messages = [
+            *messages[:2],
+            ChatMessage("assistant", as_written),
+            ChatMessage(
+                "user",
+                "Citation verification failed. Revise the draft: fix each failing citation, and if no source the "
+                "memorandum lists actually states a sentence's proposition, remove that proposition rather than "
+                "cite loosely. Do not add new claims.\n- " + "\n- ".join(failures),
+            ),
+        ]
+    raise AssertionError("unreachable")
+
+
+# --- polish -------------------------------------------------------------------------
+
+
+async def polish_hebrew(
+    dicta: QwenClient, qwen: QwenClient, locked_draft: str, citation_lock, attempts_log: list
+) -> str | None:
+    """Returns the accepted polished (still locked) text, or None if every attempt was rejected."""
+    max_attempts = get_config().legal.pipeline.max_polish_attempts
+    user_message = locked_draft
+    for attempt in range(max_attempts):
+        polished = await dicta.complete_text(
+            [ChatMessage("system", prompts.DICTA_POLISH_PROMPT), ChatMessage("user", user_message)],
+            LLMCallSite("legal_hebrew_polish"),
+            sampling=SamplingParams(temperature=0.2, top_p=0.9, max_tokens=4096),
+        )
+        record: dict = {"attempt": attempt + 1, "polished": polished}
+        attempts_log.append(record)
+
+        tag_problems = lock_problems(polished, citation_lock)
+        if tag_problems:
+            record["lock_problems"] = tag_problems
+            user_message = prompts.dicta_repolish_message(locked_draft, [], tags_broken=True)
+            continue
+
+        report = await qwen.complete_json(
+            [
+                ChatMessage("system", prompts.EQUIVALENCE_PROMPT),
+                ChatMessage("user", f"PRE-POLISH:\n{locked_draft}\n\nPOST-POLISH:\n{polished}"),
+            ],
+            LLMCallSite("legal_equivalence_check"),
+            schema=EquivalenceReport,
+            sampling=SamplingParams(temperature=0.0, max_tokens=2048),
+        )
+        record["equivalence"] = report.model_dump()
+        if report.equivalent and not report.discrepancies:
+            return polished
+        discrepancies = [f'"{d.pre_polish}" ← "{d.post_polish}": {d.issue}' for d in report.discrepancies]
+        user_message = prompts.dicta_repolish_message(locked_draft, discrepancies, tags_broken=False)
+    return None
+
+
+# --- assembly -------------------------------------------------------------------------
+
+
+def _escalation_reasons(
+    draft: LegalDraft | None,
+    memo: ResearchMemorandum | None,
+    retrieval: RetrievalResult,
+    evidence: dict[str, ChunkMetadata],
+    checks: list[CitationCheck],
+    draft_failures: list[str] | None = None,
+) -> list[str]:
+    reasons: list[str] = []
+    if draft and draft.escalation_flag:
+        reasons.append(draft.escalation_reason or "Flagged for escalation by the drafting model")
+    if retrieval.low_relevance:
+        reasons.append("Retrieved sources have low relevance or thin coverage for this question")
+    if memo and memo.authority_conflicts:
+        reasons.append("Unresolved conflict between authorities: " + "; ".join(memo.authority_conflicts))
+    if memo and memo.supporting_authority:
+        uploads = sum(evidence.get(a.source_id) is not None and evidence[a.source_id].source_type == "uploaded_document"
+                      for a in memo.supporting_authority)
+        if uploads * 2 > len(memo.supporting_authority):
+            reasons.append("The analysis relies primarily on uploaded documents rather than official statutes or rulings")
+    cited = {c.source_id for c in checks}
+    stale = sorted({evidence[s].law_name + " " + evidence[s].section_number for s in cited
+                    if s in evidence and evidence[s].status != "current"})
+    if stale:
+        reasons.append("Cites provisions marked amended or repealed: " + ", ".join(stale))
+    failed = [c for c in checks if not c.ok]
+    if failed:
+        reasons.append(f"{len(failed)} citation(s) could not be verified against their sources")
+    if draft_failures and not failed:
+        reasons.append("The draft failed citation verification: " + "; ".join(draft_failures))
+    if retrieval.rejected_chunk_ids:
+        reasons.append("Some index entries failed signed-bundle verification and were excluded")
+    return reasons
+
+
+def _footnotes(final_text: str, evidence: dict[str, ChunkMetadata], checks: list[CitationCheck]) -> tuple[str, list[dict]]:
+    display, citations, numbers = render_with_footnotes(final_text)
+    notes: dict[int, dict] = {}
+    for citation, number, check in zip(citations, numbers, checks):
+        meta = evidence.get(citation.source_id)
+        note = notes.setdefault(
+            number,
+            {
+                "number": number,
+                "source_id": citation.source_id,
+                "law": meta.law_name if meta else citation.law,
+                "section": (meta.section_number + (f"({meta.subsection_number})" if meta.subsection_number else ""))
+                if meta else citation.section,
+                "breadcrumb": meta.breadcrumb if meta else "",
+                "effective": f"{meta.effective_date_start} – {meta.effective_date_end or 'current'}" if meta else citation.effective,
+                "status": meta.status if meta else "unknown",
+                "source_type": meta.source_type if meta else citation.source_type,
+                "source_origin": meta.source_origin if meta else "",
+                "relations": [],
+                "verified": True,
+                "problems": [],
+            },
+        )
+        if citation.relation not in note["relations"]:
+            note["relations"].append(citation.relation)
+        if not check.ok:
+            note["verified"] = False
+            note["problems"].extend(check.structural_problems or [f"{check.verdict}: {check.explanation}"])
+    return display, [notes[n] for n in sorted(notes)]
+
+
+async def _localized_notice(qwen: QwenClient, reply_language: str) -> str:
+    if reply_language in _GATE_FAILED_NOTICE:
+        return _GATE_FAILED_NOTICE[reply_language]
+    try:
+        return await qwen.complete_text(
+            [
+                ChatMessage("system", f"Translate the user's text into {prompts.language_name(reply_language)}. "
+                                      "Return only the translation."),
+                ChatMessage("user", _GATE_FAILED_NOTICE["en"]),
+            ],
+            LLMCallSite("legal_draft"),
+            sampling=SamplingParams(temperature=0.0, max_tokens=512),
+        )
+    except Exception:  # noqa: BLE001
+        return _GATE_FAILED_NOTICE["en"]
+
+
+async def run_legal_turn(
+    query: str, dicta_tier: str | None, job_id: str, status: StatusFn, use_dicta: bool = True
+) -> LegalTurnResult:
+    """`use_dicta=False` skips both DictaLM stages (normalization, polish) --
+    only for evaluation runs that measure retrieval and grounding; the audit
+    entry records it."""
+    legal_cfg = get_config().legal
+    tier_key, tier_cfg = legal_cfg.dicta_tier(dicta_tier)
+    qwen = get_legal_orchestrator_client()
+    entry: dict = {
+        "job_id": job_id,
+        "query": query,
+        "orchestrator_model": qwen.model,
+        "dicta_tier": tier_key,
+        "dicta_model": tier_cfg.llm.model,
+        "dicta_used": False,
+        "dicta_disabled": not use_dicta,
+    }
+
+    await status("Detecting the question's language")
+    reply_language = await detect_reply_language(qwen, query)
+    entry["reply_language"] = reply_language
+
+    normalized: str | None = None
+    retrieval_query = query
+    if reply_language == "he" and use_dicta:
+        dicta = get_legal_dicta_client(tier_key)
+        entry["dicta_used"] = True
+        await status(f"Normalizing the Hebrew query ({tier_cfg.label})")
+        retrieval_query, rejection = await normalize_hebrew_query(dicta, query)
+        normalized = retrieval_query if rejection is None else None
+        entry["normalization"] = {"output": retrieval_query, "rejected": rejection}
+
+    await status("Searching the Israeli-law index")
+    retrieval = await asyncio.to_thread(retrieve, retrieval_query)
+    grouped = retrieval.by_source_id()
+    evidence = {source_id: parts[0].metadata for source_id, parts in grouped.items()}
+    evidence_text = prompts.format_evidence(grouped)
+    retrieved = [
+        {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "text": c.text, "distance": c.distance, "via": c.via}
+        for c in retrieval.chunks
+    ]
+    question = _question_block(query, normalized)
+    entry["retrieval"] = {
+        "query": retrieval_query,
+        "bundle_verification": retrieval.bundle_verification,
+        "best_distance": retrieval.best_distance,
+        "low_relevance": retrieval.low_relevance,
+        "rejected_chunk_ids": retrieval.rejected_chunk_ids,
+        "duplicate_chunk_ids": retrieval.duplicate_chunk_ids,
+        "chunks": [
+            {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "distance": c.distance, "via": c.via}
+            for c in retrieval.chunks
+        ],
+    }
+
+    await status(f"Pass A: research memorandum over {len(grouped)} source(s)")
+    memo_attempts: list = []
+    memo, gate_errors = await research_memorandum(qwen, evidence_text, question, evidence, memo_attempts)
+    entry["memorandum_attempts"] = memo_attempts
+
+    if gate_errors:
+        reasons = ["The research memorandum failed validation after revision: " + "; ".join(gate_errors[:5])]
+        reasons += _escalation_reasons(None, memo, retrieval, evidence, [])
+        notice = await _localized_notice(qwen, reply_language)
+        output = {
+            "research_memorandum": memo.model_dump() if memo else None,
+            "answer_draft": notice,
+            "escalation_flag": True,
+            "escalation_reason": "; ".join(reasons),
+            "coverage_gaps": None,
+        }
+        entry.update(output=output, polish_status="not_applicable")
+        path = audit.write_entry(entry)
+        return LegalTurnResult(output, notice, [], reply_language, reasons, "not_applicable",
+                               tier_key, tier_cfg.llm.model, entry["dicta_used"], str(path),
+                               retrieved_chunks=retrieved)
+
+    await status("Pass B: drafting the answer and verifying every citation")
+    draft_attempts: list = []
+    draft, checks, draft_failures = await draft_answer(
+        qwen, reply_language, evidence_text, question, memo, retrieval, evidence, draft_attempts
     )
-    user = ChatMessage(
-        role="user",
-        content=(
-            f"Original question:\n{original_message}\n\n"
-            f"Hebrew query sent to the legal model:\n{hebrew_query}\n\n"
-            f"Hebrew legal analysis:\n{findings.analysis_hebrew}\n\n"
-            f"Citations:\n{findings.citations}\n\n"
-            f"Relevant laws:\n{findings.relevant_laws}"
-        ),
-    )
-    return await client.complete_json(
-        [system, user],
-        LLMCallSite("legal_verification"),
-        schema=LegalFinalAnswer,
-        sampling=SamplingParams(temperature=0.2, max_tokens=2048),
-    )
+    entry["draft_attempts"] = draft_attempts
+
+    locked, citation_lock = lock(draft.answer_draft)
+    entry["citation_lock"] = {"digest": citation_lock.digest, "count": len(citation_lock.tokens)}
+    final_locked = locked
+    polish_status = "not_applicable"
+    notes: list[str] = []
+
+    if reply_language == "he" and use_dicta:
+        dicta = get_legal_dicta_client(tier_key)
+        entry["dicta_used"] = True
+        await status(f"Polishing the Hebrew ({tier_cfg.label}) and checking it kept the meaning")
+        polish_attempts: list = []
+        polished = await polish_hebrew(dicta, qwen, locked, citation_lock, polish_attempts)
+        entry["polish_attempts"] = polish_attempts
+        if polished is None:
+            polish_status = "rejected_used_draft"
+            notes.append("The Hebrew polish changed the meaning or citations and was rejected; "
+                         "showing the verified unpolished draft.")
+        else:
+            final_locked, polish_status = polished, "accepted"
+
+    await status("Final citation integrity check")
+    try:
+        final_text = unlock(final_locked, citation_lock)
+    except CitationLockError as exc:
+        final_text, polish_status = draft.answer_draft, "rejected_used_draft"
+        notes.append("The polished text failed the final citation integrity check; showing the verified draft.")
+        entry["final_integrity_error"] = str(exc)
+    final_structural = check_draft_citations(final_text, memo, evidence)
+    entry["final_integrity"] = {
+        "tokens_match_lock": [c.raw for c in parse_citations(final_text)] == citation_lock.tokens,
+        "structural_problems": {f"citation #{i + 1}": p for i, p in final_structural.items()},
+    }
+
+    reasons = _escalation_reasons(draft, memo, retrieval, evidence, checks, draft_failures)
+
+    # Numeric grounding: every number the answer states must be in what it cites.
+    cited_ids = {c.source_id for c in parse_citations(final_text)}
+    numeric_evidence = [
+        c.text for c in retrieval.chunks if not cited_ids or c.metadata.source_id in cited_ids
+    ]
+    ungrounded = unsupported_numbers(strip_citations(final_text), numeric_evidence, question=query)
+    entry["numeric_check"] = {"unsupported": ungrounded, "evidence_chunks": len(numeric_evidence)}
+    if ungrounded:
+        reasons.append("Numbers in the answer not found in the cited sources: " + ", ".join(ungrounded))
+        notes.append("Check these figures against the law: " + ", ".join(ungrounded))
+
+    display, footnotes = _footnotes(final_text, evidence, checks)
+    output = {
+        "research_memorandum": memo.model_dump(),
+        "answer_draft": final_text,
+        "escalation_flag": bool(reasons),
+        "escalation_reason": "; ".join(reasons) or None,
+        "coverage_gaps": draft.coverage_gaps,
+    }
+    entry.update(output=output, polish_status=polish_status, footnotes=footnotes)
+    path = audit.write_entry(entry)
+    return LegalTurnResult(output, display, footnotes, reply_language, reasons, polish_status,
+                           tier_key, tier_cfg.llm.model, entry["dicta_used"], str(path), notes,
+                           retrieved_chunks=retrieved)

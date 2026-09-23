@@ -26,9 +26,17 @@ class ThinkingDefaults(BaseModel):
     chat_general: bool = True
     tone_rewrite: bool = True
     chunk_summary: bool = False
-    legal_orchestration: bool = True
-    legal_hebrew_analysis: bool = True
-    legal_verification: bool = False
+    legal_language_id: bool = False
+    legal_query_normalization: bool = False
+    legal_research_memo: bool = False
+    legal_draft: bool = False
+    legal_citation_verification: bool = False
+    legal_hebrew_polish: bool = False
+    legal_equivalence_check: bool = False
+    legal_eval_baseline: bool = False
+    legal_eval_judge: bool = False
+    canon_orchestration: bool = True
+    canon_answer: bool = False
 
 
 class SamplingDefaults(BaseModel):
@@ -54,17 +62,78 @@ class LLMConfig(BaseModel):
     default_sampling: SamplingDefaults = Field(default_factory=SamplingDefaults)
 
 
+class DictaTierConfig(BaseModel):
+    """One user-selectable DictaLM size for the Legal tab's Hebrew stages
+    (query normalization + final polish). `min_memory_gb` drives the tab's
+    "insufficient RAM" suggestion banner -- see legal/resources.py."""
+
+    label: str
+    min_memory_gb: float
+    llm: LLMConfig
+
+
+class LegalRetrievalConfig(BaseModel):
+    vectordb_dir: str = "./data/legal_vectordb"
+    embedding_model: str = "BAAI/bge-m3"
+    top_k: int = 6
+    fetch_k: int = 24  # candidates considered before dedupe + MMR cut them to top_k
+    mmr_lambda: float = 0.7  # 1.0 = pure relevance; lower = more diversity
+    # Cosine distance above which a hit counts as low-relevance; fewer than
+    # `min_relevant_chunks` hits under it triggers the thin-coverage escalation.
+    low_relevance_distance: float = 0.55
+    min_relevant_chunks: int = 2
+    max_cross_refs: int = 4
+
+
+class LegalIngestionConfig(BaseModel):
+    sources_dir: str = "./data/legal/sources"
+    legal_txt_dir: str = "./legal_txt"
+    uploads_dir: str = "./uploads"
+    staging_dir: str = "./data/legal/staging"
+    bundle_manifest: str = "./data/legal/signed_bundle.json"
+    chunk_max_tokens: int = 500
+
+
+class LegalPipelineConfig(BaseModel):
+    max_memo_revisions: int = 2
+    max_draft_revisions: int = 1
+    max_polish_attempts: int = 2
+    entailment_concurrency: int = 4
+
+
 class LegalConfig(BaseModel):
-    """Model configs for the Legal tab's 3-step pipeline (see
-    src/docslides/legal/pipeline.py): `orchestrator` plans the research and
-    reformulates the question in Hebrew and later verifies/translates the
-    final answer; `hebrew_analyst` (DictaLM) does the actual legal analysis,
-    in Hebrew. Each is a full `LLMConfig` -- they're independent deployments
-    (different model, possibly different host/backend) from the general
-    `llm:` section above, not a variant of it."""
+    """Legal tab: grounded RAG over Israeli law (see src/docslides/legal/).
+    `orchestrator` (Qwen) does research, drafting and every verification
+    step; `dicta_tiers` are the DictaLM sizes the user can pick between for
+    the Hebrew-only normalization/polish stages. Each model is a full
+    `LLMConfig` -- independent deployments from the general `llm:` section."""
 
     orchestrator: LLMConfig
-    hebrew_analyst: LLMConfig
+    dicta_tiers: dict[str, DictaTierConfig]
+    default_dicta_tier: str = "heavy"
+    retrieval: LegalRetrievalConfig = Field(default_factory=LegalRetrievalConfig)
+    ingestion: LegalIngestionConfig = Field(default_factory=LegalIngestionConfig)
+    pipeline: LegalPipelineConfig = Field(default_factory=LegalPipelineConfig)
+    audit_dir: str = "./data/legal/audit"
+
+    def dicta_tier(self, key: str | None) -> tuple[str, DictaTierConfig]:
+        key = key or self.default_dicta_tier
+        if key not in self.dicta_tiers:
+            raise KeyError(f"Unknown DictaLM tier '{key}' (configured: {sorted(self.dicta_tiers)})")
+        return key, self.dicta_tiers[key]
+
+
+class CanonConfig(BaseModel):
+    """Canon GPT tab: RAG over CIC/CCEO/Vatican City civil law -- see
+    src/docslides/canon/ and scripts/ingest_canon_law.py. `generation` is a
+    full `LLMConfig`, independent from the general `llm:` section like
+    `LegalConfig`'s models are, but defaults to pointing at the same
+    deployment since no dedicated fine-tuned model is needed here."""
+
+    vectordb_dir: str = "./data/canon_vectordb"
+    embedding_model: str = "BAAI/bge-m3"
+    top_k: int = 8
+    generation: LLMConfig
 
 
 class PathsConfig(BaseModel):
@@ -173,6 +242,7 @@ class VLLMLaunchConfig(BaseModel):
 class AppConfig(BaseModel):
     llm: LLMConfig
     legal: LegalConfig
+    canon: CanonConfig
     vllm_launch: VLLMLaunchConfig = Field(default_factory=VLLMLaunchConfig)
     paths: PathsConfig
     languages: LanguagesConfig
@@ -194,9 +264,11 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 # between the vLLM and Ollama backends without maintaining a second full
 # config.yaml -- config/config.yaml stays the single source of truth for
 # everything else (languages, OCR routing, sampling defaults, ...). The Legal
-# tab's orchestrator/hebrew_analyst are independent deployments (see
+# tab's orchestrator and DictaLM tiers are independent deployments (see
 # LegalConfig) and get their own override triples so they can be pointed at
 # Ollama separately from -- or together with -- the general `llm:` section.
+# DOCSLIDES_LEGAL_HEBREW_* keeps its old name (setup scripts write it) and
+# now targets the Heavy tier; DOCSLIDES_LEGAL_DICTA_LIGHT_* targets Light.
 _LLM_ENV_OVERRIDES = {
     "DOCSLIDES_LLM_BACKEND": "backend",
     "DOCSLIDES_LLM_BASE_URL": "base_url",
@@ -212,6 +284,16 @@ _LEGAL_HEBREW_ENV_OVERRIDES = {
     "DOCSLIDES_LEGAL_HEBREW_BASE_URL": "base_url",
     "DOCSLIDES_LEGAL_HEBREW_MODEL": "model",
 }
+_LEGAL_DICTA_LIGHT_ENV_OVERRIDES = {
+    "DOCSLIDES_LEGAL_DICTA_LIGHT_BACKEND": "backend",
+    "DOCSLIDES_LEGAL_DICTA_LIGHT_BASE_URL": "base_url",
+    "DOCSLIDES_LEGAL_DICTA_LIGHT_MODEL": "model",
+}
+_CANON_GENERATION_ENV_OVERRIDES = {
+    "DOCSLIDES_CANON_BACKEND": "backend",
+    "DOCSLIDES_CANON_BASE_URL": "base_url",
+    "DOCSLIDES_CANON_MODEL": "model",
+}
 
 
 def _env_overrides(env_map: dict[str, str]) -> dict[str, str]:
@@ -224,14 +306,26 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
         raw = {**raw, "llm": {**raw.get("llm", {}), **llm_overrides}}
 
     orchestrator_overrides = _env_overrides(_LEGAL_ORCHESTRATOR_ENV_OVERRIDES)
-    hebrew_overrides = _env_overrides(_LEGAL_HEBREW_ENV_OVERRIDES)
-    if orchestrator_overrides or hebrew_overrides:
+    tier_overrides = {
+        "heavy": _env_overrides(_LEGAL_HEBREW_ENV_OVERRIDES),
+        "light": _env_overrides(_LEGAL_DICTA_LIGHT_ENV_OVERRIDES),
+    }
+    if orchestrator_overrides or any(tier_overrides.values()):
         legal = raw.get("legal", {})
         if orchestrator_overrides:
             legal = {**legal, "orchestrator": {**legal.get("orchestrator", {}), **orchestrator_overrides}}
-        if hebrew_overrides:
-            legal = {**legal, "hebrew_analyst": {**legal.get("hebrew_analyst", {}), **hebrew_overrides}}
-        raw = {**raw, "legal": legal}
+        tiers = dict(legal.get("dicta_tiers", {}))
+        for tier_key, overrides in tier_overrides.items():
+            if overrides and tier_key in tiers:
+                tier = tiers[tier_key]
+                tiers[tier_key] = {**tier, "llm": {**tier.get("llm", {}), **overrides}}
+        raw = {**raw, "legal": {**legal, "dicta_tiers": tiers}}
+
+    canon_overrides = _env_overrides(_CANON_GENERATION_ENV_OVERRIDES)
+    if canon_overrides:
+        canon = raw.get("canon", {})
+        canon = {**canon, "generation": {**canon.get("generation", {}), **canon_overrides}}
+        raw = {**raw, "canon": canon}
 
     return raw
 
@@ -242,6 +336,16 @@ def get_config(path: str | Path | None = None) -> AppConfig:
     raw = _apply_env_overrides(_load_yaml(cfg_path))
     cfg = AppConfig.model_validate(raw)
     cfg.paths.ensure_exist()
+    Path(cfg.canon.vectordb_dir).mkdir(parents=True, exist_ok=True)
+    for legal_dir in (
+        cfg.legal.retrieval.vectordb_dir,
+        cfg.legal.ingestion.sources_dir,
+        cfg.legal.ingestion.legal_txt_dir,
+        cfg.legal.ingestion.uploads_dir,
+        cfg.legal.ingestion.staging_dir,
+        cfg.legal.audit_dir,
+    ):
+        Path(legal_dir).mkdir(parents=True, exist_ok=True)
     return cfg
 
 

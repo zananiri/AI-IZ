@@ -28,17 +28,102 @@ llm:
     max_tokens: 2048
 
 legal:
-  # Legal tab: a 3-step pipeline (src/docslides/legal/pipeline.py) -- the
-  # orchestrator (Qwen) plans the research and reformulates the user's
-  # question in Hebrew, the Hebrew analyst (DictaLM, an Israeli-law
-  # specialist model) analyzes it in Hebrew, and the orchestrator verifies
-  # the result and translates the final answer back into whatever language
-  # the user asked in. These are independent deployments from the `llm:`
-  # section above -- point base_url at wherever each model actually runs.
+  # Legal tab: grounded RAG over Israeli law (src/docslides/legal/). Qwen
+  # researches (Pass A memorandum), drafts (Pass B), and runs every
+  # verification step; DictaLM only normalizes Hebrew queries and polishes
+  # Hebrew replies. Sources are staged, human-reviewed and signed into the
+  # index offline with scripts/ingest_legal.py. These are independent
+  # deployments from the `llm:` section above.
   orchestrator:
     backend: "vllm"
     base_url: "http://vllm:8000/v1"
     model: "Qwen/Qwen3.5-32B-AWQ"                # verify against the current model repo before deploying
+    api_key: "not-needed"
+    request_timeout_s: 600
+    # Must not exceed the served --max-model-len (docker-compose.yml:
+    # QWEN_MAX_MODEL_LEN, default 8192). At 8192, retrieval.top_k and the
+    # memo/draft output budgets are sized to fit; raise both together (e.g.
+    # 16384) before enabling thinking for legal_research_memo.
+    max_model_len: 8192
+    guided_decoding_backend: "xgrammar"
+    default_sampling:
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 2048
+  # User-selectable DictaLM size for the Hebrew stages (Legal tab radio).
+  # min_memory_gb are starting thresholds at ~4-bit quantization -- benchmark
+  # on the target hardware before trusting the banner they drive.
+  default_dicta_tier: "heavy"
+  dicta_tiers:
+    heavy:
+      label: "Heavy — DictaLM-3.0-24B"
+      min_memory_gb: 16
+      llm:
+        backend: "vllm"
+        base_url: "http://vllm-dictalm:8000/v1"
+        model: "dicta-il/DictaLM-3.0-24B-Thinking"   # verify against the current model repo before deploying
+        api_key: "not-needed"
+        request_timeout_s: 1800                      # CPU/Ollama backends can be well under 2 tok/s
+        max_model_len: 16384
+        guided_decoding_backend: "xgrammar"
+        default_sampling:
+          temperature: 0.2
+          top_p: 0.9
+          max_tokens: 4096
+    light:
+      label: "Light — DictaLM-3.0-12B"
+      min_memory_gb: 8
+      llm:
+        backend: "vllm"
+        base_url: "http://vllm-dictalm-light:8000/v1"
+        model: "dicta-il/DictaLM-3.0-12B"            # placeholder -- verify the exact 12B repo name before deploying
+        api_key: "not-needed"
+        request_timeout_s: 1200
+        max_model_len: 16384
+        guided_decoding_backend: "xgrammar"
+        default_sampling:
+          temperature: 0.2
+          top_p: 0.9
+          max_tokens: 4096
+  retrieval:
+    vectordb_dir: "./data/legal_vectordb"
+    embedding_model: "BAAI/bge-m3"             # multilingual: non-Hebrew queries still match Hebrew statutes
+    top_k: 6
+    fetch_k: 24                                # candidates before dedupe + MMR cut them to top_k
+    mmr_lambda: 0.7                            # 1.0 = pure relevance; lower favours diverse sections
+    low_relevance_distance: 0.55               # cosine distance; tune against real queries
+    min_relevant_chunks: 2
+    max_cross_refs: 4
+  ingestion:
+    sources_dir: "./data/legal/sources"        # official texts + <file>.meta.json sidecars
+    legal_txt_dir: "./legal_txt"               # drop-in law PDFs, indexed by scripts/ingest_legal_txt.py
+    uploads_dir: "./uploads"                   # memos / firm / client documents (always need sign-off)
+    staging_dir: "./data/legal/staging"
+    bundle_manifest: "./data/legal/signed_bundle.json"   # HMAC key: DOCSLIDES_LEGAL_BUNDLE_KEY env var
+    chunk_max_tokens: 500                      # soft; structural boundaries always win
+  pipeline:
+    max_memo_revisions: 2
+    max_draft_revisions: 1
+    max_polish_attempts: 2
+    entailment_concurrency: 4
+  audit_dir: "./data/legal/audit"
+
+canon:
+  # Canon GPT tab: a genuine RAG pipeline (src/docslides/canon/) over the
+  # Code of Canon Law (CIC 1983), Code of Canons of Eastern Churches (CCEO
+  # 1990, Latin only -- see scripts/ingest_canon_law.py header for why), and
+  # Vatican City State civil law, ingested offline into a local ChromaDB
+  # store. `generation` defaults to the general `llm:` model below (no
+  # dedicated deployment needed, unlike the Legal tab's separate DictaLM) --
+  # override it independently only if you want a different model answering
+  # canon-law questions.
+  vectordb_dir: "./data/canon_vectordb"
+  embedding_model: "BAAI/bge-m3"          # local sentence-transformers model, runs on CPU
+  top_k: 8
+  generation:
+    backend: "vllm"
+    base_url: "http://vllm:8000/v1"
+    model: "Qwen/Qwen3.5-32B-AWQ"
     api_key: "not-needed"
     request_timeout_s: 600
     max_model_len: 8192
@@ -47,18 +132,6 @@ legal:
       temperature: 0.2
       top_p: 0.9
       max_tokens: 2048
-  hebrew_analyst:
-    backend: "vllm"
-    base_url: "http://vllm-dictalm:8000/v1"       # separate deployment from the orchestrator above
-    model: "dicta-il/DictaLM-3.0-24B-Thinking"    # verify against the current model repo before deploying
-    api_key: "not-needed"
-    request_timeout_s: 900                        # thinking model -- generations run longer
-    max_model_len: 16384
-    guided_decoding_backend: "xgrammar"
-    default_sampling:
-      temperature: 0.2
-      top_p: 0.9
-      max_tokens: 4096
 
 vllm_launch:
   # Reference command used at deploy time to sanity-check the served model

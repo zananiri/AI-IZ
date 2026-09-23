@@ -35,11 +35,14 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 # The slides pipeline chunks+translates a document properly regardless of
 # size (see pipeline/orchestrator.py). This "just chat about the attached
-# document" path has no such chunking -- it's one prompt -- so cap how much
-# of the extracted text we inject, leaving headroom in max_model_len for the
-# prompt wrapper, conversation history, and the response itself. Long
-# documents get silently truncated here rather than erroring on the LLM
-# call; ask for slides instead if you need the whole thing processed.
+# document" path -- and the plain-pasted-text path below, e.g. pasting a
+# large block of text into the message box to rewrite/translate/summarize --
+# has no such chunking; it's one prompt, so cap how much text we inject,
+# leaving headroom in max_model_len for the prompt wrapper, conversation
+# history, and the response itself. Oversized input is truncated (with a
+# visible marker so it isn't silent) rather than erroring on the LLM call;
+# ask for slides instead if you need an arbitrarily long document processed
+# in full.
 _ATTACHMENT_CONTEXT_TOKEN_FRACTION = 0.5
 
 
@@ -49,7 +52,7 @@ def _fit_to_token_budget(text: str, max_tokens: int) -> str:
         return text
     ratio = max_tokens / tokens
     cut = max(1, int(len(text) * ratio * 0.95))  # extra safety margin, count_tokens is approximate
-    return text[:cut] + "\n\n[... document truncated for length ...]"
+    return text[:cut] + "\n\n[... truncated for length ...]"
 
 
 class ChatRequest(BaseModel):
@@ -126,6 +129,16 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
             ]
         else:
             messages = [ChatMessage(role=m["role"], content=m["content"]) for m in req.messages]
+            # A turn with no attachment can still carry a large block of pasted
+            # text (paste-to-rewrite/translate) as the latest user message --
+            # cap it the same way an attachment's extracted text is capped,
+            # rather than sending it through uncapped and risking a raw
+            # context-length error from the LLM backend.
+            if messages and messages[-1].role == "user":
+                budget = int(get_config().llm.max_model_len * _ATTACHMENT_CONTEXT_TOKEN_FRACTION)
+                messages[-1] = ChatMessage(
+                    role="user", content=_fit_to_token_budget(messages[-1].content, budget)
+                )
 
         await event_bus.publish_status(job_id, "Waiting for model response")
         async for delta in client.stream_chat(messages, LLMCallSite("chat_general")):
@@ -144,7 +157,6 @@ async def _run_tone_rewrite(job_id: str, req: ToneRewriteRequest) -> None:
     client = get_client()
     try:
         task_description = req.task_description
-        text_to_rewrite = req.text
 
         if req.attachment_path:
             document_text, _ = await extract_document_text(job_id, req.attachment_path)
@@ -153,6 +165,11 @@ async def _run_tone_rewrite(job_id: str, req: ToneRewriteRequest) -> None:
             if req.text:
                 # Typed text alongside an attachment is extra instruction, not the rewrite target.
                 task_description = f"{req.task_description}\n\nAdditional instructions: {req.text}"
+        else:
+            # Large pasted text (paste-to-rewrite) gets the same cap an
+            # attachment's extracted text gets -- see _run_chat_turn above.
+            budget = int(get_config().llm.max_model_len * _ATTACHMENT_CONTEXT_TOKEN_FRACTION)
+            text_to_rewrite = _fit_to_token_budget(req.text, budget)
 
         tone = ToneSettings(professionalism=req.professionalism, creativity=req.creativity)
         system_prompt = compose_rewrite_system_prompt(tone, task_description)

@@ -7,9 +7,11 @@
     enabled, the model's <think>...</think> block streamed separately from
     the final answer. Rendered as a collapsible reasoning panel above the
     streaming final answer.
-  * "citations" -- Legal tab only: the structured citations/relevant-laws
-    output of the verification stage (see legal/pipeline.py), rendered in a
-    side panel rather than the chat bubble.
+  * "citations" -- Legal / Canon tabs: structured source citations,
+    rendered in a side panel rather than the chat bubble.
+  * "legal_report" -- Legal tab only: the pipeline's structured output
+    (research memorandum, escalation, DictaLM tier) -- see
+    api/routes_legal.py.
 
 Each job/chat-turn gets its own asyncio.Queue so multiple concurrent
 requests don't cross-talk.
@@ -27,7 +29,7 @@ import orjson
 
 @dataclass
 class Event:
-    kind: Literal["status", "reasoning_delta", "content_delta", "citations", "done", "error"]
+    kind: Literal["status", "reasoning_delta", "content_delta", "citations", "legal_report", "done", "error"]
     data: dict
     ts: float = field(default_factory=time.time)
 

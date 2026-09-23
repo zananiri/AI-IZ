@@ -11,7 +11,7 @@ from docslides.config import get_config
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
-ALLOWED_SUFFIXES = {".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff"}
+ALLOWED_SUFFIXES = {".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"}
 
 
 @router.post("/upload")

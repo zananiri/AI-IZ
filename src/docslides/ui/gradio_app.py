@@ -207,8 +207,17 @@ def build_chat_tab() -> None:
         msg_box = gr.MultimodalTextbox(
             label="Message",
             scale=4,
-            placeholder='Ask a question, request a translation or rewrite, or say "make this into a presentation" -- attach a document (PDF, DOCX, PPTX, XLSX, image) with the 📎 button',
-            file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff"],
+            lines=4,
+            max_lines=24,
+            placeholder='Ask a question, paste a large block of text to rewrite/translate/summarize, or say '
+            '"make this into a presentation" -- attach a document (PDF, DOCX, PPTX, XLSX, image, or .txt) instead with the 📎 button',
+            # .txt matters here beyond ordinary file attachments: pasting a
+            # large enough block of text makes the browser/Gradio turn the
+            # paste itself into a text/plain file attachment instead of
+            # inline text (see ingestion/parser.py's plain-text fast path) --
+            # without .txt allowed, every large paste was rejected outright
+            # with "Invalid file type: text/plain".
+            file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
             file_count="single",
             sources=["upload"],
         )
@@ -249,39 +258,70 @@ def build_chat_tab() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Legal tab -- a 3-step pipeline (see api/routes_legal.py, legal/pipeline.py):
-# an orchestrator model plans the research and reformulates the question in
-# Hebrew, a Hebrew legal-domain model (DictaLM) analyzes it in Hebrew, and
-# the orchestrator verifies the result and translates the final answer back
-# into whatever language the user asked in. Citations/relevant laws are kept
-# out of the chat bubble and shown in a side panel instead.
+# Legal tab -- grounded RAG over Israeli law (see api/routes_legal.py,
+# legal/pipeline.py): Qwen researches, drafts and verifies against sources
+# approved into the signed index; DictaLM (user-selected tier) only normalizes
+# Hebrew questions and polishes Hebrew answers. Citations appear as [n]
+# markers in the answer and as footnotes (with verification status) in the
+# side panel; the Pass A research memorandum is viewable below them.
 # ---------------------------------------------------------------------------
 
+_LEGAL_DISCLAIMER = "_Draft pending review by a licensed attorney -- not legal advice._"
 
-def _format_citations(citations: list[str], relevant_laws: list[str]) -> str:
-    if not citations and not relevant_laws:
+
+def _format_legal_footnotes(footnotes: list[dict]) -> str:
+    if not footnotes:
         return "_No citations yet._"
-    sections = []
-    if relevant_laws:
-        sections.append("**Relevant laws**\n" + "\n".join(f"- {law}" for law in relevant_laws))
-    if citations:
-        sections.append("**Citations**\n" + "\n".join(f"- {c}" for c in citations))
-    return "\n\n".join(sections)
+    entries = []
+    for note in footnotes:
+        law_section = f"{note.get('law', '')} — {note.get('section', '')}"
+        details = " · ".join(
+            part
+            for part in (
+                note.get("source_type"),
+                note.get("source_origin"),
+                note.get("effective"),
+                None if note.get("status") == "current" else f"**{note.get('status')}**",
+                "/".join(note.get("relations", [])),
+            )
+            if part
+        )
+        verified = (
+            "✅ verified against source"
+            if note.get("verified")
+            else "⚠️ **not verified**: " + "; ".join(note.get("problems", []))
+        )
+        entries.append(f"**[{note['number']}]** {law_section}  \n_{details}_  \n{verified}")
+    return "\n\n".join(entries)
+
+
+def _legal_bubble(content_text: str, report: dict | None) -> str:
+    if report is None:
+        return content_text
+    parts = []
+    if report.get("escalation_flag"):
+        reasons = report.get("escalation_reasons") or [report.get("escalation_reason") or ""]
+        parts.append("⚠️ **Escalation -- attorney review needed:**\n" + "\n".join(f"- {r}" for r in reasons if r))
+    parts.append(content_text)
+    if report.get("coverage_gaps"):
+        parts.append(f"**Coverage gaps:** {report['coverage_gaps']}")
+    parts.extend(f"_{note}_" for note in report.get("notes", []))
+    parts.append(_LEGAL_DISCLAIMER)
+    return "\n\n".join(parts)
 
 
 def _stream_legal_job(job_id: str, history: list):
-    """Same SSE event contract as `_stream_job`, plus a "citations" event
-    kind (the verification stage's structured citations/relevant-laws
-    output) routed to the side panel instead of the chat bubble. Also
-    derives a persistent `llm_status` line -- the 3-step pipeline (plan ->
-    Hebrew analysis -> verify) already publishes a status event per stage
-    (see api/routes_legal.py), this just keeps that visible instead of
-    discarding it once the answer starts rendering."""
+    """Same SSE contract as `_stream_job`, plus "citations" (footnotes, to
+    the side panel) and "legal_report" (memorandum, escalation, DictaLM
+    tier used), which arrives after the answer text and wraps it with the
+    escalation banner, coverage gaps and disclaimer."""
     content_text = ""
     status_text = "Connecting"
     llm_status = f"🔌 {status_text}..."
     started_streaming = False
     citations_md = "_No citations yet._"
+    report: dict | None = None
+    memo = None
 
     with httpx.Client(timeout=None) as client:
         with client.stream("GET", f"{API_BASE_URL}/api/legal-events/{job_id}") as resp:
@@ -301,7 +341,177 @@ def _stream_legal_job(job_id: str, history: list):
                         content_text += data["text"]
                         llm_status = "✍️ Writing response..."
                     elif event_kind == "citations":
-                        citations_md = _format_citations(data.get("citations", []), data.get("relevant_laws", []))
+                        citations_md = _format_legal_footnotes(data.get("citations", []))
+                    elif event_kind == "legal_report":
+                        report = data
+                        memo = data.get("research_memorandum")
+                    elif event_kind == "done":
+                        llm_status = "✅ Done"
+                        if report and report.get("dicta_used"):
+                            llm_status += f" · DictaLM: {report.get('dicta_tier')} ({report.get('dicta_model')})"
+                    elif event_kind == "error":
+                        content_text += f"\n\n⚠️ {data.get('message')}"
+                        started_streaming = True
+                        llm_status = "❌ Error"
+
+                    lang = (report or {}).get("reply_language") or (
+                        detect_language(content_text[:200]) if started_streaming else None
+                    )
+                    display_text = _legal_bubble(content_text, report) if started_streaming else f"_{status_text}..._"
+                    new_history = history + [{"role": "assistant", "content": display_text}]
+                    yield (
+                        gr.update(value=new_history, rtl=_is_rtl_lang(lang)),
+                        gr.update(value=None),
+                        gr.update(value=citations_md),
+                        gr.update(value=llm_status),
+                        gr.update(value=memo),
+                    )
+                    if event_kind in ("done", "error"):
+                        break
+
+
+def send_legal_message(message: str, history: list, dicta_tier: str):
+    message = (message or "").strip()
+    if not message:
+        yield history, gr.update(), gr.update(), gr.update(), gr.update()
+        return
+
+    history = history + [{"role": "user", "content": message}]
+    payload = {"messages": [{"role": "user", "content": message}], "dicta_tier": dicta_tier}
+
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(f"{API_BASE_URL}/api/legal-chat", json=payload)
+        resp.raise_for_status()
+        job_id = resp.json()["job_id"]
+
+    yield from _stream_legal_job(job_id, history)
+
+
+def check_dicta_tier(selected: str):
+    """Non-blocking RAM suggestion: shows the banner + a one-click switch when
+    the selected DictaLM tier doesn't fit, and never changes the tier itself."""
+    hidden = (gr.update(visible=False), gr.update(visible=False), None)
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(f"{API_BASE_URL}/api/legal/dicta-tiers", params={"selected": selected})
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError:
+        return hidden
+    if not data.get("message"):
+        return hidden
+    suggest = data.get("suggest")
+    labels = {t["key"]: t["label"] for t in data.get("tiers", [])}
+    return (
+        gr.update(value=f"⚠️ {data['message']}", visible=True),
+        gr.update(value=f"Switch to {labels.get(suggest, suggest)}", visible=bool(suggest)),
+        suggest,
+    )
+
+
+def build_legal_tab(demo: gr.Blocks, legal_tab: gr.Tab) -> None:
+    legal = get_config().legal
+    gr.Markdown(
+        f"_Research & verification: **{legal.orchestrator.model}** via **{legal.orchestrator.backend}** "
+        "· Hebrew normalization & polish: DictaLM (tier below)_"
+    )
+    dicta_tier = gr.Radio(
+        choices=[(tier.label, key) for key, tier in legal.dicta_tiers.items()],
+        value=legal.default_dicta_tier,
+        label="DictaLM tier (Hebrew questions / answers only)",
+    )
+    with gr.Row():
+        tier_banner = gr.Markdown(visible=False)
+        switch_tier_btn = gr.Button(visible=False, size="sm", scale=0)
+    suggested_tier = gr.State(None)
+
+    with gr.Row():
+        with gr.Column(scale=3):
+            legal_chatbot = gr.Chatbot(label="Legal Assistant")
+            legal_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
+            with gr.Row():
+                legal_msg_box = gr.Textbox(
+                    label="Legal question",
+                    scale=4,
+                    placeholder="Ask a question about Israeli law in any language -- answered only from the "
+                    "reviewed statutes, regulations and rulings in the local index, in your language",
+                )
+                legal_send_btn = gr.Button("Send", scale=1)
+        with gr.Column(scale=1):
+            gr.Markdown("### Citations")
+            citations_panel = gr.Markdown(value="_No citations yet._")
+            with gr.Accordion("Research memorandum (Pass A)", open=False):
+                memo_view = gr.JSON(value=None, label="Claims → evidence")
+
+    send_inputs = [legal_msg_box, legal_chatbot, dicta_tier]
+    send_outputs = [legal_chatbot, legal_msg_box, citations_panel, legal_llm_status, memo_view]
+    legal_send_btn.click(fn=send_legal_message, inputs=send_inputs, outputs=send_outputs)
+    legal_msg_box.submit(fn=send_legal_message, inputs=send_inputs, outputs=send_outputs)
+
+    # Checked on app start, whenever the tab is opened, and on every tier change.
+    check_outputs = [tier_banner, switch_tier_btn, suggested_tier]
+    dicta_tier.change(fn=check_dicta_tier, inputs=[dicta_tier], outputs=check_outputs)
+    legal_tab.select(fn=check_dicta_tier, inputs=[dicta_tier], outputs=check_outputs)
+    demo.load(fn=check_dicta_tier, inputs=[dicta_tier], outputs=check_outputs)
+    switch_tier_btn.click(fn=lambda suggest: gr.update(value=suggest), inputs=[suggested_tier], outputs=[dicta_tier])
+
+
+# ---------------------------------------------------------------------------
+# Canon GPT tab -- a RAG pipeline (see api/routes_canon.py, canon/pipeline.py,
+# canon/retrieval.py): an orchestrator model reformulates the question and
+# guesses which code(s) it's about, retrieval fetches matching provisions
+# from a local vector store built offline from vatican.va/vaticanstate.va
+# (scripts/ingest_canon_law.py), and the orchestrator answers grounded in
+# that retrieved text. Unlike the Legal tab, citations here are real source
+# links pulled from retrieval metadata rather than model-generated text.
+# ---------------------------------------------------------------------------
+
+
+def _format_canon_citations(citations: list[dict]) -> str:
+    if not citations:
+        return "_No citations yet._"
+    lines = []
+    for c in citations:
+        label = c.get("label", "")
+        url = c.get("url")
+        breadcrumb = c.get("breadcrumb", "")
+        entry = f"[{label}]({url})" if url else label
+        if breadcrumb:
+            entry += f" — {breadcrumb}"
+        lines.append(f"- {entry}")
+    return "\n".join(lines)
+
+
+def _stream_canon_job(job_id: str, history: list):
+    """Same SSE event contract as `_stream_legal_job`; the "citations" event
+    here carries structured {label, url, breadcrumb} entries built straight
+    from retrieval metadata (see routes_canon.py), rendered as linked
+    citations instead of plain text."""
+    content_text = ""
+    status_text = "Connecting"
+    llm_status = f"\U0001f50c {status_text}..."
+    started_streaming = False
+    citations_md = "_No citations yet._"
+
+    with httpx.Client(timeout=None) as client:
+        with client.stream("GET", f"{API_BASE_URL}/api/canon-events/{job_id}") as resp:
+            event_kind = None
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                if line.startswith("event:"):
+                    event_kind = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data = json.loads(line.split(":", 1)[1].strip())
+                    if event_kind == "status":
+                        status_text = data["message"]
+                        llm_status = f"⏳ {status_text}..."
+                    elif event_kind == "content_delta":
+                        started_streaming = True
+                        content_text += data["text"]
+                        llm_status = "✍️ Writing response..."
+                    elif event_kind == "citations":
+                        citations_md = _format_canon_citations(data.get("citations", []))
                     elif event_kind == "done":
                         llm_status = "✅ Done"
                         break
@@ -322,7 +532,7 @@ def _stream_legal_job(job_id: str, history: list):
                     )
 
 
-def send_legal_message(message: str, history: list):
+def send_canon_message(message: str, history: list):
     message = (message or "").strip()
     if not message:
         yield history, gr.update(), gr.update(), gr.update()
@@ -332,43 +542,45 @@ def send_legal_message(message: str, history: list):
     payload = {"messages": [{"role": "user", "content": message}]}
 
     with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/legal-chat", json=payload)
+        resp = client.post(f"{API_BASE_URL}/api/canon-chat", json=payload)
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
 
-    yield from _stream_legal_job(job_id, history)
+    yield from _stream_canon_job(job_id, history)
 
 
-def build_legal_tab() -> None:
+def build_canon_tab() -> None:
     cfg = get_config()
     gr.Markdown(
-        f"_Orchestrator: **{cfg.legal.orchestrator.model}** via **{cfg.legal.orchestrator.backend}** "
-        f"· Hebrew analyst: **{cfg.legal.hebrew_analyst.model}** via **{cfg.legal.hebrew_analyst.backend}**_"
+        f"_Model: **{cfg.canon.generation.model}** via **{cfg.canon.generation.backend}** "
+        f"· retrieval: **{cfg.canon.embedding_model}** over CIC 1983, CCEO 1990 (Latin), "
+        "Vatican City State civil law_"
     )
     with gr.Row():
         with gr.Column(scale=3):
-            legal_chatbot = gr.Chatbot(label="Legal Assistant")
-            legal_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
+            canon_chatbot = gr.Chatbot(label="Canon GPT")
+            canon_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
             with gr.Row():
-                legal_msg_box = gr.Textbox(
-                    label="Legal question",
+                canon_msg_box = gr.Textbox(
+                    label="Question",
                     scale=4,
-                    placeholder="Ask a legal question in any language -- researched against Israeli law via a Hebrew legal-analysis model",
+                    placeholder="Ask about canon law or Vatican City State civil law, in any language -- "
+                    "researched against the Code of Canon Law, CCEO, and Vatican civil/financial law",
                 )
-                legal_send_btn = gr.Button("Send", scale=1)
+                canon_send_btn = gr.Button("Send", scale=1)
         with gr.Column(scale=1):
-            gr.Markdown("### Citations & Relevant Laws")
-            citations_panel = gr.Markdown(value="_No citations yet._")
+            gr.Markdown("### Sources")
+            canon_citations_panel = gr.Markdown(value="_No citations yet._")
 
-    legal_send_btn.click(
-        fn=send_legal_message,
-        inputs=[legal_msg_box, legal_chatbot],
-        outputs=[legal_chatbot, legal_msg_box, citations_panel, legal_llm_status],
+    canon_send_btn.click(
+        fn=send_canon_message,
+        inputs=[canon_msg_box, canon_chatbot],
+        outputs=[canon_chatbot, canon_msg_box, canon_citations_panel, canon_llm_status],
     )
-    legal_msg_box.submit(
-        fn=send_legal_message,
-        inputs=[legal_msg_box, legal_chatbot],
-        outputs=[legal_chatbot, legal_msg_box, citations_panel, legal_llm_status],
+    canon_msg_box.submit(
+        fn=send_canon_message,
+        inputs=[canon_msg_box, canon_chatbot],
+        outputs=[canon_chatbot, canon_msg_box, canon_citations_panel, canon_llm_status],
     )
 
 
@@ -378,8 +590,10 @@ def build_app() -> gr.Blocks:
         with gr.Tabs():
             with gr.Tab("General GPT"):
                 build_chat_tab()
-            with gr.Tab("Legal GPT"):
-                build_legal_tab()
+            with gr.Tab("Legal GPT") as legal_tab:
+                build_legal_tab(demo, legal_tab)
+            with gr.Tab("Canon GPT"):
+                build_canon_tab()
     return demo
 
 

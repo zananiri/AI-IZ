@@ -15,7 +15,13 @@
 # Env overrides:
 #   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-32B-AWQ
 #   OLLAMA_MODEL         Ollama path model tag (general + Legal orchestrator).
-#                        default: qwen3:32b
+#                        default: qwen3:32b on a >=48GB-RAM host, auto-
+#                        downgraded to qwen3:8b below that (set this env var
+#                        to override either way). qwen3:32b's ~20GB GGUF plus
+#                        llama.cpp's CPU "repack" buffer (another ~14-20GB,
+#                        briefly resident while loading) reliably hits
+#                        std::bad_alloc under ~48GB RAM, which looks like the
+#                        app "not responding" rather than a load failure.
 #   OLLAMA_DICTALM_MODEL Ollama path model tag for the Legal tab's Hebrew
 #                        analyst. default: dicta-il/DictaLM-3.0-24B-Thinking
 #   FORCE_BACKEND        "vllm" or "ollama" -- skip GPU auto-detection
@@ -114,7 +120,22 @@ if [ "$BACKEND" = "vllm" ]; then
   rm -f .env.local
 else
   echo "== [5/7] Ollama path: installing Ollama + pulling the model =="
-  OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:32b}"
+  if [ -z "${OLLAMA_MODEL:-}" ]; then
+    TOTAL_RAM_GB=0
+    if [ "$OS_NAME" = "Darwin" ]; then
+      TOTAL_RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
+    elif command -v free >/dev/null 2>&1; then
+      TOTAL_RAM_GB=$(( $(free -b | awk '/^Mem:/{print $2}') / 1073741824 ))
+    fi
+    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 48 ]; then
+      OLLAMA_MODEL="qwen3:8b"
+      echo "[note] ${TOTAL_RAM_GB}GB RAM detected -- defaulting Ollama chat model to qwen3:8b"
+      echo "       instead of qwen3:32b (which needs ~48GB+ RAM to load reliably under"
+      echo "       Ollama's CPU backend). Set OLLAMA_MODEL=qwen3:32b to override."
+    else
+      OLLAMA_MODEL="qwen3:32b"
+    fi
+  fi
   if ! command -v ollama >/dev/null 2>&1; then
     if [ "$OS_NAME" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
       brew install ollama || SKIPPED+=("ollama (brew)")
@@ -130,6 +151,18 @@ else
   fi
 
   if command -v ollama >/dev/null 2>&1; then
+    # The Legal tab uses two independent Ollama deployments (orchestrator +
+    # Hebrew analyst) back to back. Left at Ollama's default of "as many as
+    # fit", both can end up loaded at once and the second load fails with the
+    # same allocation error as an oversized single model on a modest host.
+    # Pin it to one resident model at a time so the second call evicts the
+    # first instead of fighting it for RAM.
+    export OLLAMA_MAX_LOADED_MODELS=1
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+      if [ -f "$rc" ] && ! grep -q "^export OLLAMA_MAX_LOADED_MODELS=" "$rc" 2>/dev/null; then
+        echo 'export OLLAMA_MAX_LOADED_MODELS=1' >> "$rc"
+      fi
+    done
     if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
       echo "Starting 'ollama serve' in the background..."
       nohup ollama serve >/tmp/ollama-serve.log 2>&1 &
@@ -137,6 +170,10 @@ else
         curl -sf http://localhost:11434/api/tags >/dev/null 2>&1 && break
         sleep 1
       done
+    else
+      echo "[note] ollama is already running -- if it wasn't just started by this"
+      echo "       script, restart it (e.g. 'brew services restart ollama', or quit"
+      echo "       and reopen the app) so OLLAMA_MAX_LOADED_MODELS=1 takes effect."
     fi
     echo "Pulling $OLLAMA_MODEL (this is a large download, comparable to the vLLM weights)..."
     ollama pull "$OLLAMA_MODEL" || {

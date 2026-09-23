@@ -69,9 +69,17 @@ class LLMCallSite:
         "chat_general",
         "tone_rewrite",
         "chunk_summary",
-        "legal_orchestration",
-        "legal_hebrew_analysis",
-        "legal_verification",
+        "legal_language_id",
+        "legal_query_normalization",
+        "legal_research_memo",
+        "legal_draft",
+        "legal_citation_verification",
+        "legal_hebrew_polish",
+        "legal_equivalence_check",
+        "legal_eval_baseline",
+        "legal_eval_judge",
+        "canon_orchestration",
+        "canon_answer",
     ]
 
 
@@ -172,6 +180,41 @@ class QwenClient:
             return reasoning, content
         return "", text.strip()
 
+    @property
+    def model(self) -> str:
+        return self._llm_cfg.model
+
+    async def _post_completion(self, payload: dict[str, Any]) -> str:
+        """Non-streamed completion; returns the content with any reasoning stripped."""
+        resp = await self._client.post(self._chat_path, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        if self._backend == "vllm":
+            _, content = self._split_thinking(data["choices"][0]["message"]["content"])
+            return content
+        message = data["message"]
+        content = message["content"]
+        if not message.get("thinking"):
+            # Older Ollama builds / models that ignore "think" still
+            # emit reasoning inline as <think> tags in content.
+            _, content = self._split_thinking(content)
+        return content
+
+    async def complete_text(
+        self,
+        messages: list[ChatMessage],
+        call_site: LLMCallSite,
+        sampling: SamplingParams | None = None,
+        enable_thinking: bool | None = None,
+    ) -> str:
+        """Free-text generation, for call sites whose output is prose that
+        must not be forced through a JSON schema (e.g. DictaLM's normalized
+        query / polished reply in legal/pipeline.py)."""
+        payload = self._build_payload(
+            messages, call_site, sampling, enable_thinking, guided_json_schema=None, stream=False
+        )
+        return (await self._post_completion(payload)).strip()
+
     async def complete_json(
         self,
         messages: list[ChatMessage],
@@ -196,19 +239,7 @@ class QwenClient:
                 guided_json_schema=schema.model_json_schema(),
                 stream=False,
             )
-            resp = await self._client.post(self._chat_path, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            if self._backend == "vllm":
-                raw_content = data["choices"][0]["message"]["content"]
-                _, content = self._split_thinking(raw_content)
-            else:
-                message = data["message"]
-                content = message["content"]
-                if not message.get("thinking"):
-                    # Older Ollama builds / models that ignore "think" still
-                    # emit reasoning inline as <think> tags in content.
-                    _, content = self._split_thinking(content)
+            content = await self._post_completion(payload)
 
             try:
                 parsed = json.loads(content)
@@ -325,7 +356,8 @@ class QwenClient:
 
 _client_singleton: QwenClient | None = None
 _legal_orchestrator_singleton: QwenClient | None = None
-_legal_hebrew_singleton: QwenClient | None = None
+_legal_dicta_clients: dict[str, QwenClient] = {}
+_canon_generation_singleton: QwenClient | None = None
 
 
 def get_client() -> QwenClient:
@@ -336,27 +368,41 @@ def get_client() -> QwenClient:
 
 
 def get_legal_orchestrator_client() -> QwenClient:
-    """Qwen: plans the Legal tab's research and reformulates the question in
-    Hebrew, then verifies/translates the final answer. See legal/pipeline.py."""
+    """Qwen: the Legal tab's research, drafting and verification model. See
+    legal/pipeline.py."""
     global _legal_orchestrator_singleton
     if _legal_orchestrator_singleton is None:
         _legal_orchestrator_singleton = QwenClient(get_config().legal.orchestrator)
     return _legal_orchestrator_singleton
 
 
-def get_legal_hebrew_client() -> QwenClient:
-    """DictaLM: does the actual Hebrew-language legal analysis. See
-    legal/pipeline.py."""
-    global _legal_hebrew_singleton
-    if _legal_hebrew_singleton is None:
-        _legal_hebrew_singleton = QwenClient(get_config().legal.hebrew_analyst)
-    return _legal_hebrew_singleton
+def get_legal_dicta_client(tier: str) -> QwenClient:
+    """DictaLM at the user-selected tier (config.legal.dicta_tiers): Hebrew
+    query normalization and Hebrew polish only. See legal/pipeline.py."""
+    if tier not in _legal_dicta_clients:
+        _, tier_cfg = get_config().legal.dicta_tier(tier)
+        _legal_dicta_clients[tier] = QwenClient(tier_cfg.llm)
+    return _legal_dicta_clients[tier]
+
+
+def get_canon_generation_client() -> QwenClient:
+    """Answers Canon GPT questions grounded in retrieved canon-law chunks.
+    See canon/pipeline.py."""
+    global _canon_generation_singleton
+    if _canon_generation_singleton is None:
+        _canon_generation_singleton = QwenClient(get_config().canon.generation)
+    return _canon_generation_singleton
 
 
 async def aclose_all_clients() -> None:
     """Closes whichever of the above singletons were actually instantiated,
     without creating new ones just to close them -- called once at app
     shutdown (see api/main.py's lifespan)."""
-    for client in (_client_singleton, _legal_orchestrator_singleton, _legal_hebrew_singleton):
+    for client in (
+        _client_singleton,
+        _legal_orchestrator_singleton,
+        *_legal_dicta_clients.values(),
+        _canon_generation_singleton,
+    ):
         if client is not None:
             await client.aclose()

@@ -27,11 +27,21 @@
 
 .PARAMETER OllamaModel
     Model tag to pull when the Ollama backend is selected (general chat model
-    + Legal tab orchestrator). Default: qwen3:32b
+    + Legal tab orchestrator). Default: qwen3:32b on a >=48GB-RAM host,
+    auto-downgraded to qwen3:8b on anything smaller (pass this explicitly to
+    override the auto-pick either way). qwen3:32b's GGUF weights are ~20GB and
+    llama.cpp's CPU "repack" step needs a similarly sized second buffer while
+    loading -- on a 32GB machine that reliably fails with
+    "ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate ..." /
+    "std::bad_alloc", which is exactly what makes the chat/Legal tabs look
+    like they hang or don't respond.
 
 .PARAMETER OllamaDictalmModel
     Model tag to pull for the Legal tab's Hebrew analyst when the Ollama
-    backend is selected. Default: dicta-il/DictaLM-3.0-24B-Thinking
+    backend is selected. Default: dicta-il/DictaLM-3.0-24B-Thinking. This one
+    has no smaller official tag on Ollama's registry yet, so it's used as-is
+    on every host size -- on a <48GB-RAM machine expect it to work but run at
+    CPU speed (roughly 1-2 tok/s on a modest laptop CPU), not to fail outright.
 
 .EXAMPLE
     .\scripts\setup.ps1
@@ -154,6 +164,27 @@ if (-not $Backend) {
     $Backend = if ($HasNvidia) { "vllm" } else { "ollama" }
 }
 Write-Host "selected backend: $Backend"
+
+# On the Ollama (CPU/no-NVIDIA) path, right-size the default chat model to
+# the host's RAM unless the caller explicitly passed -OllamaModel. qwen3:32b's
+# ~20GB GGUF plus llama.cpp's CPU "repack" buffer (another ~14-20GB, briefly
+# resident during load) reliably hits std::bad_alloc on anything under ~48GB
+# of RAM -- see the setup.ps1 header comment. That failure looks like the app
+# "not responding" rather than an install error, so it's worth avoiding by
+# default rather than documenting after the fact.
+if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel")) {
+    $TotalRamGB = 0
+    try {
+        $TotalRamGB = [math]::Round((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).TotalPhysicalMemory / 1GB)
+    } catch {}
+    if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 48) {
+        $OllamaModel = "qwen3:8b"
+        Write-Host "[note] $TotalRamGB GB RAM detected -- defaulting Ollama chat model to qwen3:8b" -ForegroundColor Yellow
+        Write-Host "       instead of qwen3:32b (which needs ~48GB+ RAM to load reliably under" -ForegroundColor Yellow
+        Write-Host "       Ollama's CPU backend). Override with -OllamaModel qwen3:32b if you" -ForegroundColor Yellow
+        Write-Host "       still want it." -ForegroundColor Yellow
+    }
+}
 Write-Host ""
 
 # ---------------------------------------------------------------------------
@@ -204,11 +235,36 @@ if ($Backend -eq "vllm") {
     }
 
     if (Get-Command ollama -ErrorAction SilentlyContinue) {
+        # The Legal tab uses two independent Ollama deployments (orchestrator
+        # + Hebrew analyst) back to back. Left at Ollama's default of "as many
+        # as fit", both can end up loaded at once and the second load fails
+        # with the same allocation error as an oversized single model on a
+        # modest host. Pin it to one resident model at a time so the second
+        # call evicts the first instead of fighting it for RAM.
+        $NeedsRestart = $false
+        if ([System.Environment]::GetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "User") -ne "1") {
+            [System.Environment]::SetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "1", "User")
+            $NeedsRestart = $true
+        }
+        $env:OLLAMA_MAX_LOADED_MODELS = "1"
+
         $ollamaUp = $false
         try { Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2 | Out-Null; $ollamaUp = $true } catch {}
+        if ($ollamaUp -and $NeedsRestart) {
+            Write-Host "Restarting Ollama so OLLAMA_MAX_LOADED_MODELS=1 takes effect..."
+            Get-Process -Name "ollama", "ollama app" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            $ollamaUp = $false
+        }
         if (-not $ollamaUp) {
-            Write-Host "Starting 'ollama serve' in the background..."
-            Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden
+            $OllamaAppExe = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama app.exe"
+            if (Test-Path $OllamaAppExe) {
+                Write-Host "Starting the Ollama app in the background..."
+                Start-Process -FilePath $OllamaAppExe
+            } else {
+                Write-Host "Starting 'ollama serve' in the background..."
+                Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden
+            }
             for ($i = 0; $i -lt 15 -and -not $ollamaUp; $i++) {
                 Start-Sleep -Seconds 1
                 try { Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2 | Out-Null; $ollamaUp = $true } catch {}

@@ -78,37 +78,140 @@ class ChatIntent(BaseModel):
     )
 
 
-class LegalQueryPlan(BaseModel):
-    """Stage 1 (orchestrator) output for the Legal tab: reformulates the
-    user's question into a precise Hebrew legal-research query for the
-    Hebrew-analyst model -- see legal/pipeline.py."""
+LegalSourceType = Literal["statute", "regulation", "ruling", "uploaded_document"]
 
-    hebrew_query: str = Field(
-        description="The user's legal question, translated and reformulated into clear, precise Hebrew, "
-        "self-contained and ready to hand to an Israeli-law legal analysis model"
+
+class LegalIssue(BaseModel):
+    issue_id: str = Field(description="'I1', 'I2', ...")
+    question: str
+    legal_domain: str
+
+
+class LegalFact(BaseModel):
+    fact_id: str = Field(description="'F1', 'F2', ...")
+    text: str
+    source: Literal["user_input"] = "user_input"
+
+
+class GoverningLawClaim(BaseModel):
+    claim_id: str = Field(description="'C1', 'C2', ... -- the only claim IDs the draft may cite")
+    text: str = Field(description="The legal proposition")
+    issue_id: str
+    fact_ids: list[str] = Field(
+        default_factory=list, description="fact_ids from facts_relied_on this proposition applies to, if any"
     )
-    topic_summary: str = Field(description="One short phrase (in English) naming the legal topic/area, for status display")
 
 
-class HebrewLegalFindings(BaseModel):
-    """Stage 2 (Hebrew analyst / DictaLM) output for the Legal tab: the
-    analysis itself, with citations and relevant laws kept as separate
-    fields (rather than embedded in prose) so they can be shown in their own
-    panel and carried through verification unchanged."""
-
-    analysis_hebrew: str = Field(description="The full legal analysis and answer, in Hebrew")
-    citations: list[str] = Field(default_factory=list, description="Case citations / legal sources relied on, in Hebrew")
-    relevant_laws: list[str] = Field(default_factory=list, description="Relevant statutes/laws/sections relied on, in Hebrew")
+class SupportingAuthority(BaseModel):
+    claim_id: str
+    source_id: str = Field(description="Exactly as given in the retrieved evidence metadata")
+    law: str
+    section: str
+    effective: str
+    source_type: LegalSourceType
 
 
-class LegalFinalAnswer(BaseModel):
-    """Stage 3 (orchestrator, verification) output for the Legal tab: the
-    answer translated into the user's own language and checked against the
-    Hebrew findings; citations/laws are carried through as-is (in Hebrew)."""
+class ContraryAuthority(SupportingAuthority):
+    note: str = Field(description="How this source qualifies, limits or contradicts the claim")
+
+
+class ResearchMemorandum(BaseModel):
+    """Legal tab Pass A (Qwen): the claim -> evidence graph that the draft is
+    only allowed to cite from. Checked by legal/validation.py's gate before
+    Pass B may run."""
+
+    issues: list[LegalIssue]
+    facts_relied_on: list[LegalFact] = Field(default_factory=list)
+    governing_law: list[GoverningLawClaim]
+    supporting_authority: list[SupportingAuthority] = Field(default_factory=list)
+    contrary_authority: list[ContraryAuthority] = Field(default_factory=list)
+    contrary_search_performed: bool
+    unresolved_questions: list[str] = Field(default_factory=list)
+    temporal_issues: list[str] = Field(default_factory=list)
+    authority_conflicts: list[str] = Field(default_factory=list)
+
+
+class LegalDraft(BaseModel):
+    """Legal tab Pass B (Qwen): prose in the reply language with inline
+    [[CITE: ...]] tokens referencing Pass A claim IDs only."""
+
+    answer_draft: str
+    escalation_flag: bool
+    escalation_reason: str | None = None
+    coverage_gaps: str | None = None
+
+
+class EntailmentVerdict(BaseModel):
+    """Legal tab citation verification: does the cited evidence actually
+    establish the stated relation (supports / contrary) to the claim?"""
+
+    verdict: Literal["entailed", "partially_entailed", "not_entailed"]
+    explanation: str
+
+
+class EquivalenceDiscrepancy(BaseModel):
+    location: str
+    pre_polish: str
+    post_polish: str
+    issue: str
+
+
+class EquivalenceReport(BaseModel):
+    """Legal tab: Qwen's independent check that DictaLM's Hebrew polish kept
+    the draft's meaning (modal verbs, attribution strength, qualifiers)."""
+
+    equivalent: bool
+    discrepancies: list[EquivalenceDiscrepancy] = Field(default_factory=list)
+
+
+class EvalJudgement(BaseModel):
+    """scripts/eval_legal.py: grades one answer against its gold answer."""
+
+    verdict: Literal["correct", "partially_correct", "incorrect", "abstained"]
+    fabricated_specifics: bool = Field(
+        description="True if the answer states a specific number, date, amount or rule that is not in the gold answer"
+    )
+    explanation: str
+
+
+class ReplyLanguage(BaseModel):
+    language: str = Field(description="ISO 639-1 code of the language the question is written in")
+
+
+class CanonQueryPlan(BaseModel):
+    """Stage 1 (orchestrator) output for the Canon GPT tab: reformulates the
+    user's question into a focused search query for the local canon-law
+    vector store, and names which code(s) it's most likely about so
+    retrieval can optionally be filtered -- see canon/pipeline.py."""
+
+    search_query: str = Field(
+        description="The user's question, reformulated into a precise, self-contained search query "
+        "suitable for embedding-based retrieval over canon/civil-law text"
+    )
+    likely_codes: list[Literal["cic", "cceo", "vcs_law"]] = Field(
+        default_factory=list,
+        description="Which code(s) the question is most likely about: 'cic' (Code of Canon Law, Latin "
+        "Church), 'cceo' (Code of Canons of the Eastern Churches), 'vcs_law' (Vatican City State civil "
+        "law -- penal, procedural, financial). Empty list if genuinely unclear -- retrieval then searches "
+        "all codes unfiltered.",
+    )
+    topic_summary: str = Field(description="One short phrase (in English) naming the topic, for status display")
+
+
+class CanonFinalAnswer(BaseModel):
+    """Stage 3 (orchestrator) output for the Canon GPT tab: the answer
+    grounded strictly in the retrieved chunks handed to it, in the user's own
+    language. Citations are NOT free-formed by the model -- the UI/pipeline
+    populates the citations panel from the retrieved chunks' own metadata
+    (real vatican.va/vaticanstate.va URLs), this field is only which of the
+    provided canon/article numbers the answer actually relied on."""
 
     answer: str = Field(description="The final answer to the user, in the user's own language")
-    citations: list[str] = Field(default_factory=list)
-    relevant_laws: list[str] = Field(default_factory=list)
+    cited_provisions: list[str] = Field(
+        default_factory=list,
+        description="Canon/article numbers from the provided context that the answer actually relies on, "
+        "exactly as given (e.g. 'CIC Can. 1055', 'Art. 12')",
+    )
 
 
 SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
@@ -118,7 +221,12 @@ SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "translated_chunk": TranslatedChunk,
     "chunk_summary": ChunkSummary,
     "chat_intent": ChatIntent,
-    "legal_query_plan": LegalQueryPlan,
-    "hebrew_legal_findings": HebrewLegalFindings,
-    "legal_final_answer": LegalFinalAnswer,
+    "research_memorandum": ResearchMemorandum,
+    "legal_draft": LegalDraft,
+    "entailment_verdict": EntailmentVerdict,
+    "equivalence_report": EquivalenceReport,
+    "reply_language": ReplyLanguage,
+    "eval_judgement": EvalJudgement,
+    "canon_query_plan": CanonQueryPlan,
+    "canon_final_answer": CanonFinalAnswer,
 }

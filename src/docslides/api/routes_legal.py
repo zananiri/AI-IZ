@@ -1,11 +1,15 @@
-"""Legal tab chat endpoint: runs the 3-step pipeline in legal/pipeline.py --
-an orchestrator model (Qwen) plans the research and reformulates the user's
-question in Hebrew, a Hebrew legal-domain model (DictaLM) analyzes it in
-Hebrew, and the orchestrator verifies the result and translates the final
-answer back into whatever language the user asked in. Citations and
-relevant laws are published as their own SSE event (see api/events.py) so
-the UI can show them in a side panel separate from the answer, rather than
-folded into the answer's prose.
+"""Legal tab endpoints.
+
+  * POST /api/legal-chat + GET /api/legal-events/{job_id}: runs one turn of
+    the grounded Israeli-law pipeline (legal/pipeline.py) and streams it:
+    "status" per stage, the answer as "content_delta" (citation tokens
+    rendered as [n] footnote markers), a "citations" event with the
+    footnotes (law, section, effective range, relation, verified or not),
+    and a "legal_report" event with the spec section 9 output (research
+    memorandum, escalation, coverage gaps) plus which DictaLM tier/model
+    handled the turn.
+  * GET /api/legal/dicta-tiers: the RAM/VRAM check behind the tab's tier
+    suggestion banner (legal/resources.py). Measured on this API host.
 """
 
 from __future__ import annotations
@@ -13,43 +17,50 @@ from __future__ import annotations
 import asyncio
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from docslides.api.events import Event, event_bus
-from docslides.ingestion.language_detect import detect_language
-from docslides.legal.pipeline import analyze_legal_query, run_hebrew_legal_analysis, verify_and_finalize
-from docslides.llm.client import ChatMessage, get_legal_hebrew_client, get_legal_orchestrator_client
+from docslides.config import get_config
+from docslides.legal.pipeline import run_legal_turn
+from docslides.legal.resources import tier_report
 
 router = APIRouter(prefix="/api", tags=["legal"])
 
 
 class LegalChatRequest(BaseModel):
     messages: list[dict]  # [{"role": "user"|"assistant"|"system", "content": str}]
+    dicta_tier: str | None = None  # key of config.legal.dicta_tiers; default tier if omitted
 
 
 async def _run_legal_turn(job_id: str, req: LegalChatRequest) -> None:
-    orchestrator = get_legal_orchestrator_client()
-    hebrew_client = get_legal_hebrew_client()
     try:
-        user_message = req.messages[-1]["content"] if req.messages else ""
-        user_lang = detect_language(user_message) or "en"
-        messages = [ChatMessage(role=m["role"], content=m["content"]) for m in req.messages]
+        query = req.messages[-1]["content"] if req.messages else ""
 
-        await event_bus.publish_status(job_id, "Analyzing your question")
-        plan = await analyze_legal_query(orchestrator, messages)
+        async def status(message: str) -> None:
+            await event_bus.publish_status(job_id, message)
 
-        await event_bus.publish_status(job_id, f"Researching Israeli law: {plan.topic_summary}")
-        findings = await run_hebrew_legal_analysis(hebrew_client, plan.hebrew_query)
+        result = await run_legal_turn(query, req.dicta_tier, job_id, status)
 
-        await event_bus.publish_status(job_id, "Verifying the answer")
-        final = await verify_and_finalize(orchestrator, user_message, user_lang, plan.hebrew_query, findings)
-
-        await event_bus.publish(job_id, Event(kind="content_delta", data={"text": final.answer}))
+        await event_bus.publish(job_id, Event(kind="content_delta", data={"text": result.display_answer}))
+        await event_bus.publish(job_id, Event(kind="citations", data={"citations": result.footnotes}))
         await event_bus.publish(
             job_id,
-            Event(kind="citations", data={"citations": final.citations, "relevant_laws": final.relevant_laws}),
+            Event(
+                kind="legal_report",
+                data={
+                    **result.output,
+                    "escalation_reasons": result.escalation_reasons,
+                    "reply_language": result.reply_language,
+                    "polish_status": result.polish_status,
+                    "dicta_tier": result.dicta_tier,
+                    "dicta_model": result.dicta_model,
+                    "dicta_used": result.dicta_used,
+                    "notes": result.notes,
+                    "audit_path": result.audit_path,
+                },
+            ),
         )
         await event_bus.publish_done(job_id)
     except Exception as exc:  # noqa: BLE001
@@ -58,6 +69,11 @@ async def _run_legal_turn(job_id: str, req: LegalChatRequest) -> None:
 
 @router.post("/legal-chat")
 async def legal_chat(req: LegalChatRequest) -> dict:
+    try:
+        get_config().legal.dicta_tier(req.dicta_tier)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     job_id = uuid.uuid4().hex[:12]
     event_bus.create(job_id)
 
@@ -68,3 +84,11 @@ async def legal_chat(req: LegalChatRequest) -> dict:
 @router.get("/legal-events/{job_id}")
 async def legal_events(job_id: str) -> EventSourceResponse:
     return EventSourceResponse(event_bus.stream(job_id))
+
+
+@router.get("/legal/dicta-tiers")
+async def legal_dicta_tiers(selected: str | None = None) -> dict:
+    try:
+        return await asyncio.to_thread(tier_report, selected)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

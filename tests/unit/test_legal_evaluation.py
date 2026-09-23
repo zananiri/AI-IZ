@@ -59,3 +59,10 @@ def test_summary_and_report():
     assert summary["before"]["score"] == 50 and summary["after"]["score"] == 100
     assert summary["after"]["hallucinations"] == 0
     assert "| A1 | hallucination |" in ev.render_report({"eval_set": "t"}, questions, before, after, summary)
+
+
+def test_rescore_after_reuses_stored_coverage():
+    q = _q(group="A")
+    record = {"retrieval": 1.0, "citation": 0.0}
+    assert ev.rescore_after(q, record, "correct", False, [])["score"] == 2 / 3
+    assert ev.rescore_after(q, record, "abstained", False, [])["score"] == 1 / 3

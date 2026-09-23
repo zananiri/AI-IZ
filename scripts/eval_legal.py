@@ -7,6 +7,7 @@
     python scripts/eval_legal.py --phase after --no-dicta
     python scripts/eval_legal.py --run-dir data/legal/eval/<run>   # resume / re-report a run
     python scripts/eval_legal.py --only A1,B4,C2
+    python scripts/eval_legal.py --run-dir data/legal/eval/<run> --rejudge   # re-grade saved answers
 
 BEFORE: the orchestrator model answers each question with no context.
 AFTER: the full Legal pipeline answers over the index. Every answer is graded
@@ -140,6 +141,32 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
     return results
 
 
+async def rejudge(questions, run_dir: Path) -> None:
+    """Re-grades saved answers with the current judge prompt; the pipeline is not re-run."""
+    qwen = get_legal_orchestrator_client()
+    before, after = _load(run_dir / "before.json"), _load(run_dir / "after.json")
+    ev.backfill_answer_texts(before, after)
+    for q in questions:
+        for phase, results in (("BEFORE", before), ("AFTER", after)):
+            record = results.get(q.id)
+            if not record or record.get("error"):
+                continue
+            old = record.get("classification") or record.get("verdict")
+            graded = await _grade(qwen, q, record.get("answer_text", ""))
+            record.update(graded)
+            if phase == "BEFORE":
+                record["classification"] = ev.classify_baseline(
+                    q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"]
+                )
+            else:
+                record.update(ev.rescore_after(q, record, graded["verdict"], graded["fabricated_specifics"],
+                                               graded["trap_hits"]))
+            new = record.get("classification") or record.get("verdict")
+            _log(f"REJUDGE {phase} {q.id}: {old} -> {new}")
+    _save(run_dir / "before.json", before)
+    _save(run_dir / "after.json", after)
+
+
 async def main_async(args) -> int:
     meta_set, questions = ev.load_eval_set(Path(args.eval_set))
     if args.only:
@@ -162,6 +189,13 @@ async def main_async(args) -> int:
         "retrieval": f"{legal.retrieval.embedding_model}, top_k={legal.retrieval.top_k}",
     }
     _save(run_dir / "meta.json", meta)
+
+    if args.rejudge:
+        try:
+            await rejudge(questions, run_dir)
+        finally:
+            await aclose_all_clients()
+        args.phase = "report"
 
     try:
         before = await run_before(questions, run_dir / "before.json") if args.phase in ("before", "both") else _load(run_dir / "before.json")
@@ -207,6 +241,8 @@ def main() -> int:
     parser.add_argument("--ingest", action="store_true", help="index legal_txt/ before the after-RAG phase")
     parser.add_argument("--no-dicta", action="store_true", help="skip DictaLM stages in the after-RAG run")
     parser.add_argument("--dicta-tier", default=None)
+    parser.add_argument("--rejudge", action="store_true",
+                        help="re-grade the run's saved answers with the current judge prompt, then re-report")
     return asyncio.run(main_async(parser.parse_args()))
 
 

@@ -33,12 +33,20 @@ def _mentions(texts: list[str], claim_id: str) -> bool:
     )
 
 
+# Phrases only the gate's own error messages contain (see validate_memorandum):
+# a small model asked to fix them sometimes pastes them into the memo instead.
+_ECHOED_ERROR_RE = re.compile(
+    r"has no supporting_authority|has no contrary_authority|contrary_search_performed must be true|"
+    r"is not listed in unresolved_questions|never invent a source_id|must be carried through unchanged"
+)
+
+
 def clean_memorandum(memo: ResearchMemorandum) -> ResearchMemorandum:
     """Drops free-text list entries with no letters or digits (e.g. "],"
     leaked from a malformed generation) so they can't surface as escalation
     reasons or count as explanations."""
     def keep(values: list[str]) -> list[str]:
-        return [v.strip() for v in values if re.search(r"\w", v)]
+        return [v.strip() for v in values if re.search(r"\w", v) and not _ECHOED_ERROR_RE.search(v)]
 
     return memo.model_copy(
         update={
@@ -47,6 +55,33 @@ def clean_memorandum(memo: ResearchMemorandum) -> ResearchMemorandum:
             "authority_conflicts": keep(memo.authority_conflicts),
         }
     )
+
+
+AUTO_NOTE_MARK = "(auto-recorded)"
+
+
+def record_contrary_search_notes(memo: ResearchMemorandum) -> tuple[ResearchMemorandum, list[str]]:
+    """The spec requires every claim without contrary authority to say so
+    explicitly in unresolved_questions. When the model affirms it searched
+    (contrary_search_performed) but left a supported claim's note out -- the
+    single most common reason a small model's memo fails the gate -- record
+    the note for it, marked auto-recorded, instead of burning a revision.
+    Unsupported claims and a missing search are never papered over."""
+    if not memo.contrary_search_performed:
+        return memo, []
+    supported = {a.claim_id for a in memo.supporting_authority}
+    with_contrary = {a.claim_id for a in memo.contrary_authority}
+    added = [
+        f"{claim.claim_id}: the search of the retrieved evidence for limiting or contrary authority "
+        f"found none {AUTO_NOTE_MARK}"
+        for claim in memo.governing_law
+        if claim.claim_id in supported
+        and claim.claim_id not in with_contrary
+        and not _mentions(memo.unresolved_questions, claim.claim_id)
+    ]
+    if not added:
+        return memo, []
+    return memo.model_copy(update={"unresolved_questions": [*memo.unresolved_questions, *added]}), added
 
 
 def _duplicates(values: list[str]) -> list[str]:

@@ -113,7 +113,7 @@ TASK -- Pass B, draft. Write `answer_draft` in {language_name(reply_language)} (
 - Immediately after each sentence expressing a claim, attach a citation token -- including contrary-authority citations where they matter to the analysis; don't bury caveats. Write it exactly in this short form, with NO quotation marks anywhere inside it:
   [[CITE: claim_id=C1 | source_id=<source_id exactly as in the evidence> | relation=supports]]
   relation is "supports" for a pair listed in supporting_authority and "contrary" for one listed in contrary_authority; the claim_id/source_id pair must be one the memorandum lists. Law name, section, effective date and source type are filled in automatically from the source's metadata -- don't add them.
-- Phrase conclusions as findings ("the retrieved sources indicate X applies to these facts"), never as directives ("you should file X").
+- Phrase conclusions as findings about what the sources say, never as directives telling the user what to do. Write every word of the answer in the answer language -- never mix in English phrases.
 - Set escalation_flag / escalation_reason per the escalation rules above; put what the evidence does not cover in coverage_gaps."""
     )
 

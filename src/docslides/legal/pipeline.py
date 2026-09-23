@@ -49,7 +49,12 @@ from docslides.legal.retrieval import (
     amendment_index,
     retrieve,
 )
-from docslides.legal.validation import check_draft_citations, clean_memorandum, validate_memorandum
+from docslides.legal.validation import (
+    check_draft_citations,
+    clean_memorandum,
+    record_contrary_search_notes,
+    validate_memorandum,
+)
 from docslides.llm.client import (
     ChatMessage,
     LLMCallSite,
@@ -193,6 +198,7 @@ async def research_memorandum(
     ]
     errors: list[str] = ["no memorandum produced"]
     memo: ResearchMemorandum | None = None
+    best: tuple[ResearchMemorandum, list[str]] | None = None
     for attempt in range(1 + max_revisions):
         try:
             memo = await qwen.complete_json(
@@ -206,19 +212,33 @@ async def research_memorandum(
             errors = [f"memorandum generation failed: {exc}"]
             attempts_log.append({"attempt": attempt + 1, "memorandum": None, "errors": errors})
             continue
+        memo, auto_notes = record_contrary_search_notes(memo)
         errors = validate_memorandum(memo, evidence)
-        attempts_log.append({"attempt": attempt + 1, "memorandum": memo.model_dump(), "errors": errors})
+        attempts_log.append(
+            {"attempt": attempt + 1, "memorandum": memo.model_dump(), "errors": errors, "auto_recorded_notes": auto_notes}
+        )
         if not errors:
             return memo, []
+        # A revision can come back worse than what it revised (a small model asked to add one
+        # note may drop its supporting source instead): always revise from, and fall back to,
+        # the attempt with the fewest problems.
+        if best is None or len(errors) < len(best[1]):
+            best = (memo, errors)
+        base, base_errors = best
         messages = [
             *messages[:2],
-            ChatMessage("assistant", memo.model_dump_json()),
+            ChatMessage("assistant", base.model_dump_json()),
             ChatMessage(
                 "user",
-                "The memorandum failed validation and cannot go forward to drafting. Fix every problem below "
-                "and return the complete corrected memorandum:\n- " + "\n- ".join(errors),
+                "The memorandum failed validation and cannot go forward to drafting. Keep everything that is "
+                "already correct -- in particular every supporting_authority entry -- and fix only the problems "
+                "below. Do not copy these problem descriptions into any field. Return the complete corrected "
+                "memorandum:\n- " + "\n- ".join(base_errors),
             ),
         ]
+    if best is not None:
+        attempts_log.append({"kept_attempt_with_fewest_problems": len(best[1])})
+        return best
     return memo, errors
 
 

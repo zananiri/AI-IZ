@@ -85,7 +85,7 @@ def wire(monkeypatch, tmp_path):
         return _retrieval()
 
     monkeypatch.setattr(pipeline, "retrieve", fake_retrieve)
-    monkeypatch.setattr(pipeline, "amendment_index", lambda: {})  # never touch the real vector DB
+    monkeypatch.setattr(pipeline, "amendment_index", dict)  # never touch the real vector DB
 
     def install(qwen, dicta):
         monkeypatch.setattr(pipeline, "get_legal_orchestrator_client", lambda: qwen)
@@ -250,3 +250,42 @@ def test_short_form_citation_is_expanded_and_a_citationless_draft_escalates(wire
     uncited = _run("Can I cancel a contract I signed by mistake?")
     assert uncited.output["escalation_flag"]
     assert any("no [[CITE]] tokens" in r for r in uncited.escalation_reasons)
+
+
+def test_memo_revisions_start_from_the_best_attempt_not_the_last(wire):
+    # One problem the gate can't auto-fix: a claim linked to a fact that doesn't exist.
+    nearly = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "fact_ids": ["F9"]}]}
+    worse = {**nearly, "supporting_authority": [], "authority_conflicts": ["C1 has no supporting_authority and is not listed in unresolved_questions"]}
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_language_id": [{"language": "en"}],
+            "legal_research_memo": [nearly, worse, GOOD_MEMO],
+            "legal_draft": [{"answer_draft": f"A mistaken party may rescind. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}],
+        },
+    )
+    wire(qwen, FakeClient("dicta"))
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    memo_calls = [messages for name, messages in qwen.calls if name == "legal_research_memo"]
+    revised_from = memo_calls[2][2].content  # the assistant turn the third attempt was asked to fix
+    assert '"supporting_authority":[{' in revised_from.replace(" ", "")  # attempt 1, not the worse attempt 2
+    assert not result.output["escalation_flag"]
+    assert result.output["research_memorandum"]["authority_conflicts"] == []
+
+
+def test_failed_gate_keeps_the_attempt_with_fewest_problems(wire):
+    nearly = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "fact_ids": ["F9"]}]}
+    worse = {**nearly, "supporting_authority": [], "unresolved_questions": []}
+    qwen = FakeClient(
+        "qwen",
+        json_responses={"legal_language_id": [{"language": "en"}], "legal_research_memo": [nearly, worse, worse]},
+    )
+    wire(qwen, FakeClient("dicta"))
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    assert result.output["research_memorandum"]["supporting_authority"]  # attempt 1 kept
+    assert len([r for r in result.escalation_reasons if "has no supporting_authority" in r]) == 0

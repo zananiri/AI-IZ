@@ -13,7 +13,13 @@ from docslides.legal.citations import (
 )
 from docslides.legal.models import ChunkMetadata
 from docslides.legal.resources import MemorySnapshot, TierStatus, evaluate_tier, suggestion
-from docslides.legal.validation import check_draft_citations, clean_memorandum, validate_memorandum
+from docslides.legal.validation import (
+    AUTO_NOTE_MARK,
+    check_draft_citations,
+    clean_memorandum,
+    record_contrary_search_notes,
+    validate_memorandum,
+)
 from docslides.llm.schemas import ResearchMemorandum
 
 LAW = 'חוק החוזים (חלק כללי), תשל"ג-1973'  # contains an ASCII double quote on purpose
@@ -170,3 +176,17 @@ def test_bare_claim_id_is_not_an_explanation_and_junk_entries_are_dropped():
     errors = validate_memorandum(clean_memorandum(gamed), {})
     assert any("C1 has no supporting_authority" in e for e in errors)
     assert clean_memorandum(memo(authority_conflicts=["],", " real conflict "])).authority_conflicts == ["real conflict"]
+
+
+def test_missing_contrary_note_is_auto_recorded_only_when_the_search_was_affirmed():
+    bare = memo(unresolved_questions=[])
+    fixed, added = record_contrary_search_notes(bare)
+    assert len(added) == 1 and AUTO_NOTE_MARK in added[0]
+    assert validate_memorandum(fixed, {"law@1973:14": meta()}) == []
+
+    not_searched, added = record_contrary_search_notes(memo(unresolved_questions=[], contrary_search_performed=False))
+    assert added == [] and validate_memorandum(not_searched, {"law@1973:14": meta()})
+
+    unsupported, added = record_contrary_search_notes(memo(unresolved_questions=[], supporting_authority=[]))
+    assert added == []  # an unsupported claim still has to be listed as unresolved by the model
+    assert any("no supporting_authority" in e for e in validate_memorandum(unsupported, {}))

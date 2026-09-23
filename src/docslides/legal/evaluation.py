@@ -47,6 +47,8 @@ verdict:
 - "incorrect": contradicts the gold answer, gets its key fact wrong (e.g. yes instead of no, a wrong number, values swapped), or answers a different question.
 - "abstained": declines, says it does not know, or says the information is unavailable / not stated.
 If the gold answer says the law does NOT state something, then saying it is not stated / not in the document is "correct", and giving a specific value is "incorrect".
+If the gold answer DOES give an answer, a refusal or "could not be answered / not found" reply is "abstained" -- never "correct", whatever the reason given.
+Section numbers: an amending law changes another law's sections, so the same provision can be cited either by the amending law's section (e.g. "section 6(4)") or by the section it inserts or amends (e.g. "section 116יז10(ה)"). Treat both as the same provision; never mark an answer wrong only for citing the other number.
 
 fabricated_specifics: true if the answer asserts a specific number, date, amount or rule as the answer that the gold answer does not support.
 
@@ -138,6 +140,17 @@ def score_after(q: EvalQuestion, verdict: str, fabricated: bool, traps: list[str
     answer = _ANSWER_POINTS.get(verdict, 0.0)
     parts = [p for p in (retrieval, answer, citation) if p is not None]
     return {"score": sum(parts) / len(parts), "retrieval": retrieval, "answer": answer, "citation": citation}
+
+
+def rescore_after(q: EvalQuestion, record: dict, verdict: str, fabricated: bool, traps: list[str]) -> dict:
+    """score_after for a saved record: reuses its stored retrieval/citation
+    coverage (the retrieved texts aren't saved), with a new verdict."""
+    if q.group == "C":
+        return score_after(q, verdict, fabricated, traps, [], [])
+    answer = _ANSWER_POINTS.get(verdict, 0.0)
+    parts = [p for p in (record.get("retrieval"), answer, record.get("citation")) if p is not None]
+    return {"score": sum(parts) / len(parts), "retrieval": record.get("retrieval"), "answer": answer,
+            "citation": record.get("citation")}
 
 
 def summarize(questions: list[EvalQuestion], before: dict, after: dict) -> dict:

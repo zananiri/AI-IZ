@@ -71,13 +71,62 @@ def test_internal_cross_references_resolve_and_external_ones_are_skipped():
     assert sections["4"].cross_refs == []  # "section 5 of the Sale Law" is external
 
 
+def test_references_joined_by_or_to_another_law_are_external():
+    # "סעיפים 6 או 7 לחוק־יסוד" once linked this law's section 6 (a whole amendment of it).
+    assert extract_cross_references("מועמד אינו כשיר, לפי סעיפים 6 או 7 לחוק־יסוד: הכנסת") == []
+    assert extract_cross_references("לפי סעיפים 6 או 7") == ["6", "7"]
+    assert extract_cross_references("הוראות סעיפים 21א ו־24(ט1)") == ["21א", "24"]
+
+
+AMENDING_LAW = """\
+חוק הבחירות (הוראות מיוחדות), התשפ"ו-2026
+1. הוראות פרק זה יחולו לעניין הבחירות.
+2. כאמור בסעיף 1, יושב ראש הוועדה רשאי לקבוע הוראות.
+⟦תיקון חוק מיסוי תשלומים - מס' 11⟧
+3. בחוק מיסוי תשלומים בתקופת בחירות, התשנ"ו-1996, בסעיף 2(ב), במקום "25%" יבוא "18%".
+4. בחוק המפלגות, התשנ"ב-1992, בסעיף 2, אחרי "של ראש הרשות" יבוא "לרבות צילום".
+"""
+
+
+def test_amending_sections_link_no_cross_references(monkeypatch):
+    monkeypatch.setattr(get_config().legal.ingestion, "chunk_max_tokens", 500)
+    meta = SourceMeta(law_id="elections", law_name='חוק הבחירות (הוראות מיוחדות), התשפ"ו-2026',
+                      effective_date_start="2026-07-16", status="current", source_type="statute",
+                      source_origin="knesset")
+    by_id = {c.metadata.chunk_id: c for c in chunk_sections(parse_sections(AMENDING_LAW), meta, "2026-09-23")}
+
+    assert by_id["elections@2026-07-16:2"].metadata.cross_references == ["elections@2026-07-16:1"]
+    # "בסעיף 2" in an amendment is section 2 of the amended law, not of this one --
+    # whether the section is marked by its "תיקון" title (3) or only by its opening words (4).
+    assert by_id["elections@2026-07-16:3"].metadata.cross_references == []
+    assert by_id["elections@2026-07-16:4"].metadata.cross_references == []
+
+
+def test_hebrew_chunks_store_gershayim_instead_of_ascii_quotes(monkeypatch):
+    monkeypatch.setattr(get_config().legal.ingestion, "chunk_max_tokens", 500)
+    chunks = chunk_sections(parse_sections(AMENDING_LAW), SourceMeta(
+        law_id="elections", law_name='חוק הבחירות (הוראות מיוחדות), התשפ"ו-2026', effective_date_start="2026-07-16",
+        status="current", source_type="statute", source_origin="knesset"), "2026-09-23")
+    amendment = next(c for c in chunks if c.metadata.section_number == "3")
+
+    assert all('"' not in c.text and '"' not in c.metadata.breadcrumb for c in chunks)
+    assert 'במקום ״25%״ יבוא ״18%״' in amendment.text and "התשנ״ו-1996" in amendment.text
+    assert amendment.metadata.law_name == 'חוק הבחירות (הוראות מיוחדות), התשפ"ו-2026'  # identity field untouched
+
+    english = SourceMeta(law_id="en", law_name="Contracts Law", effective_date_start="1973-06-01", status="current",
+                         source_type="statute", source_origin="knesset", language="en")
+    (chunk,) = chunk_sections(parse_sections('1. The term "offer" means a proposal.'), english, "2026-09-23")
+    assert '"offer"' in chunk.text
+
+
 def test_short_sections_are_one_chunk_with_breadcrumb_and_metadata(monkeypatch):
     monkeypatch.setattr(get_config().legal.ingestion, "chunk_max_tokens", 500)
     chunks = chunk_sections(parse_sections(STATUTE), META, "2026-09-23")
     by_id = {c.metadata.chunk_id: c for c in chunks}
 
     chunk = by_id["contracts-1973@1973-06-01:14"]
-    assert chunk.text.startswith('חוק החוזים (חלק כללי), תשל"ג-1973 > פרק ב\': ביטול החוזה > סעיף 14 — טעות')
+    # Stored Hebrew text carries ״ where the source had an ASCII double quote (normalize_hebrew_quotes).
+    assert chunk.text.startswith("חוק החוזים (חלק כללי), תשל״ג-1973 > פרק ב': ביטול החוזה > סעיף 14 — טעות")
     assert chunk.metadata.source_type == "statute"
     assert chunk.metadata.source_origin == "knesset"
     assert by_id["contracts-1973@1973-06-01:3"].metadata.cross_references == ["contracts-1973@1973-06-01:4"]

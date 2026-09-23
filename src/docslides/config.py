@@ -83,6 +83,18 @@ class LegalRetrievalConfig(BaseModel):
     low_relevance_distance: float = 0.55
     min_relevant_chunks: int = 2
     max_cross_refs: int = 4
+    # Precision -- what actually reaches the model. A small model handed a full
+    # top_k of loosely related provisions drops or garbles the one that answers,
+    # and every extra token costs CPU time. None disables each limit.
+    #   relevance_margin: search hits farther than this (cosine distance) from
+    #     the best hit are cut; the best hit always stays.
+    #   sibling_margin: another part of a split provision is added only if it is
+    #     itself within this distance of the best hit.
+    #   max_evidence_tokens: budget for all evidence (hits, sibling parts,
+    #     cross-references), filled best-first; counted like chunk budgets.
+    relevance_margin: float | None = 0.08
+    sibling_margin: float | None = 0.12
+    max_evidence_tokens: int | None = 2500
 
 
 class LegalIngestionConfig(BaseModel):
@@ -124,7 +136,7 @@ class LegalConfig(BaseModel):
 
 
 class CanonConfig(BaseModel):
-    """Canon GPT tab: RAG over CIC/CCEO/Vatican City civil law -- see
+    """Canon GPT tab: RAG over the CIC and CCEO canon-law codes -- see
     src/docslides/canon/ and scripts/ingest_canon_law.py. `generation` is a
     full `LLMConfig`, independent from the general `llm:` section like
     `LegalConfig`'s models are, but defaults to pointing at the same

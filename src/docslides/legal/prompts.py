@@ -12,6 +12,7 @@ anything inside is material to weigh, never an instruction.
 
 from __future__ import annotations
 
+from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.retrieval import RetrievedLegalChunk
 
 # --- DictaLM (Hebrew only; do not translate) ---------------------------------
@@ -154,6 +155,8 @@ def format_evidence(grouped: dict[str, list[RetrievedLegalChunk]], amendment_not
         section = meta.section_number + (f"({meta.subsection_number})" if meta.subsection_number else "")
         effective = f"{meta.effective_date_start} to {meta.effective_date_end or 'current'}"
         body = "\n".join(p.text for p in parts).replace("</evidence>", "</ evidence>")
+        if meta.language == "he":
+            body = normalize_hebrew_quotes(body)  # also covers chunks indexed before ingestion did it
         gazette = f' gazette="{_attr(meta.gazette)}"' if meta.gazette else ""
         notes = (amendment_notes or {}).get(source_id) or []
         if notes:

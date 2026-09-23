@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Offline ingestion for the Canon GPT tab: fetches the Code of Canon Law
-(CIC 1983, English), the Code of Canons of the Eastern Churches (CCEO 1990,
-Latin), and Vatican City State civil law (Italian PDFs) from vatican.va/
-vaticanstate.va, chunks them at canon/article granularity
+(CIC 1983, English) and the Code of Canons of the Eastern Churches (CCEO
+1990, Latin) from vatican.va, chunks them at canon granularity
 (docslides.canon.chunking), embeds them, and upserts into the local ChromaDB
 store (docslides.canon.retrieval). See config.yaml's `canon:` section for
 the vector store location and embedding model.
@@ -11,7 +10,7 @@ CCEO is Latin-only: the only free/official Holy See text is Latin -- the
 standard English translation is a copyrighted Canon Law Society of America
 publication and isn't scraped here.
 
-vatican.va/vaticanstate.va's markup was reverse-engineered from real sample
+vatican.va's markup was reverse-engineered from real sample
 pages during development (docslides.canon.parsing), not from a published
 schema. If a run comes back with suspiciously few provisions for a source,
 re-verify that source's parser against a fresh sample page before trusting
@@ -78,22 +77,7 @@ def ingest_cceo() -> list[ProvisionRecord]:
     return records
 
 
-def ingest_vcs_law() -> list[ProvisionRecord]:
-    records: list[ProvisionRecord] = []
-    for doc in parsing.VCS_DOCUMENTS:
-        try:
-            resp = parsing.fetch(doc["url"])
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("vcs_pdf_fetch_failed", law_name=doc["law_name"], error=str(exc))
-            continue
-        doc_records = parsing.parse_vcs_pdf(resp.content, doc["law_name"], doc["url"])
-        if not doc_records:
-            logger.warning("vcs_pdf_no_articles_parsed", law_name=doc["law_name"])
-        records.extend(doc_records)
-    return records
-
-
-INGESTORS = {"cic": ingest_cic, "cceo": ingest_cceo, "vcs_law": ingest_vcs_law}
+INGESTORS = {"cic": ingest_cic, "cceo": ingest_cceo}
 
 
 def main() -> None:
@@ -103,7 +87,7 @@ def main() -> None:
         choices=sorted(INGESTORS),
         action="append",
         dest="only",
-        help="Ingest only this source (repeatable, e.g. --only cic --only cceo). Default: all three.",
+        help="Ingest only this source (repeatable, e.g. --only cic --only cceo). Default: both.",
     )
     parser.add_argument(
         "--dry-run",

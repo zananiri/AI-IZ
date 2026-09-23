@@ -94,6 +94,12 @@ legal:
     low_relevance_distance: 0.55               # cosine distance; tune against real queries
     min_relevant_chunks: 2
     max_cross_refs: 4
+    # What reaches the model (null disables each). Margins were chosen on the
+    # 16-question elections eval (evals/legal/) -- re-check them on new laws.
+    relevance_margin: 0.08                     # drop hits this much farther than the best hit
+    sibling_margin: 0.12                       # add other parts of a split provision only this close
+    max_evidence_tokens: 2500                  # all evidence, best-first; fits the 8k window with the
+                                               # memo/draft outputs -- raise with max_model_len
   ingestion:
     sources_dir: "./data/legal/sources"        # official texts + <file>.meta.json sidecars
     legal_txt_dir: "./legal_txt"               # drop-in law PDFs, indexed by scripts/ingest_legal_txt.py
@@ -110,10 +116,9 @@ legal:
 
 canon:
   # Canon GPT tab: a genuine RAG pipeline (src/docslides/canon/) over the
-  # Code of Canon Law (CIC 1983), Code of Canons of Eastern Churches (CCEO
-  # 1990, Latin only -- see scripts/ingest_canon_law.py header for why), and
-  # Vatican City State civil law, ingested offline into a local ChromaDB
-  # store. `generation` defaults to the general `llm:` model below (no
+  # Code of Canon Law (CIC 1983) and Code of Canons of Eastern Churches
+  # (CCEO 1990, Latin only -- see scripts/ingest_canon_law.py header for
+  # why), ingested offline into a local ChromaDB store. `generation` defaults to the general `llm:` model below (no
   # dedicated deployment needed, unlike the Legal tab's separate DictaLM) --
   # override it independently only if you want a different model answering
   # canon-law questions.

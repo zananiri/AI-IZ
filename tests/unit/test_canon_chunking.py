@@ -37,22 +37,6 @@ def test_canon_with_paragraph_includes_section_mark_and_id():
     assert "Can. 1167 §1" in chunks[0].text
 
 
-def test_vcs_article_header_has_no_code_label():
-    record = ProvisionRecord(
-        code="vcs_law", number="12", paragraph=None,
-        breadcrumb="N. XVIII — Legge sulla trasparenza finanziaria",
-        text="Il presente articolo disciplina la vigilanza finanziaria.",
-        source_url="https://www.vaticanstate.va/example.pdf", language="it",
-    )
-
-    chunks = chunk_provision(record)
-
-    assert len(chunks) == 1
-    assert chunks[0].text.startswith("Art. 12 — N. XVIII")
-    assert not chunks[0].text.startswith("CIC")
-    assert not chunks[0].text.startswith("CCEO")
-
-
 def test_oversized_provision_splits_into_multiple_chunks_with_shared_header():
     long_text = " ".join(f"Canon prohibet actum numero {i}." for i in range(2000))
     record = ProvisionRecord(
@@ -75,4 +59,3 @@ def test_oversized_provision_splits_into_multiple_chunks_with_shared_header():
 def test_citation_label_formatting():
     assert citation_label("cic", "1055", "1") == "CIC Can. 1055 §1"
     assert citation_label("cceo", "7") == "CCEO Can. 7"
-    assert citation_label("vcs_law", "12") == "Art. 12"

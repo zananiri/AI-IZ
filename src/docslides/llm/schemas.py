@@ -186,14 +186,13 @@ class CanonQueryPlan(BaseModel):
 
     search_query: str = Field(
         description="The user's question, reformulated into a precise, self-contained search query "
-        "suitable for embedding-based retrieval over canon/civil-law text"
+        "suitable for embedding-based retrieval over canon-law text"
     )
-    likely_codes: list[Literal["cic", "cceo", "vcs_law"]] = Field(
+    likely_codes: list[Literal["cic", "cceo"]] = Field(
         default_factory=list,
         description="Which code(s) the question is most likely about: 'cic' (Code of Canon Law, Latin "
-        "Church), 'cceo' (Code of Canons of the Eastern Churches), 'vcs_law' (Vatican City State civil "
-        "law -- penal, procedural, financial). Empty list if genuinely unclear -- retrieval then searches "
-        "all codes unfiltered.",
+        "Church), 'cceo' (Code of Canons of the Eastern Churches). Empty list if genuinely unclear -- "
+        "retrieval then searches both codes unfiltered.",
     )
     topic_summary: str = Field(description="One short phrase (in English) naming the topic, for status display")
 
@@ -203,14 +202,14 @@ class CanonFinalAnswer(BaseModel):
     grounded strictly in the retrieved chunks handed to it, in the user's own
     language. Citations are NOT free-formed by the model -- the UI/pipeline
     populates the citations panel from the retrieved chunks' own metadata
-    (real vatican.va/vaticanstate.va URLs), this field is only which of the
-    provided canon/article numbers the answer actually relied on."""
+    (real vatican.va URLs), this field is only which of the provided canon
+    numbers the answer actually relied on."""
 
     answer: str = Field(description="The final answer to the user, in the user's own language")
     cited_provisions: list[str] = Field(
         default_factory=list,
-        description="Canon/article numbers from the provided context that the answer actually relies on, "
-        "exactly as given (e.g. 'CIC Can. 1055', 'Art. 12')",
+        description="Canon numbers from the provided context that the answer actually relies on, "
+        "exactly as given (e.g. 'CIC Can. 1055', 'CCEO Can. 7')",
     )
 
 

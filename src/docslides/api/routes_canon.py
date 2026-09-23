@@ -1,10 +1,10 @@
 """Canon GPT tab chat endpoint: runs the RAG pipeline in canon/pipeline.py --
 an orchestrator model reformulates the question and guesses relevant
-code(s), retrieval fetches matching canon/civil-law provisions from the
+code(s), retrieval fetches matching canon-law provisions from the
 local vector store (see canon/retrieval.py, populated offline by
 scripts/ingest_canon_law.py), and the orchestrator answers grounded in that
 retrieved text. Citations published on the SSE stream come straight from
-retrieval metadata (real vatican.va/vaticanstate.va source URLs), not
+retrieval metadata (real vatican.va source URLs), not
 model-invented text -- see api/events.py's "citations" event kind and
 routes_legal.py for the parallel (non-RAG) Legal tab pattern this mirrors.
 """

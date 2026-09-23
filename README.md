@@ -173,8 +173,8 @@ instead of sharing one with the FastAPI/Gradio app.
 
 The `canon` extra (`chromadb`, `sentence-transformers`, `beautifulsoup4`) is
 needed for the **Canon GPT** tab -- a RAG pipeline over the Code of Canon
-Law, the Code of Canons of the Eastern Churches, and Vatican City State
-civil law (see `src/docslides/canon/`). It's only required to run
+Law and the Code of Canons of the Eastern Churches (see
+`src/docslides/canon/`). It's only required to run
 `scripts/ingest_canon_law.py` (a one-time/offline step that builds the local
 vector store at `data/canon_vectordb/`, see the script's docstring) and to
 serve the tab itself; the rest of the app imports fine without it.

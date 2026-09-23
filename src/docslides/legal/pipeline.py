@@ -550,6 +550,7 @@ async def run_legal_turn(
         "amendment_notes": {sid: [n.describe() for n in notes] for sid, notes in amendment_notes.items()},
         "rejected_chunk_ids": retrieval.rejected_chunk_ids,
         "duplicate_chunk_ids": retrieval.duplicate_chunk_ids,
+        "trimmed_chunk_ids": retrieval.trimmed_chunk_ids,
         "chunks": [
             {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "distance": c.distance, "via": c.via}
             for c in retrieval.chunks

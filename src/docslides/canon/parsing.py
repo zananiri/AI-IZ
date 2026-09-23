@@ -1,4 +1,4 @@
-"""Fetches and parses the three Canon GPT sources into `ProvisionRecord`s
+"""Fetches and parses the two Canon GPT sources into `ProvisionRecord`s
 (see canon/chunking.py for the shared record/chunk contract):
 
   * CIC 1983 (English) -- vatican.va/archive/cod-iuris-canonici/, one canon
@@ -8,13 +8,10 @@
     vatican.va/content/john-paul-ii/la/apost_constitutions/, a handful of
     long pages with many canons packed into shared <p> blocks separated by
     <br/>, e.g. `<b>Can. 7</b> - &sect; 1. Christifideles sunt...`.
-  * Vatican City State civil law (Italian PDFs) -- vaticanstate.va, text-
-    native PDFs (confirmed via a sample download, not scans), articles
-    marked "Articolo N" or "Art. N" depending on the document.
 
-All three markups were reverse-engineered from real sample pages fetched
-during development, not from any published API/schema. If vatican.va or
-vaticanstate.va changes its templates, re-verify with
+Both markups were reverse-engineered from real sample pages fetched during
+development, not from any published API/schema. If vatican.va changes its
+templates, re-verify with
 `scripts/ingest_canon_law.py --dry-run` before a full ingestion run.
 """
 
@@ -267,84 +264,4 @@ def parse_cceo_page(html: str, url: str) -> list[ProvisionRecord]:
                     )
                 )
 
-    return records
-
-
-# ---------------------------------------------------------------------------
-# Vatican City State civil law (Italian PDFs). vaticanstate.va's legislation
-# pages list amendment/decree laws individually rather than republishing a
-# single consolidated "Codice Penale"/"Codice di Procedura Penale" text --
-# this catalog is a verified starting point (each URL confirmed to resolve
-# to a real, text-native PDF), not an exhaustive index. Add entries here as
-# more source documents are identified.
-# ---------------------------------------------------------------------------
-
-VCS_DOCUMENTS: list[dict[str, str]] = [
-    {
-        "law_name": "Legge Fondamentale dello Stato della Città del Vaticano (31 luglio 2026)",
-        "url": "https://www.vaticanstate.va/en/state-and-government/legislation-and-regulations/"
-        "fundamental-laws-of-the-state.html?download=315:legge-fondamentale-dello-stato-della-citta-del-vaticano-del-31-luglio-2026",
-    },
-    {
-        "law_name": "N. XVIII — Legge sulla trasparenza, vigilanza ed informazione finanziaria (8 ottobre 2013)",
-        "url": "https://www.vaticanstate.va/en/state-and-government/legislation-and-regulations/"
-        "regulations-on-prevention-and-law-enforcement-in-financial-and-t-f-matters.html?download=120",
-    },
-    {
-        "law_name": "N. DCXIV — Modifiche alla Legge N. XVIII in materia di trasparenza, vigilanza ed informazione finanziaria",
-        "url": "https://www.vaticanstate.va/en/state-and-government/legislation-and-regulations/"
-        "regulations-on-prevention-and-law-enforcement-in-financial-and-t-f-matters.html"
-        "?download=257:n-dcxiv-recante-modifiche-alla-legge-n-xviii-in-materia-di-trasparenza-vigilanza-ed-informazione-finanziaria-dell-8-ottobre-2013",
-    },
-    {
-        "law_name": "Legge N. DXXXI — Modifiche al Codice Penale e al Codice di Procedura Penale",
-        "url": "https://www.vaticanstate.va/en/state-and-government/legislation-and-regulations/"
-        "regulations-on-criminal-and-administrative-matters.html"
-        "?download=237:legge-n-dxxxi-recante-modifiche-al-codice-penale-e-al-codice-di-procedura-penale",
-    },
-    {
-        "law_name": "Legge N. IX — Norme recanti modifiche al Codice Penale e al Codice di Procedura Penale",
-        "url": "https://www.vaticanstate.va/en/state-and-government/legislation-and-regulations/"
-        "regulations-on-criminal-and-administrative-matters.html"
-        "?download=95:legge-n-ix-norme-recanti-modifiche-al-codice-penale-e-al-codice-di-procedura-penale",
-    },
-    {
-        "law_name": "Legge N. VIII — Norme complementari in materia penale",
-        "url": "https://www.vaticanstate.va/en/state-and-government/legislation-and-regulations/"
-        "regulations-on-criminal-and-administrative-matters.html"
-        "?download=96:legge-n-viii-norme-complementari-in-materia-penale",
-    },
-]
-
-# Matches "Articolo 12" / "Art. 12" / "Art 12" at the start of a line-ish
-# position; Italian legal PDFs use either the spelled-out or abbreviated
-# form depending on the document (confirmed "Articolo N" in a sample law,
-# "Art. N" is the more common abbreviated form in codified texts).
-_VCS_ARTICLE_RE = re.compile(r"(?:^|\n)\s*Art(?:icolo)?\.?\s+(\d+)\b", re.IGNORECASE)
-
-
-def parse_vcs_pdf(pdf_bytes: bytes, law_name: str, url: str) -> list[ProvisionRecord]:
-    import pymupdf as fitz  # PyMuPDF -- already a core dependency (see ingestion/parser.py)
-
-    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-        full_text = "\n".join(page.get_text() for page in doc)
-
-    matches = list(_VCS_ARTICLE_RE.finditer(full_text))
-    if not matches:
-        logger.warning("vcs_pdf_no_articles_found", law_name=law_name, url=url)
-        return []
-
-    records: list[ProvisionRecord] = []
-    for i, m in enumerate(matches):
-        number = m.group(1)
-        start = m.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
-        text = re.sub(r"\s+", " ", full_text[start:end]).strip()
-        if text:
-            records.append(
-                ProvisionRecord(
-                    code="vcs_law", number=number, paragraph=None, breadcrumb=law_name,
-                    text=text, source_url=url, language="it",
-                )
-            )
     return records

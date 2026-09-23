@@ -16,6 +16,11 @@ IDs: `version_id` = "<law_id>@<effective_date_start>", so several versions
 of the same law can sit side by side in the index; `section_key` =
 "<version_id>:<section>"; `source_id` adds "(<subsection>)" when a section
 was split at subsections; `chunk_id` adds "#p<n>" for multi-part provisions.
+
+Cross-references only ever point at this law's own sections: in an amending
+section, "סעיף N" is the amended law's section N and links nothing here.
+Hebrew chunks are stored with ״ in place of the ASCII double quote
+(`normalize_hebrew_quotes`).
 """
 
 from __future__ import annotations
@@ -35,6 +40,20 @@ logger = get_logger(__name__)
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.;!?])\s+")
 _SHORT_INTRO_TOKENS = 40
+_GERSHAYIM = "״"  # U+05F4 HEBREW PUNCTUATION GERSHAYIM
+
+
+def normalize_hebrew_quotes(text: str) -> str:
+    """`text` with ״ (gershayim) in place of every ASCII double quote.
+
+    Hebrew legal text uses the ASCII quote both inside abbreviations
+    (התשכ"ט, כ"ב, ס"ח) and around quoted wording. A model that copies one
+    into a JSON string without escaping it ends the string there, and
+    grammar-constrained decoding then closes the object -- silently cutting
+    a memo claim or an answer mid-word. ״ needs no escaping and is the
+    proper Hebrew character (prompts.format_evidence already writes it in
+    attribute values)."""
+    return text.replace('"', _GERSHAYIM)
 
 
 @dataclass
@@ -133,7 +152,13 @@ def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: st
         for piece in _pieces(section, budget, header_tokens):
             breadcrumb = _breadcrumb(meta, section, piece.subsection)
             source_id = f"{section_key}({piece.subsection})" if piece.subsection else section_key
-            refs = [
+            # Same rule parse_sections applies to Section.cross_refs: an amending section's
+            # "סעיף 2" is section 2 of the law it amends, not of this one.
+            amending = section.number != "preamble" and (
+                (section.title or "").startswith("תיקון")
+                or amendments.extract_amendment(section.title, piece.text, toc) is not None
+            )
+            refs = [] if amending else [
                 f"{meta.version_id}:{n}"
                 for n in extract_cross_references(piece.text, section.number)
                 if n in known_sections
@@ -147,9 +172,13 @@ def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: st
                 multipart = len(bodies) > 1
                 amended = amendments.extract_amendment(section.title, body, toc) if section.number != "preamble" else None
                 header = breadcrumb + (_part_suffix(meta.language, index, len(bodies)) if multipart else "")
+                text = f"{header}\n\n{body}"
+                stored_breadcrumb = breadcrumb
+                if meta.language == "he":
+                    text, stored_breadcrumb = normalize_hebrew_quotes(text), normalize_hebrew_quotes(breadcrumb)
                 chunks.append(
                     LegalChunk(
-                        text=f"{header}\n\n{body}",
+                        text=text,
                         metadata=ChunkMetadata(
                             chunk_id=f"{source_id}#p{index}" if multipart else source_id,
                             source_id=source_id,
@@ -160,7 +189,7 @@ def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: st
                             part=section.subchapter or section.division,
                             section_number=section.number,
                             subsection_number=piece.subsection,
-                            breadcrumb=breadcrumb,
+                            breadcrumb=stored_breadcrumb,
                             effective_date_start=meta.effective_date_start,
                             effective_date_end=meta.effective_date_end,
                             status=meta.status,

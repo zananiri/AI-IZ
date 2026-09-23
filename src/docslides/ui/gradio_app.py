@@ -13,6 +13,7 @@ independently (see docker-compose.yml).
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,57 @@ API_BASE_URL = os.environ.get("DOCSLIDES_API_URL", "http://localhost:8456")
 
 def _is_rtl_lang(lang: str | None) -> bool:
     return bool(lang) and get_config().languages.is_rtl(lang)
+
+
+# While a tab's request runs, its message box pulses with the theme's accent
+# border -- the same look as Gradio's own "generating" border, which only
+# plain Textbox outputs get, only once the first update arrives, and never the
+# General tab's MultimodalTextbox (its progress tracker is switched off).
+# Toggled from Python through elem_classes, so every tab glows the same way
+# from Send until the answer is done. Passed as `css=` wherever the app is
+# served (run() below, and api/main.py's mount).
+APP_CSS = """
+.ai-working { position: relative; }
+.ai-working::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  border: 2px solid var(--color-accent); border-radius: inherit;
+  z-index: var(--layer-1, 1);
+  animation: ai-working-pulse 2s cubic-bezier(.4, 0, .6, 1) infinite;
+}
+@keyframes ai-working-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .ai-working::after { animation: none; } }
+"""
+
+_WORKING_CLASSES = ["ai-working"]
+
+
+def _glow_while_running(handler, outputs: list, box):
+    """`handler`, a streaming send handler for `outputs`, with the message
+    box `box` (one of those outputs) glowing from the moment Send is pressed
+    until the handler finishes -- or fails, so a failed upload or request
+    never leaves it glowing."""
+    index = next(i for i, component in enumerate(outputs) if component is box)
+
+    def with_box(values, working: bool) -> tuple:
+        values = list(values)
+        update = values[index] if isinstance(values[index], dict) else gr.update(value=values[index])
+        values[index] = {**update, "elem_classes": _WORKING_CLASSES if working else []}
+        return tuple(values)
+
+    idle = tuple(gr.update() for _ in outputs)
+
+    @functools.wraps(handler)
+    def run(*args):
+        yield with_box(idle, working=True)
+        try:
+            for values in handler(*args):
+                yield with_box(values, working=True)
+        except Exception:
+            yield with_box(idle, working=False)
+            raise
+        yield with_box(idle, working=False)
+
+    return run
 
 
 # ---------------------------------------------------------------------------
@@ -105,12 +157,10 @@ def _stream_job(job_id: str, history: list, rtl_hint: bool):
                             content_text = f"Your presentation is ready: [Download {Path(output_path).name}]({download_url})"
                             started_streaming = True
                         llm_status = "✅ Done"
-                        break
                     elif event_kind == "error":
                         content_text += f"\n\n⚠️ {data.get('message')}"
                         started_streaming = True
                         llm_status = "❌ Error"
-                        break
 
                     display_text = content_text if started_streaming else f"_{status_text}..._"
                     new_history = history + [{"role": "assistant", "content": display_text}]
@@ -120,6 +170,8 @@ def _stream_job(job_id: str, history: list, rtl_hint: bool):
                         gr.update(value=None),
                         gr.update(value=llm_status),
                     )
+                    if event_kind in ("done", "error"):
+                        break  # after the yield, so the final status or error still shows
 
 
 def send_chat_message(message: dict, history: list):
@@ -240,20 +292,14 @@ def build_chat_tab() -> None:
         )
         rewrite_btn = gr.Button("Rewrite with tone controls")
 
-    send_btn.click(
-        fn=send_chat_message,
-        inputs=[msg_box, chatbot],
-        outputs=[chatbot, reasoning_panel, msg_box, llm_status],
-    )
-    msg_box.submit(
-        fn=send_chat_message,
-        inputs=[msg_box, chatbot],
-        outputs=[chatbot, reasoning_panel, msg_box, llm_status],
-    )
+    chat_outputs = [chatbot, reasoning_panel, msg_box, llm_status]
+    send = _glow_while_running(send_chat_message, chat_outputs, msg_box)
+    send_btn.click(fn=send, inputs=[msg_box, chatbot], outputs=chat_outputs)
+    msg_box.submit(fn=send, inputs=[msg_box, chatbot], outputs=chat_outputs)
     rewrite_btn.click(
-        fn=send_tone_rewrite,
+        fn=_glow_while_running(send_tone_rewrite, chat_outputs, msg_box),
         inputs=[msg_box, professionalism_slider, creativity_slider, chatbot],
-        outputs=[chatbot, reasoning_panel, msg_box, llm_status],
+        outputs=chat_outputs,
     )
 
 
@@ -446,8 +492,9 @@ def build_legal_tab(demo: gr.Blocks, legal_tab: gr.Tab) -> None:
 
     send_inputs = [legal_msg_box, legal_chatbot, dicta_tier]
     send_outputs = [legal_chatbot, legal_msg_box, citations_panel, legal_llm_status, memo_view]
-    legal_send_btn.click(fn=send_legal_message, inputs=send_inputs, outputs=send_outputs)
-    legal_msg_box.submit(fn=send_legal_message, inputs=send_inputs, outputs=send_outputs)
+    send = _glow_while_running(send_legal_message, send_outputs, legal_msg_box)
+    legal_send_btn.click(fn=send, inputs=send_inputs, outputs=send_outputs)
+    legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
 
     # Checked on app start, whenever the tab is opened, and on every tier change.
     check_outputs = [tier_banner, switch_tier_btn, suggested_tier]
@@ -461,7 +508,7 @@ def build_legal_tab(demo: gr.Blocks, legal_tab: gr.Tab) -> None:
 # Canon GPT tab -- a RAG pipeline (see api/routes_canon.py, canon/pipeline.py,
 # canon/retrieval.py): an orchestrator model reformulates the question and
 # guesses which code(s) it's about, retrieval fetches matching provisions
-# from a local vector store built offline from vatican.va/vaticanstate.va
+# from a local vector store built offline from vatican.va
 # (scripts/ingest_canon_law.py), and the orchestrator answers grounded in
 # that retrieved text. Unlike the Legal tab, citations here are real source
 # links pulled from retrieval metadata rather than model-generated text.
@@ -515,12 +562,10 @@ def _stream_canon_job(job_id: str, history: list):
                         citations_md = _format_canon_citations(data.get("citations", []))
                     elif event_kind == "done":
                         llm_status = "✅ Done"
-                        break
                     elif event_kind == "error":
                         content_text += f"\n\n⚠️ {data.get('message')}"
                         started_streaming = True
                         llm_status = "❌ Error"
-                        break
 
                     detected = detect_language(content_text[:200]) if started_streaming else None
                     display_text = content_text if started_streaming else f"_{status_text}..._"
@@ -531,6 +576,8 @@ def _stream_canon_job(job_id: str, history: list):
                         gr.update(value=citations_md),
                         gr.update(value=llm_status),
                     )
+                    if event_kind in ("done", "error"):
+                        break  # after the yield, so the final status or error still shows
 
 
 def send_canon_message(message: str, history: list):
@@ -554,8 +601,7 @@ def build_canon_tab() -> None:
     cfg = get_config()
     gr.Markdown(
         f"_Model: **{cfg.canon.generation.model}** via **{cfg.canon.generation.backend}** "
-        f"· retrieval: **{cfg.canon.embedding_model}** over CIC 1983, CCEO 1990 (Latin), "
-        "Vatican City State civil law_"
+        f"· retrieval: **{cfg.canon.embedding_model}** over CIC 1983 and CCEO 1990 (Latin)_"
     )
     with gr.Row():
         with gr.Column(scale=3):
@@ -565,24 +611,18 @@ def build_canon_tab() -> None:
                 canon_msg_box = gr.Textbox(
                     label="Question",
                     scale=4,
-                    placeholder="Ask about canon law or Vatican City State civil law, in any language -- "
-                    "researched against the Code of Canon Law, CCEO, and Vatican civil/financial law",
+                    placeholder="Ask about canon law, in any language -- researched against the "
+                    "Code of Canon Law (CIC) and the Code of Canons of the Eastern Churches (CCEO)",
                 )
                 canon_send_btn = gr.Button("Send", scale=1)
         with gr.Column(scale=1):
             gr.Markdown("### Sources")
             canon_citations_panel = gr.Markdown(value="_No citations yet._")
 
-    canon_send_btn.click(
-        fn=send_canon_message,
-        inputs=[canon_msg_box, canon_chatbot],
-        outputs=[canon_chatbot, canon_msg_box, canon_citations_panel, canon_llm_status],
-    )
-    canon_msg_box.submit(
-        fn=send_canon_message,
-        inputs=[canon_msg_box, canon_chatbot],
-        outputs=[canon_chatbot, canon_msg_box, canon_citations_panel, canon_llm_status],
-    )
+    canon_outputs = [canon_chatbot, canon_msg_box, canon_citations_panel, canon_llm_status]
+    send = _glow_while_running(send_canon_message, canon_outputs, canon_msg_box)
+    canon_send_btn.click(fn=send, inputs=[canon_msg_box, canon_chatbot], outputs=canon_outputs)
+    canon_msg_box.submit(fn=send, inputs=[canon_msg_box, canon_chatbot], outputs=canon_outputs)
 
 
 def build_app() -> gr.Blocks:
@@ -600,7 +640,7 @@ def build_app() -> gr.Blocks:
 
 def run() -> None:
     demo = build_app()
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860)
+    demo.queue().launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS)
 
 
 if __name__ == "__main__":

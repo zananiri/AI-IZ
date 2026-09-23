@@ -69,9 +69,8 @@ dev = [
     "ruff>=0.6",
     "reportlab>=4.2",
 ]
-# Canon GPT tab: local RAG over vatican.va/vaticanstate.va (see
-# scripts/ingest_canon_law.py, src/docslides/canon/). PDF extraction reuses
-# the core PyMuPDF dependency above rather than needing its own extra.
+# Canon GPT tab: local RAG over the CIC and CCEO from vatican.va (see
+# scripts/ingest_canon_law.py, src/docslides/canon/).
 canon = [
     "chromadb>=0.5",
     "sentence-transformers>=3.0",

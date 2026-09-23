@@ -1,10 +1,10 @@
-"""Structure-aware chunking for canon/civil-law text: one chunk per atomic
-legal provision (a canon's `§` paragraph, or a civil-law article) rather
+"""Structure-aware chunking for canon-law text: one chunk per atomic
+legal provision (a canon, or one `§` paragraph of it) rather
 than the token-budget paragraph packing in cleaning/chunking.py, which is
 built for slide-deck ingestion and would cut a canon apart mid-provision.
 
 Every chunk is prefixed with a synthetic breadcrumb header (code + canon/
-article number + book/title/chapter, or law name/date for civil law) so
+number + book/title/chapter) so
 short provisions still carry their hierarchical context into the embedding
 -- this is what makes citation-style queries ("what does canon law say
 about X") retrieve precisely instead of matching on generic legal prose.
@@ -24,7 +24,7 @@ from typing import Literal
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
 
-CodeName = Literal["cic", "cceo", "vcs_law"]
+CodeName = Literal["cic", "cceo"]
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -38,8 +38,8 @@ def _split_sentences(text: str) -> list[str]:
     chunk-boundary points for embeddings, not translation-quality output."""
     return [s.strip() for s in _SENTENCE_BOUNDARY_RE.split(text) if s.strip()]
 
-_CODE_LABEL: dict[CodeName, str] = {"cic": "CIC", "cceo": "CCEO", "vcs_law": ""}
-_UNIT_LABEL: dict[CodeName, str] = {"cic": "Can.", "cceo": "Can.", "vcs_law": "Art."}
+_CODE_LABEL: dict[CodeName, str] = {"cic": "CIC", "cceo": "CCEO"}
+_UNIT_LABEL: dict[CodeName, str] = {"cic": "Can.", "cceo": "Can."}
 
 
 @dataclass
@@ -48,12 +48,12 @@ class ProvisionRecord:
     token-budget sub-splitting."""
 
     code: CodeName
-    number: str  # e.g. "1055" (canon) or "12" (article)
+    number: str  # e.g. "1055"
     paragraph: str | None  # e.g. "1" for "Can. 1055 §1"; None if undivided
     breadcrumb: str  # e.g. "Book IV: Sanctifying Function > Title VII: Marriage"
     text: str
     source_url: str
-    language: str  # "en" | "la" | "it"
+    language: str  # "en" | "la"
 
 
 @dataclass
@@ -71,7 +71,7 @@ class Chunk:
 
 def citation_label(code: CodeName, number: str, paragraph: str | None = None) -> str:
     """The short citation form shown in the UI's citations panel and
-    embedded as each chunk's header, e.g. 'CIC Can. 1055 §1', 'Art. 12'."""
+    embedded as each chunk's header, e.g. 'CIC Can. 1055 §1', 'CCEO Can. 7'."""
     label = _CODE_LABEL[code]
     unit = _UNIT_LABEL[code]
     number_part = f"{unit} {number}" + (f" §{paragraph}" if paragraph else "")

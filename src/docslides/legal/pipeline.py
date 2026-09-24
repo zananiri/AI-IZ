@@ -2,6 +2,7 @@
 
     language routing -> retrieval -> Pass A research memorandum -> validation gate
     -> Pass B draft -> citation verification (structural + entailment)
+    -> unverified sentences removed -> wrong-script words repaired
     -> final citation check -> numeric grounding check -> audit log
 
 One model (the orchestrator, Qwen) does all of it: research, drafting and
@@ -9,8 +10,12 @@ verification. The reply is always in the question's language.
 
 Nothing flagged is resolved silently. A memorandum that fails the gate is
 revised, and if it still fails no draft is written: the turn escalates.
-Citations that fail verification are sent back for a redraft, and if they
-still fail they stay marked unverified and the turn escalates.
+Citations that fail verification are sent back for a redraft. If they still
+fail, a sentence whose source doesn't state it at all (or isn't a source the
+memorandum established) is removed; if nothing cited is left, no answer is
+given. A partly supported citation stays, marked unverified. Either way the
+turn escalates. When several laws match the question, or it names a section
+the index doesn't hold, the answer says so up front.
 """
 
 from __future__ import annotations
@@ -22,11 +27,12 @@ from dataclasses import asdict, dataclass, field
 
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
-from docslides.legal import amendments, audit, prompts
+from docslides.legal import amendments, audit, prompts, script_check
 from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.citations import (
     expand_citations,
     parse_citations,
+    remove_cited_sentences,
     render_with_footnotes,
     sentence_before,
     strip_citations,
@@ -58,6 +64,7 @@ from docslides.llm.schemas import (
     LegalDraft,
     ReplyLanguage,
     ResearchMemorandum,
+    ScriptRepair,
     grounded_memorandum_schema,
 )
 from docslides.logging_setup import get_logger
@@ -77,6 +84,34 @@ _GATE_FAILED_NOTICE = {
     "question ; aucun projet de réponse n'a donc été rédigé. La question a été signalée pour examen par un "
     "avocat habilité.",
 }
+
+_UNVERIFIED_NOTICE = {
+    "en": "The drafted answer could not be verified against the indexed sources, so it was withheld. "
+    "The question has been flagged for review by a licensed attorney.",
+    "he": "לא ניתן היה לאמת את טיוטת התשובה מול המקורות שבמאגר, ולכן היא לא נמסרה. "
+    "השאלה סומנה לבדיקה של עורך דין מוסמך.",
+    "ar": "تعذّر التحقق من مسودة الإجابة مقابل المصادر المفهرسة، لذلك لم يتم تقديمها. "
+    "تم تحويل السؤال لمراجعة محامٍ مرخّص.",
+    "fr": "Le projet de réponse n'a pas pu être vérifié au regard des sources indexées ; il n'a donc pas été "
+    "communiqué. La question a été signalée pour examen par un avocat habilité.",
+}
+
+
+def _ambiguity_notice(reply_language: str, laws_in_play: list[str], uncovered: list[str]) -> str:
+    if reply_language == "he":
+        missing = f"ב{uncovered[0]}" if len(uncovered) == 1 else "בחוקים הבאים: " + "; ".join(uncovered)
+        return (f"השאלה אינה חד־משמעית: הוראות מכמה חוקים שבמאגר מתאימות לה ({'; '.join(laws_in_play)}). "
+                f"התשובה שלהלן אינה עוסקת {missing}.")
+    return (f"This question is ambiguous: provisions of several indexed laws match it ({'; '.join(laws_in_play)}). "
+            f"The answer below does not cover: {'; '.join(uncovered)}.")
+
+
+def _missing_sections_notice(reply_language: str, sections: list[str]) -> str:
+    if reply_language == "he":
+        which = f"סעיף {sections[0]}" if len(sections) == 1 else "הסעיפים " + ", ".join(sections)
+        return f"נוסח {which} אינו נמצא במאגר, ולכן לא ניתן לומר מה נקבע בו."
+    which = f"section {sections[0]}" if len(sections) == 1 else "sections " + ", ".join(sections)
+    return f"The text of {which} is not in the index, so what it provides can't be stated from the indexed sources."
 
 
 @dataclass
@@ -156,7 +191,12 @@ _THIN_COVERAGE_NOTE = (
 )
 
 
-def _question_block(query: str, thin_coverage: bool = False, laws_in_play: list[str] | None = None) -> str:
+def _question_block(
+    query: str,
+    thin_coverage: bool = False,
+    laws_in_play: list[str] | None = None,
+    missing_sections: list[str] | None = None,
+) -> str:
     # ״ for the ASCII quote, as in the evidence: a model that copies 'יו"ר' from the question
     # into its JSON answer unescaped cuts the answer off there (legal/chunking.py).
     if _dominant_rtl_script(query) == "he":
@@ -171,7 +211,20 @@ def _question_block(query: str, thin_coverage: bool = False, laws_in_play: list[
             + ". Unless the question clearly refers to one of them, say that it is ambiguous and answer "
             "separately for each law, citing each."
         )
+    if missing_sections:  # named by the question, but the index doesn't hold their text
+        block += (
+            "\n\nRetrieval note: the index does not hold the text of "
+            + ", ".join(f"section {s}" for s in missing_sections)
+            + ", which the question names. Evidence may refer to it, but what it provides is not available: say "
+            "that its text is not in the index, and do not describe its content."
+        )
     return block
+
+
+def _uncovered_laws(laws_in_play: list[str], source_ids, evidence: dict[str, ChunkMetadata]) -> list[str]:
+    """Laws in play that none of `source_ids` belongs to."""
+    cited = {evidence[s].law_name for s in source_ids if s in evidence}
+    return [law for law in laws_in_play if law not in cited]
 
 
 def _for_model(error: str) -> str:
@@ -186,7 +239,11 @@ async def research_memorandum(
     evidence: dict[str, ChunkMetadata],
     evidence_texts: dict[str, str],
     attempts_log: list,
+    laws_in_play: list[str] | None = None,
 ) -> tuple[ResearchMemorandum | None, list[str]]:
+    """Returns (memorandum, gate errors still unresolved). When several laws are in
+    play, a memorandum without a claim from each is revised too -- but that alone
+    never fails the gate: the answer then says which laws it leaves out."""
     max_revisions = get_config().legal.pipeline.max_memo_revisions
     schema = grounded_memorandum_schema(list(evidence))
     messages = [
@@ -195,7 +252,7 @@ async def research_memorandum(
     ]
     errors: list[str] = ["no memorandum produced"]
     memo: ResearchMemorandum | None = None
-    best: tuple[ResearchMemorandum, list[str], str] | None = None
+    best: tuple[ResearchMemorandum, list[str], list[str], str] | None = None  # memo, errors, uncovered, json
     for attempt in range(1 + max_revisions):
         try:
             grounded = await qwen.complete_json(
@@ -212,18 +269,23 @@ async def research_memorandum(
         memo = clean_memorandum(memo)
         memo, auto_notes = record_contrary_search_notes(memo)
         errors = validate_memorandum(memo, evidence)
+        uncovered = [
+            f"the question is ambiguous -- provisions of several laws match it ({'; '.join(laws_in_play or [])}) -- "
+            f"but no claim cites {law}: add a claim, with that law's source_ids, for what it provides on the question"
+            for law in _uncovered_laws(laws_in_play or [], [a.source_id for a in memo.supporting_authority], evidence)
+        ]
         attempts_log.append({
             "attempt": attempt + 1, "memorandum": memo.model_dump(), "errors": errors,
-            "auto_recorded_notes": auto_notes, "auto_attached_sources": attached,
+            "uncovered_laws": uncovered, "auto_recorded_notes": auto_notes, "auto_attached_sources": attached,
         })
-        if not errors:
+        if not errors and not uncovered:
             return memo, []
         # A revision can come back worse than what it revised (a small model asked to add one
         # note may drop a claim's sources instead): always revise from, and fall back to,
-        # the attempt with the fewest problems.
-        if best is None or len(errors) < len(best[1]):
-            best = (memo, errors, grounded.model_dump_json())
-        _, base_errors, base_json = best
+        # the attempt with the fewest problems -- gate errors first.
+        if best is None or (len(errors), len(uncovered)) < (len(best[1]), len(best[2])):
+            best = (memo, errors, uncovered, grounded.model_dump_json())
+        _, base_errors, base_uncovered, base_json = best
         messages = [
             *messages[:2],
             ChatMessage("assistant", base_json),
@@ -232,11 +294,11 @@ async def research_memorandum(
                 "The memorandum failed validation and cannot go forward to drafting. Keep everything that is "
                 "already correct -- in particular every claim's source_ids -- and fix only the problems "
                 "below. Do not copy these problem descriptions into any field. Return the complete corrected "
-                "memorandum:\n- " + "\n- ".join(_for_model(e) for e in base_errors),
+                "memorandum:\n- " + "\n- ".join(_for_model(e) for e in [*base_errors, *base_uncovered]),
             ),
         ]
     if best is not None:
-        attempts_log.append({"kept_attempt_with_fewest_problems": len(best[1])})
+        attempts_log.append({"kept_attempt_with_fewest_problems": len(best[1]) + len(best[2])})
         return best[0], best[1]
     return memo, errors
 
@@ -316,9 +378,13 @@ async def draft_answer(
     retrieval: RetrievalResult,
     evidence: dict[str, ChunkMetadata],
     attempts_log: list,
+    laws_in_play: list[str] | None = None,
 ) -> tuple[LegalDraft, list[CitationCheck], list[str]]:
-    """Returns (draft, its citation checks, failures still unresolved after the last revision)."""
+    """Returns (draft, its citation checks, citation failures still unresolved after
+    the last revision). A draft that leaves out a law in play the memorandum
+    covers is revised too."""
     max_revisions = get_config().legal.pipeline.max_draft_revisions
+    memo_laws = {evidence[a.source_id].law_name for a in memo.supporting_authority if a.source_id in evidence}
     messages = [
         ChatMessage("system", prompts.draft_prompt(reply_language)),
         ChatMessage(
@@ -341,22 +407,63 @@ async def draft_answer(
         no_citations = not checks and bool(memo.supporting_authority)
         if no_citations:
             failures.append("the draft contains no [[CITE]] tokens although the memorandum has supporting authority")
-        attempts_log.append(
-            {"attempt": attempt + 1, "draft": draft.model_dump(), "citation_checks": [asdict(c) for c in checks]}
-        )
-        if not failures or attempt == max_revisions:
+        uncovered = [law for law in _uncovered_laws(laws_in_play or [], [c.source_id for c in checks], evidence)
+                     if law in memo_laws]
+        attempts_log.append({"attempt": attempt + 1, "draft": draft.model_dump(),
+                             "citation_checks": [asdict(c) for c in checks], "uncovered_laws": uncovered})
+        if (not failures and not uncovered) or attempt == max_revisions:
             return draft, checks, failures
+        problems = failures + [
+            f"the question is ambiguous -- provisions of several laws match it ({'; '.join(laws_in_play or [])}) -- "
+            f"and the memorandum has claims for {law}, but the draft doesn't cite it: say that the question is "
+            "ambiguous and answer separately for each law, naming it and citing its claims"
+            for law in uncovered
+        ]
         messages = [
             *messages[:2],
             ChatMessage("assistant", as_written),
             ChatMessage(
                 "user",
-                "Citation verification failed. Revise the draft: fix each failing citation, and if no source the "
-                "memorandum lists actually states a sentence's proposition, remove that proposition rather than "
-                "cite loosely. Do not add new claims.\n- " + "\n- ".join(failures),
+                "The draft failed verification. Revise it: fix each problem below, and if no source the memorandum "
+                "lists actually states a sentence's proposition, remove that proposition rather than cite loosely. "
+                "Do not add claims the memorandum doesn't establish.\n- " + "\n- ".join(problems),
             ),
         ]
     raise AssertionError("unreachable")
+
+
+async def repair_foreign_words(
+    qwen: QwenClient, text: str, reply_language: str, allowed: set[str]
+) -> tuple[str, dict]:
+    """Replaces words written in the wrong script (legal/script_check.py) with the
+    reply-language words the model gives for them. Only the flagged words change:
+    a replacement is applied by exact whole-word match, and only if it is itself
+    clean. Returns (text, log with what was flagged, replaced and remains)."""
+    words = script_check.foreign_words(text, reply_language, allowed)
+    log: dict = {"flagged": words}
+    if not words:
+        return text, log
+    try:
+        result = await qwen.complete_json(
+            [
+                ChatMessage("system", prompts.script_repair_prompt(reply_language)),
+                ChatMessage("user", "Words:\n- " + "\n- ".join(words) + "\n\nSentences:\n"
+                            + "\n".join(script_check.sentences_with(text, words))),
+            ],
+            LLMCallSite("legal_script_repair"),
+            schema=ScriptRepair,
+            sampling=SamplingParams(temperature=0.0, max_tokens=512),
+        )
+        replacements = {
+            r.word: r.replacement.strip() for r in result.repairs
+            if r.word in words and not script_check.foreign_words(r.replacement, reply_language, allowed)
+        }
+    except Exception as exc:  # noqa: BLE001 -- an unrepaired word is reported, not fatal
+        log["error"] = str(exc)
+        replacements = {}
+    text = script_check.replace_words(text, replacements)
+    log.update(replacements=replacements, remaining=script_check.foreign_words(text, reply_language, allowed))
+    return text, log
 
 
 # --- assembly -------------------------------------------------------------------------
@@ -438,21 +545,45 @@ def _amendment_notes(evidence: dict[str, ChunkMetadata]) -> dict[str, list]:
     return {sid: n for sid, n in notes.items() if n}
 
 
-async def _localized_notice(qwen: QwenClient, reply_language: str) -> str:
-    if reply_language in _GATE_FAILED_NOTICE:
-        return _GATE_FAILED_NOTICE[reply_language]
+async def _localized_notice(qwen: QwenClient, reply_language: str, notices: dict[str, str]) -> str:
+    if reply_language in notices:
+        return notices[reply_language]
     try:
         return await qwen.complete_text(
             [
                 ChatMessage("system", f"Translate the user's text into {prompts.language_name(reply_language)}. "
                                       "Return only the translation."),
-                ChatMessage("user", _GATE_FAILED_NOTICE["en"]),
+                ChatMessage("user", notices["en"]),
             ],
             LLMCallSite("legal_draft"),
             sampling=SamplingParams(temperature=0.0, max_tokens=512),
         )
     except Exception:  # noqa: BLE001
-        return _GATE_FAILED_NOTICE["en"]
+        return notices["en"]
+
+
+async def _no_answer(
+    qwen: QwenClient,
+    entry: dict,
+    reply_language: str,
+    notices: dict[str, str],
+    reasons: list[str],
+    memo: ResearchMemorandum | None,
+    retrieved: list[dict],
+    coverage_gaps: str | None = None,
+) -> LegalTurnResult:
+    """A turn that ends without an answer: a notice in the reply language, escalated."""
+    notice = await _localized_notice(qwen, reply_language, notices)
+    output = {
+        "research_memorandum": memo.model_dump() if memo else None,
+        "answer_draft": notice,
+        "escalation_flag": True,
+        "escalation_reason": "; ".join(reasons),
+        "coverage_gaps": coverage_gaps,
+    }
+    entry.update(output=output)
+    path = audit.write_entry(entry)
+    return LegalTurnResult(output, notice, [], reply_language, reasons, str(path), retrieved_chunks=retrieved)
 
 
 async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnResult:
@@ -473,13 +604,15 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
         {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "text": c.text, "distance": c.distance, "via": c.via}
         for c in retrieval.chunks
     ]
-    question = _question_block(query, thin_coverage=retrieval.low_relevance, laws_in_play=retrieval.laws_in_play)
+    question = _question_block(query, thin_coverage=retrieval.low_relevance, laws_in_play=retrieval.laws_in_play,
+                               missing_sections=retrieval.missing_sections)
     entry["retrieval"] = {
         "query": query,
         "bundle_verification": retrieval.bundle_verification,
         "best_distance": retrieval.best_distance,
         "best_rerank_score": retrieval.best_rerank_score,
         "laws_in_play": retrieval.laws_in_play,
+        "missing_sections": retrieval.missing_sections,
         "low_relevance": retrieval.low_relevance,
         "amendment_notes": {sid: [n.describe() for n in notes] for sid, notes in amendment_notes.items()},
         "rejected_chunk_ids": retrieval.rejected_chunk_ids,
@@ -495,34 +628,57 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
     await status(f"Pass A: research memorandum over {len(grouped)} source(s)")
     memo_attempts: list = []
     evidence_texts = {source_id: "\n".join(p.text for p in parts) for source_id, parts in grouped.items()}
-    memo, gate_errors = await research_memorandum(qwen, evidence_text, question, evidence, evidence_texts, memo_attempts)
+    memo, gate_errors = await research_memorandum(
+        qwen, evidence_text, question, evidence, evidence_texts, memo_attempts, retrieval.laws_in_play
+    )
     entry["memorandum_attempts"] = memo_attempts
 
     if gate_errors:
         reasons = ["The research memorandum failed validation after revision: " + "; ".join(gate_errors[:5])]
         reasons += _escalation_reasons(None, memo, retrieval, evidence, [])
-        notice = await _localized_notice(qwen, reply_language)
-        output = {
-            "research_memorandum": memo.model_dump() if memo else None,
-            "answer_draft": notice,
-            "escalation_flag": True,
-            "escalation_reason": "; ".join(reasons),
-            "coverage_gaps": None,
-        }
-        entry.update(output=output)
-        path = audit.write_entry(entry)
-        return LegalTurnResult(output, notice, [], reply_language, reasons, str(path), retrieved_chunks=retrieved)
+        return await _no_answer(qwen, entry, reply_language, _GATE_FAILED_NOTICE, reasons, memo, retrieved)
 
     await status("Pass B: drafting the answer and verifying every citation")
     draft_attempts: list = []
     draft, checks, draft_failures = await draft_answer(
-        qwen, reply_language, evidence_text, question, memo, retrieval, evidence, draft_attempts
+        qwen, reply_language, evidence_text, question, memo, retrieval, evidence, draft_attempts,
+        retrieval.laws_in_play,
     )
     entry["draft_attempts"] = draft_attempts
     notes: list[str] = []
+    final_text = draft.answer_draft
+
+    # A sentence whose citation failed outright -- the source doesn't state it, or isn't one the
+    # memorandum established for it -- is not shipped. A partly supported one stays, marked
+    # unverified, and escalates.
+    failed_outright = {c.index for c in checks if c.structural_problems or c.verdict == "not_entailed"}
+    removed: set[int] = set()
+    removed_failures: list[str] = []
+    if failed_outright:
+        final_text, removed = remove_cited_sentences(final_text, failed_outright)
+        entry["removed_sentences"] = [
+            {"sentence": checks[i].sentence, "claim_id": checks[i].claim_id, "source_id": checks[i].source_id,
+             "problems": checks[i].structural_problems or [f"{checks[i].verdict}: {checks[i].explanation}"]}
+            for i in sorted(removed)
+        ]
+        removed_failures = _citation_failures([checks[i] for i in sorted(removed)])
+        checks = [c for c in checks if c.index not in removed]
+        draft_failures = _citation_failures(checks)
+    if memo.supporting_authority and not parse_citations(final_text):
+        # Nothing verified is left to say, or the draft never cited anything: no answer.
+        failures = removed_failures if removed else draft_failures
+        reasons = ["The draft's citations failed verification, so no answer was given: " + "; ".join(failures[:5])]
+        reasons += _escalation_reasons(draft, memo, retrieval, evidence, [])
+        entry["withheld_draft"] = draft.answer_draft
+        return await _no_answer(qwen, entry, reply_language, _UNVERIFIED_NOTICE, reasons, memo, retrieved,
+                                draft.coverage_gaps)
+
+    await status("Checking the answer's wording")
+    allowed = script_check.allowed_words([query, *evidence_texts.values()])
+    final_text, script_log = await repair_foreign_words(qwen, final_text, reply_language, allowed)
+    entry["script_check"] = script_log
 
     await status("Final citation check")
-    final_text = draft.answer_draft
     final_structural = check_draft_citations(final_text, memo, evidence)
     entry["final_integrity"] = {
         "structural_problems": {f"citation #{i + 1}": p for i, p in final_structural.items()},
@@ -551,6 +707,28 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
     if ungrounded:
         reasons.append("Numbers in the answer not found in the cited sources: " + ", ".join(ungrounded))
         notes.append("Check these figures against the law: " + ", ".join(ungrounded))
+
+    if removed:
+        reasons.append(f"Removed {len(entry['removed_sentences'])} statement(s) whose citations failed verification")
+        notes.append(f"{len(entry['removed_sentences'])} statement(s) were removed from the draft because the cited "
+                     "sources did not support them.")
+    if script_log.get("remaining"):
+        reasons.append("Words in another script remain in the answer: " + ", ".join(script_log["remaining"]))
+        notes.append("Some words are not in the answer's language: " + ", ".join(script_log["remaining"]))
+
+    # Said up front, whatever the draft says: sections the question names that the index lacks,
+    # and laws in play the answer leaves out.
+    preface: list[str] = []
+    if retrieval.missing_sections:
+        reasons.append("The question names section(s) whose text is not in the index: "
+                       + ", ".join(retrieval.missing_sections))
+        preface.append(_missing_sections_notice(reply_language, retrieval.missing_sections))
+    uncovered = _uncovered_laws(retrieval.laws_in_play, [c.source_id for c in parse_citations(final_text)], evidence)
+    if uncovered:
+        reasons.append("Several laws match the question and the answer leaves out: " + "; ".join(uncovered))
+        preface.append(_ambiguity_notice(reply_language, retrieval.laws_in_play, uncovered))
+    if preface:
+        final_text = "\n\n".join([*preface, final_text])
 
     display, footnotes = _footnotes(final_text, evidence, checks)
     for note in footnotes:

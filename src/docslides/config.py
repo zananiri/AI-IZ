@@ -30,6 +30,7 @@ class ThinkingDefaults(BaseModel):
     legal_research_memo: bool = False
     legal_draft: bool = False
     legal_citation_verification: bool = False
+    legal_script_repair: bool = False
     legal_eval_baseline: bool = False
     legal_eval_judge: bool = False
     canon_orchestration: bool = True

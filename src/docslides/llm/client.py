@@ -73,6 +73,7 @@ class LLMCallSite:
         "legal_research_memo",
         "legal_draft",
         "legal_citation_verification",
+        "legal_script_repair",
         "legal_eval_baseline",
         "legal_eval_judge",
         "canon_orchestration",

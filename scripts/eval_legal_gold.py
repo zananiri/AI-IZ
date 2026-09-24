@@ -17,7 +17,9 @@ Two phases, kept apart on purpose:
                    (answerable, multi_law, ambiguous, not_in_law, unanswerable) and the item's
                    must_not list. correct 1, partially_correct 0.5, otherwise 0.
     The score of a question is the mean of the parts that apply. When the judge grades an
-    answer down, a narrower contradiction check is recorded next to it for review.
+    answer down, a narrower contradiction check is recorded next to it for review; an
+    "incorrect" that check doesn't back up (nothing contradicts the gold) counts as
+    partially_correct, with the judge's verdict kept as judge_verdict.
 
 Sections are matched by law (gazette number) and number: "6(2) › 24א(ט)" is section 6(2) of
 the amending law, inserting 24א(ט); a chunk of a whole section or subsection matches anything
@@ -58,20 +60,30 @@ TYPE_RULES = {
 JUDGE_PROMPT = """\
 You grade an answer to a question about Israeli law against a gold (reference) answer written by a lawyer.
 
+Grade only against the gold answer and the rule of the question type. The laws in this test are real and in force,
+even if you have never heard of them: never grade an answer down because you believe a law, section or date does
+not exist, or because it cites a section the gold answer doesn't name.
+
 Question type: {type} -- {rule}
 
 verdict:
 - "correct": gives the gold answer's essential facts (or, for the types above, does what the type requires) and
-  contradicts none of them. Wording may differ; extra accurate detail is fine.
+  contradicts none of them. Wording may differ. Detail beyond the gold answer that doesn't contradict it -- quoted
+  law, a cross-reference, a related rule -- is fine and never lowers the verdict by itself.
 - "partially_correct": some essential facts right, others missing.
 - "incorrect": contradicts the gold answer, gets a key fact wrong (yes instead of no, a wrong number), answers a
   different question, or breaks a rule of its question type.
 - "abstained": declines or says it cannot answer -- unless the question type makes that the right answer, in
   which case it is "correct".
 {must_not}
+The answer may end with the provisions it cites. They are its attribution: use them to judge which law it says
+what about.
 Section numbers: an amending law's section and the section it inserts ("6(2)" and "24א") are the same provision.
+Words that are garbled or in another language count only where they make an essential fact unreadable -- that fact
+is then missing.
 fabricated_specifics: true if the answer asserts a specific number, date, amount or rule the gold answer does not
-support. Judge meaning, not wording. The texts may be in Hebrew. Explain briefly."""
+support. The laws and sections it cites are not specifics. Judge meaning, not wording. The texts may be in Hebrew.
+Explain briefly."""
 
 
 def _log(message: str) -> None:
@@ -166,6 +178,7 @@ async def answer_phase(questions: list[dict], run_dir: Path) -> None:
         raise SystemExit("The Legal index is empty.")
     out = run_dir / "answers.json"
     answers = _load(out)
+    gazettes = _gazette_map()
     try:
         for q in questions:
             if q["id"] in answers:
@@ -182,11 +195,15 @@ async def answer_phase(questions: list[dict], run_dir: Path) -> None:
                 answers[q["id"]] = {"error": f"{type(exc).__name__}: {exc}", "seconds": round(time.monotonic() - started)}
                 _save(out, answers)
                 continue
+            retrieved = [c["source_id"] for c in turn.retrieved_chunks]
             answers[q["id"]] = {
                 "answer_text": strip_citations(turn.output["answer_draft"]),
                 "cited": [{"source_id": n["source_id"], "law": n["law"], "section": n["section"],
                            "verified": n["verified"]} for n in turn.footnotes],
-                "retrieved": [c["source_id"] for c in turn.retrieved_chunks],
+                "retrieved": retrieved,
+                # So a later re-grade doesn't need the same index.
+                "law_gazettes": {law_id: gazettes.get(law_id, "")
+                                 for law_id in {parse_source_id(s)[0] for s in retrieved}},
                 "escalation_reasons": turn.escalation_reasons,
                 "seconds": round(time.monotonic() - started),
                 "audit_path": turn.audit_path,
@@ -199,14 +216,14 @@ async def answer_phase(questions: list[dict], run_dir: Path) -> None:
 
 async def grade_phase(questions: list[dict], run_dir: Path) -> None:
     from docslides.legal.chunking import normalize_hebrew_quotes
-    from docslides.legal.evaluation import contradiction, get_judge_client
+    from docslides.legal.evaluation import contradiction, get_judge_client, with_citations
     from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams, aclose_all_clients
     from docslides.llm.schemas import EvalJudgement
 
     gold = _load(GOLD)  # opened only here, never in the answer phase
     items = {item["id"]: item for item in gold["items"]}
     gold_gazettes = _gold_gazettes(gold)
-    gazettes = _gazette_map()
+    local_gazettes = _gazette_map()
     answers = _load(run_dir / "answers.json")
     graded = _load(run_dir / "graded.json")
     qwen = get_judge_client()
@@ -216,6 +233,7 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
             if not a:
                 continue
             record = {"id": q["id"], "type": g["type"], "question": q["question"], "gold_answer": g["gold_answer"]}
+            gazettes = {**local_gazettes, **(a.get("law_gazettes") or {})}
             retrieval_share, retrieved_hits = coverage(a.get("retrieved", []), g["expected_sections"], gazettes, gold_gazettes)
             cited_ids = [c["source_id"] for c in a.get("cited", [])]
             citation_share, cited_hits = coverage(cited_ids, g["expected_sections"], gazettes, gold_gazettes)
@@ -234,8 +252,9 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
             must_not = ("The answer is incorrect if it does any of these: " + "; ".join(g["must_not"]) + "\n") \
                 if g["must_not"] else ""
             system = JUDGE_PROMPT.format(type=g["type"], rule=TYPE_RULES[g["type"]], must_not=must_not)
+            shown = with_citations(record["answer_text"], [f"{c['law']}, section {c['section']}" for c in record["cited"]])
             user = normalize_hebrew_quotes(
-                f"Question:\n{q['question']}\n\nGold answer:\n{g['gold_answer']}\n\nAnswer to grade:\n{record['answer_text']}"
+                f"Question:\n{q['question']}\n\nGold answer:\n{g['gold_answer']}\n\nAnswer to grade:\n{shown}"
             )
             try:
                 judgement = await qwen.complete_json(
@@ -249,9 +268,14 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
             if g["type"] in ("answerable", "multi_law") and verdict in ("incorrect", "partially_correct"):
                 shim = type("Q", (), {"question": q["question"], "gold": g["gold_answer"]})()
                 try:
-                    check = await contradiction(qwen, shim, record["answer_text"])
+                    check = await contradiction(qwen, shim, shown)
                     record["contradiction_check"] = {"contradicts_gold": check.contradicts_gold, "conflict": check.conflict}
                     record["needs_review"] = not check.contradicts_gold  # graded down, yet nothing contradicts
+                    if verdict == "incorrect" and not check.contradicts_gold:
+                        # "Incorrect" means it gets the answer wrong; a verdict the narrower check can't back
+                        # up (the 14B judge has called an answer identical to the gold wrong) is at most a miss.
+                        verdict = "partially_correct"
+                        record.update(verdict=verdict, judge_verdict="incorrect")
                 except Exception as exc:  # noqa: BLE001
                     record["contradiction_check"] = f"failed: {exc}"
             record["answer"] = POINTS.get(verdict, 0.0)
@@ -287,6 +311,8 @@ def summarize(records: list[dict]) -> dict:
         "citation": mean(r.get("citation") for r in records),
         "verdicts": {v: sum(r["verdict"] == v for r in records)
                      for v in ("correct", "partially_correct", "incorrect", "abstained", "error")},
+        "fabricated_specifics": sum(bool(r.get("fabricated_specifics")) for r in records),
+        "escalated": sum(bool(r.get("escalation_reasons")) for r in records),
         "by_type": by_type,
     }
 

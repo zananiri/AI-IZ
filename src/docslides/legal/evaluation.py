@@ -42,6 +42,8 @@ BASELINE_SYSTEM_PROMPT = "You are a legal assistant. Answer the user's question 
 JUDGE_PROMPT = """\
 You grade answers to questions about one specific Israeli law against a gold (reference) answer.
 
+Grade only against the gold answer. The law in this test is real and in force, even if you have never heard of it: never grade an answer down because you believe a law, section or date does not exist, or because it cites a section the gold answer doesn't name.
+
 verdict:
 - "correct": states all essential facts of the gold answer and contradicts none of them. Wording may differ; additional accurate context is fine.
 - "partially_correct": some essential facts right, others missing or wrong.
@@ -51,7 +53,10 @@ If the gold answer says the law does NOT state something, then saying it is not 
 If the gold answer DOES give an answer, a refusal or "could not be answered / not found" reply is "abstained" -- never "correct", whatever the reason given.
 Section numbers: an amending law changes another law's sections, so the same provision can be cited either by the amending law's section (e.g. "section 6(4)") or by the section it inserts or amends (e.g. "section 116יז10(ה)"). Treat both as the same provision; never mark an answer wrong only for citing the other number.
 
-fabricated_specifics: true if the answer asserts a specific number, date, amount or rule as the answer that the gold answer does not support.
+The answer may end with the provisions it cites. They are its attribution, not part of its claims.
+Words that are garbled or in another language count only where they make an essential fact unreadable -- that fact is then missing.
+
+fabricated_specifics: true if the answer asserts a specific number, date, amount or rule as the answer that the gold answer does not support. The laws and sections it cites are not specifics.
 
 Judge meaning, not wording. The answer may be in Hebrew. Explain briefly."""
 
@@ -94,6 +99,14 @@ def evidence_coverage(texts: list[str], groups: list[list[str]]) -> float | None
         return None
     hit = sum(any(all(_matches(p, t) for p in group) for t in texts) for group in groups)
     return hit / len(groups)
+
+
+def with_citations(answer: str, cited: list[str]) -> str:
+    """The answer as a reader sees it: its text, then the provisions its footnotes cite
+    (a stripped answer hides which law says what)."""
+    if not cited:
+        return answer
+    return answer + "\n\nProvisions cited in the answer:\n" + "\n".join(f"- {c}" for c in cited)
 
 
 def _judge_input(q: EvalQuestion, answer: str) -> str:

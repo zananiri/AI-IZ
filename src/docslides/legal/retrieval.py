@@ -74,6 +74,7 @@ class RetrievalResult:
     best_rerank_score: float | None = None  # how directly the best provision answers, 0-1
     laws_in_play: list[str] = field(default_factory=list)  # several laws answer; the question names none
     indexed_law_keys: set[str] = field(default_factory=set)  # every law the index holds (amendments.law_key)
+    missing_sections: list[str] = field(default_factory=list)  # named by the question, text not in the index
 
     def by_source_id(self) -> dict[str, list[RetrievedLegalChunk]]:
         grouped: dict[str, list[RetrievedLegalChunk]] = {}
@@ -442,12 +443,15 @@ def retrieve(query: str) -> RetrievalResult:
     for chunk_id, text, meta, distance in _definition_rows(query, query_vector):
         admit(chunk_id, text, meta, distance, "section_lookup")
     named_laws = _named_law_ids(query)
+    missing: list[str] = []
     if cfg.section_lookup_max:
         index = _derived_indexes()["sections"] if named_sections(query) else {}
         for number, sub in named_sections(query):
             rows = _nearest_first(_get_embedded(ids=index.get(number, [])), query_vector)
             if named_laws:  # "סעיף 25(ב1) לחוק החוזים": that law's section 25 only
                 rows = [row for row in rows if row[2].get("law_id") in named_laws]
+            if not any(_holds(number, sub, text, meta) for _, text, meta, _ in rows):
+                missing.append(f"{number}({sub})" if sub else number)
             if sub:  # "סעיף 62(ג)": a chunk naming that very subsection first
                 wanted = f"{number}({sub})"
                 rows.sort(key=lambda row: wanted not in join_spaced_section_numbers(row[1]))
@@ -513,7 +517,32 @@ def retrieve(query: str) -> RetrievalResult:
         best_rerank_score=best_score,
         laws_in_play=[] if named_laws else _laws_in_play(list(chunks.values()), best_score, cfg),
         indexed_law_keys=set(_derived_indexes()["law_keys"]),
+        missing_sections=missing,
     )
+
+
+def _holds(number: str, sub: str | None, text: str, meta: dict) -> bool:
+    """Does this chunk hold the text of section `number` (subsection `sub`)? An
+    amending law that only refers to a subsection ('הסכמה הנוגדת את סעיף קטן
+    (ב1) בטלה') doesn't: the subsection's text is in the principal law."""
+    from docslides.legal.amendments import _base_section
+
+    if not sub:
+        return True  # the section-number index only lists chunks that hold or amend it
+    wanted = f"{number}({sub})"
+    inserted = meta.get("inserted_section") or ""
+    own = meta.get("section_number") or ""
+    for identity, subsection in ((inserted, ""), (own, meta.get("subsection_number") or "")):
+        if not identity or _base_section(identity) != number:
+            continue
+        label = f"{identity}({subsection})" if subsection else identity
+        if label.startswith(wanted) or (label == number and f"({sub})" in text):  # or the whole section
+            return True
+    if inserted or own == number:
+        return False
+    # An amending provision naming the subsection it changes: 'בסעיף 62(ג), במקום "ה־40" יבוא "ה־43"'.
+    body = join_spaced_section_numbers(text)
+    return wanted in body or re.search(rf"סעיף\s+קטן\s+\({re.escape(sub)}\)", body) is not None
 
 
 def _named_law_ids(query: str) -> set[str]:

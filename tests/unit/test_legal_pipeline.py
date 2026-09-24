@@ -132,7 +132,7 @@ def test_hebrew_turn_revises_memo_and_answers_with_the_verified_draft(wire):
     assert entry["final_integrity"]["structural_problems"] == {}
 
 
-def test_english_turn_escalates_unverifiable_citation(wire):
+def test_english_turn_withholds_a_draft_whose_only_citation_fails(wire):
     invented = CITE.replace(SOURCE, "invented:99")
     qwen = FakeClient(
         "qwen",
@@ -151,9 +151,11 @@ def test_english_turn_escalates_unverifiable_citation(wire):
 
     assert result.reply_language == "en"
     assert qwen.names().count("legal_draft") == 2  # one redraft after the failed verification
-    assert result.output["escalation_flag"]
-    assert any("could not be verified" in r for r in result.escalation_reasons)
-    assert result.footnotes[0]["verified"] is False
+    assert result.display_answer.startswith("The drafted answer could not be verified")
+    assert result.output["escalation_flag"] and result.footnotes == []
+    assert any("no answer was given" in r and "invented:99" in r for r in result.escalation_reasons)
+    entry = _audit(result)
+    assert "rescind" in entry["withheld_draft"] and entry["removed_sentences"][0]["source_id"] == "invented:99"
 
 
 def test_memo_failing_gate_after_revisions_escalates_without_drafting(wire):
@@ -227,6 +229,7 @@ def test_short_form_citation_is_expanded_and_a_citationless_draft_escalates(wire
     uncited = _run("Can I cancel a contract I signed by mistake?")
     assert uncited.output["escalation_flag"]
     assert any("no [[CITE]] tokens" in r for r in uncited.escalation_reasons)
+    assert uncited.display_answer.startswith("The drafted answer could not be verified")  # nothing verified to give
 
 
 def test_memo_revisions_start_from_the_best_attempt_not_the_last(wire):
@@ -267,3 +270,146 @@ def test_failed_gate_keeps_the_attempt_with_fewest_problems(wire):
 
     assert result.output["research_memorandum"]["supporting_authority"]  # attempt 1 kept
     assert len([r for r in result.escalation_reasons if "has no supporting_authority" in r]) == 0
+
+
+# --- answer guards: unverified sentences, wrong-script words, several laws, missing sections ----------
+
+TWO_CLAIM_MEMO = {
+    **GOOD_MEMO,
+    "governing_law": [*GOOD_MEMO["governing_law"],
+                      {"claim_id": "C2", "text": "Rescission is possible for ten years.", "issue_id": "I1",
+                       "fact_ids": [], "source_ids": [SOURCE]}],
+    "unresolved_questions": [*GOOD_MEMO["unresolved_questions"], "C2: searched for contrary authority; none found"],
+}
+CITE_C2 = CITE.replace('claim_id="C1"', 'claim_id="C2"')
+
+LAW2 = 'חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023, התשפ"ו-2026'
+SOURCE2 = "oct7@2026-05-11:25"
+
+
+def _two_law_retrieval(**extra) -> RetrievalResult:
+    result = _retrieval()
+    meta = ChunkMetadata(
+        chunk_id=SOURCE2, source_id=SOURCE2, section_key=SOURCE2, law_id="oct7", law_name=LAW2, chapter=None,
+        part=None, section_number="25", subsection_number=None, breadcrumb=f"{LAW2} > סעיף 25",
+        effective_date_start="2026-05-11", effective_date_end=None, status="current", source_type="statute",
+        source_origin="knesset", ingestion_date="2026-09-23", language="he",
+    )
+    result.chunks.append(RetrievedLegalChunk(SOURCE2, f"{LAW2} > סעיף 25\n\nדיון בהיוועדות חזותית.", meta, 0.3,
+                                             "section_lookup"))
+    for key, value in extra.items():
+        setattr(result, key, value)
+    return result
+
+
+def test_a_sentence_whose_source_does_not_state_it_is_removed(wire):
+    draft = f"הצד הטועה רשאי לבטל את החוזה. {CITE} הביטול אפשרי במשך עשר שנים. {CITE_C2}"
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [TWO_CLAIM_MEMO],
+            "legal_draft": [{"answer_draft": draft, "escalation_flag": False}] * 2,
+            "legal_citation_verification": [
+                {"verdict": "entailed", "explanation": "14(א)"}, {"verdict": "not_entailed", "explanation": "no term"},
+            ] * 2,
+        },
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    assert result.output["answer_draft"] == f"הצד הטועה רשאי לבטל את החוזה. {CITE}"
+    assert [n["verified"] for n in result.footnotes] == [True]
+    assert any("Removed 1 statement" in r for r in result.escalation_reasons)
+    assert _audit(result)["removed_sentences"][0]["sentence"] == "הביטול אפשרי במשך עשר שנים."
+
+
+def test_words_in_another_script_are_repaired_word_by_word(wire):
+    draft = f"הצד הטועה מ報導 רשאי לבטל את החוזה simultaneously. {CITE}"
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": draft, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}],
+            # The second replacement is itself foreign, so it isn't applied.
+            "legal_script_repair": [{"repairs": [{"word": "מ報導", "replacement": "מדווח"},
+                                                 {"word": "simultaneously", "replacement": "at once"}]}],
+        },
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    assert result.output["answer_draft"] == f"הצד הטועה מדווח רשאי לבטל את החוזה simultaneously. {CITE}"
+    assert any("another script remain" in r and "simultaneously" in r for r in result.escalation_reasons)
+    assert _audit(result)["script_check"]["flagged"] == ["מ報導", "simultaneously"]
+
+
+def test_an_answer_leaving_out_a_law_in_play_says_so_up_front(wire, monkeypatch):
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            # Asked (twice) to add a claim for the second law; it never does.
+            "legal_research_memo": [GOOD_MEMO] * 3,
+            "legal_draft": [{"answer_draft": f"הצד הטועה רשאי לבטל את החוזה. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}],
+        },
+    )
+    wire(qwen)
+    monkeypatch.setattr(pipeline, "retrieve", lambda q: _two_law_retrieval(laws_in_play=[LAW, LAW2]))
+
+    result = _run("מה קובע סעיף 25?")
+
+    memo_calls = [messages for name, messages in qwen.calls if name == "legal_research_memo"]
+    assert len(memo_calls) == 3 and f"no claim cites {LAW2}" in memo_calls[1][-1].content
+    assert qwen.names().count("legal_draft") == 1  # the memorandum has nothing on LAW2 to cite
+    assert result.output["answer_draft"].startswith("השאלה אינה חד־משמעית")
+    assert f"אינה עוסקת ב{LAW2}" in result.output["answer_draft"].split("\n\n")[0]
+    assert any("leaves out" in r and LAW2 in r for r in result.escalation_reasons)
+
+
+def test_a_draft_citing_one_law_of_two_the_memo_covers_is_revised(wire, monkeypatch):
+    memo = {**TWO_CLAIM_MEMO, "governing_law": [TWO_CLAIM_MEMO["governing_law"][0],
+                                                {**TWO_CLAIM_MEMO["governing_law"][1], "source_ids": [SOURCE2]}]}
+    cite2 = CITE_C2.replace(SOURCE, SOURCE2).replace(LAW, LAW2).replace('section="14"', 'section="25"')
+    both = f"השאלה אינה חד־משמעית. בחוק החוזים: ניתן לבטל. {CITE} בחוק העמדה לדין: דיון בהיוועדות. {cite2}"
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [memo],
+            "legal_draft": [{"answer_draft": f"ניתן לבטל. {CITE}", "escalation_flag": False},
+                            {"answer_draft": both, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}] * 3,
+        },
+    )
+    wire(qwen)
+    monkeypatch.setattr(pipeline, "retrieve", lambda q: _two_law_retrieval(laws_in_play=[LAW, LAW2]))
+
+    result = _run("מה קובע סעיף 25?")
+
+    revision = [messages for name, messages in qwen.calls if name == "legal_draft"][1][-1].content
+    assert f"the memorandum has claims for {LAW2}" in revision
+    assert result.output["answer_draft"] == both and not result.output["escalation_flag"]
+
+
+def test_a_named_section_missing_from_the_index_is_said_up_front(wire, monkeypatch):
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": f"הצד הטועה רשאי לבטל את החוזה. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}],
+        },
+    )
+    wire(qwen)
+    missing = _retrieval()
+    missing.missing_sections = ["25(ב1)"]
+    monkeypatch.setattr(pipeline, "retrieve", lambda q: missing)
+
+    result = _run("מה קובע סעיף 25(ב1) לחוק החוזים?")
+
+    memo_prompt = next(messages for name, messages in qwen.calls if name == "legal_research_memo")[1].content
+    assert "does not hold the text of section 25(ב1)" in memo_prompt
+    assert result.output["answer_draft"].startswith("נוסח סעיף 25(ב1) אינו נמצא במאגר")
+    assert any("not in the index: 25(ב1)" in r for r in result.escalation_reasons)

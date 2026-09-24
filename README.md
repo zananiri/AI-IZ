@@ -286,6 +286,17 @@ lawyer usually needs the version in force when the facts happened -- and an
 answer citing a section the amendment itself changed escalates. Run
 `python scripts/ingest_legal.py retag` once for laws indexed before this existed.
 
+**Only verified statements reach the answer.** After the redraft, a sentence
+whose cited source doesn't state it (or isn't a source the research memorandum
+established) is removed. If nothing cited is left, no answer is given and the
+question escalates. A partly supported citation stays, marked unverified.
+Words the model wrote in another script ('מ報導', 'октяבר') are replaced word
+by word; the rest of the text is left as it is. When provisions of several
+indexed laws match a question that names none, the memorandum and the draft
+are sent back to cover each law, and an answer that still leaves one out says
+so first. A question naming a section whose text isn't in the index (an
+amending law that only refers to it) is told so up front.
+
 Every answer is appended to `data/legal/audit/<date>.jsonl` (question,
 model, retrieved chunks, memorandum/draft attempts,
 verification results). Those files hold users' questions verbatim.

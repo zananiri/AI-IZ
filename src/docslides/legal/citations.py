@@ -13,6 +13,7 @@ quote-delimited parser.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 _TOKEN_RE = re.compile(r"\[\[CITE:(?P<body>(?:(?!\]\]).)*?=(?:(?!\]\]).)*)\]\]")
@@ -75,10 +76,13 @@ def expand_citations(text: str, evidence: dict) -> str:
     inside a JSON string, and an unescaped quote there ends the string
     mid-answer. A value the model did give that disagrees with the metadata
     is kept, so the structural check still flags it. Unknown source_ids are
-    left as written so that check can flag them too."""
+    left as written so that check can flag them too -- except a near miss
+    (see `_resolve_source_id`)."""
 
     def canonical(match: re.Match[str]) -> str:
         fields = _parse_body(match.group("body"))
+        if fields.get("source_id", "") not in evidence:
+            fields["source_id"] = _resolve_source_id(fields.get("source_id", ""), evidence)
         meta = evidence.get(fields.get("source_id", ""))
         if meta is not None:
             section = meta.section_number + (f"({meta.subsection_number})" if meta.subsection_number else "")
@@ -94,18 +98,71 @@ def expand_citations(text: str, evidence: dict) -> str:
     return _TOKEN_RE.sub(canonical, text)
 
 
+def _resolve_source_id(source_id: str, evidence: dict) -> str:
+    """A source_id the model garbled in its version date ('law-x@2026-11:3' for
+    'law-x@2026-05-11:3') -> the one evidence id with the same law and section.
+    Anything less certain is left as written."""
+    law, _, rest = source_id.partition("@")
+    _, _, section = rest.partition(":")
+    if not law or not section:
+        return source_id
+    matches = [sid for sid in evidence if sid.partition("@")[0] == law and sid.partition(":")[2] == section]
+    return matches[0] if len(matches) == 1 else source_id
+
+
+def outside_citations(text: str, transform: Callable[[str], str]) -> str:
+    """Applies `transform` to the prose between citation tokens, leaving the tokens as they are."""
+    pieces, cursor = [], 0
+    for match in _TOKEN_RE.finditer(text):
+        pieces += [transform(text[cursor : match.start()]), match.group(0)]
+        cursor = match.end()
+    pieces.append(transform(text[cursor:]))
+    return "".join(pieces)
+
+
 def strip_citations(text: str) -> str:
     return re.sub(r"\s+([.,;:!?])", r"\1", _ANY_CITE_TAG_RE.sub("", text)).strip()
+
+
+def _sentence_start(text: str, token_start: int) -> int:
+    """Where the sentence a citation token is attached to begins: after the
+    previous sentence boundary, line break or citation token."""
+    segment = text[:token_start].rstrip()
+    cut = max(segment.rfind("\n"), segment.rfind("]]") + 1 if "]]" in segment else -1)
+    for match in re.finditer(r"[.!?]\s", segment[:-1]):
+        cut = max(cut, match.end() - 1)
+    return cut + 1
 
 
 def sentence_before(text: str, token_start: int) -> str:
     """The sentence a citation token is attached to: the text between the
     previous sentence boundary / citation token and this token."""
-    segment = text[:token_start].rstrip()
-    cut = max(segment.rfind("\n"), segment.rfind("]]") + 1 if "]]" in segment else -1)
-    for match in re.finditer(r"[.!?]\s", segment[:-1]):
-        cut = max(cut, match.end() - 1)
-    return strip_citations(segment[cut + 1 :]).strip()
+    return strip_citations(text[_sentence_start(text, token_start) : token_start].rstrip()).strip()
+
+
+def remove_cited_sentences(text: str, indices: set[int]) -> tuple[str, set[int]]:
+    """Drops the sentence each citation in `indices` (its index in token order)
+    is attached to, together with every token attached to that sentence -- a
+    token right after another token belongs to the same sentence. Returns the
+    text and the indices of all the tokens removed."""
+    groups: list[tuple[int, int, list[int]]] = []  # (sentence start, last token end, token indices)
+    for index, citation in enumerate(parse_citations(text)):
+        start = _sentence_start(text, citation.start)
+        if groups and not strip_citations(text[start : citation.start]).strip():
+            first, _, members = groups[-1]
+            groups[-1] = (first, citation.end, [*members, index])
+        else:
+            groups.append((start, citation.end, [index]))
+    removed: set[int] = set()
+    pieces, cursor = [], 0
+    for start, end, members in groups:
+        if indices & set(members):
+            pieces.append(text[cursor:start])
+            cursor = end
+            removed.update(members)
+    pieces.append(text[cursor:])
+    cleaned = re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", "".join(pieces)))
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip(), removed
 
 
 def render_with_footnotes(text: str) -> tuple[str, list[Citation], list[int]]:

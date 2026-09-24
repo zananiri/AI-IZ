@@ -48,9 +48,11 @@ def _log(message: str) -> None:
     print(f"[{datetime.now():%H:%M:%S}] {message}", flush=True)
 
 
-async def _grade(qwen, q: ev.EvalQuestion, answer: str) -> dict:
+async def _grade(qwen, q: ev.EvalQuestion, answer: str, cited: list[str] | None = None) -> dict:
+    """The judge sees the answer with the provisions it cites; key facts and traps are matched on its text."""
+    shown = ev.with_citations(answer, cited or [])
     try:
-        judgement = await ev.judge(qwen, q, answer)
+        judgement = await ev.judge(qwen, q, shown)
         verdict, fabricated, explanation = judgement.verdict, judgement.fabricated_specifics, judgement.explanation
     except Exception as exc:  # noqa: BLE001 -- an ungradable answer is recorded, not fatal
         verdict, fabricated, explanation = "incorrect", False, f"judge failed: {exc}"
@@ -59,7 +61,7 @@ async def _grade(qwen, q: ev.EvalQuestion, answer: str) -> dict:
               "fact_coverage": facts, "trap_hits": traps}
     if ev.needs_contradiction_check(q, verdict, facts, traps):
         try:
-            check = await ev.contradiction(qwen, q, answer)
+            check = await ev.contradiction(qwen, q, shown)
         except Exception as exc:  # noqa: BLE001
             graded["contradiction_check"] = f"failed: {exc}"
             return graded
@@ -127,7 +129,8 @@ async def run_after(questions, out: Path) -> dict:
         retrieved_texts = [c["text"] for c in turn.retrieved_chunks]
         cited_ids = {note["source_id"] for note in turn.footnotes}
         cited_texts = [c["text"] for c in turn.retrieved_chunks if c["source_id"] in cited_ids]
-        graded = await _grade(ev.get_judge_client(), q, answer)
+        cited = [f"{n['law']} {n['section']} ({'verified' if n['verified'] else 'unverified'})" for n in turn.footnotes]
+        graded = await _grade(ev.get_judge_client(), q, answer, cited)
         scores = ev.score_after(
             q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"], retrieved_texts, cited_texts
         )
@@ -135,8 +138,7 @@ async def run_after(questions, out: Path) -> dict:
             "answer_text": answer,
             "seconds": round(time.monotonic() - started),
             "escalation_reasons": turn.escalation_reasons,
-            "cited": [f"{n['law']} {n['section']} ({'verified' if n['verified'] else 'unverified'})"
-                      for n in turn.footnotes],
+            "cited": cited,
             "retrieved": [c["source_id"] for c in turn.retrieved_chunks],
             "audit_path": turn.audit_path,
             **graded,
@@ -158,7 +160,7 @@ async def rejudge(questions, run_dir: Path, after_only: bool = False) -> None:
             if not record or record.get("error"):
                 continue
             old = record.get("classification") or record.get("verdict")
-            graded = await _grade(qwen, q, record.get("answer_text", ""))
+            graded = await _grade(qwen, q, record.get("answer_text", ""), record.get("cited"))
             record.pop("needs_review", None)
             record.pop("judge_verdict", None)
             record.update(graded)

@@ -215,12 +215,25 @@ class EntailmentVerdict(BaseModel):
     explanation: str
 
 
+class WordRepair(BaseModel):
+    word: str = Field(description="The flagged word, exactly as listed")
+    replacement: str = Field(description="What it should read in the answer language; empty to drop it")
+
+
+class ScriptRepair(BaseModel):
+    """Legal tab: the answer-language word for each word written in another
+    script (legal/script_check.py)."""
+
+    repairs: list[WordRepair]
+
+
 class EvalJudgement(BaseModel):
     """scripts/eval_legal.py: grades one answer against its gold answer."""
 
     verdict: Literal["correct", "partially_correct", "incorrect", "abstained"]
     fabricated_specifics: bool = Field(
-        description="True if the answer states a specific number, date, amount or rule that is not in the gold answer"
+        description="True if the answer states a specific number, date, amount or rule that is not in the gold "
+        "answer. The laws and sections it cites don't count."
     )
     explanation: str
 

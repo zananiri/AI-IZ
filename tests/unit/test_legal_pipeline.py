@@ -346,6 +346,26 @@ def test_words_in_another_script_are_repaired_word_by_word(wire):
     assert _audit(result)["script_check"]["flagged"] == ["מ報導", "simultaneously"]
 
 
+def test_draft_fields_echoed_into_the_answer_text_are_dropped(wire):
+    draft = (f"הצד הטועה רשאי לבטל את החוזה. {CITE}\n\n escalated_flag: true\n escalation_reason: נדרש תאריך.\n"
+             " coverage_gaps: אין מידע.")
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": draft, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}],
+        },
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    assert result.output["answer_draft"] == f"הצד הטועה רשאי לבטל את החוזה. {CITE}"
+    assert "legal_script_repair" not in qwen.names()  # nothing left to repair
+    assert len(_audit(result)["dropped_field_lines"]) == 3
+
+
 def test_an_answer_leaving_out_a_law_in_play_says_so_up_front(wire, monkeypatch):
     qwen = FakeClient(
         "qwen",

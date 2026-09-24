@@ -221,6 +221,24 @@ def _question_block(
     return block
 
 
+# A draft's own JSON fields copied into its answer text ("escalation_flag: true",
+# "coverage_gaps: ...") -- the reader should never see them.
+_ECHOED_FIELD_RE = re.compile(r"(?im)^[ \t]*(?:escalat\w*|coverage_gaps|answer_draft)[ \t]*:.*$\n?")
+
+
+def _drop_echoed_fields(text: str) -> tuple[str, list[str]]:
+    dropped: list[str] = []
+
+    def drop(match: re.Match[str]) -> str:
+        if "[[CITE" in match.group(0):  # never drop a citation: footnotes follow the tokens
+            return match.group(0)
+        dropped.append(match.group(0).strip())
+        return ""
+
+    text = _ECHOED_FIELD_RE.sub(drop, text)
+    return (re.sub(r"\n{3,}", "\n\n", text).strip() if dropped else text), dropped
+
+
 def _uncovered_laws(laws_in_play: list[str], source_ids, evidence: dict[str, ChunkMetadata]) -> list[str]:
     """Laws in play that none of `source_ids` belongs to."""
     cited = {evidence[s].law_name for s in source_ids if s in evidence}
@@ -674,6 +692,9 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
                                 draft.coverage_gaps)
 
     await status("Checking the answer's wording")
+    final_text, echoed = _drop_echoed_fields(final_text)
+    if echoed:
+        entry["dropped_field_lines"] = echoed
     allowed = script_check.allowed_words([query, *evidence_texts.values()])
     final_text, script_log = await repair_foreign_words(qwen, final_text, reply_language, allowed)
     entry["script_check"] = script_log

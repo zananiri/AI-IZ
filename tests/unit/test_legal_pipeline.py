@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from docslides.config import get_config
 from docslides.legal import pipeline
@@ -28,9 +29,7 @@ GOOD_MEMO = {
     "issues": [{"issue_id": "I1", "question": "rescission for mistake", "legal_domain": "contracts"}],
     "facts_relied_on": [{"fact_id": "F1", "text": "the user contracted by mistake"}],
     "governing_law": [{"claim_id": "C1", "text": "A party who contracted by mistake may rescind.", "issue_id": "I1",
-                       "fact_ids": ["F1"]}],
-    "supporting_authority": [{"claim_id": "C1", "source_id": SOURCE, "law": LAW, "section": "14",
-                              "effective": "current", "source_type": "statute"}],
+                       "fact_ids": ["F1"], "source_ids": [SOURCE]}],
     "contrary_authority": [],
     "contrary_search_performed": True,
     "unresolved_questions": ["C1: searched the evidence for contrary authority; none found"],
@@ -221,9 +220,36 @@ def test_memo_failing_gate_after_revisions_escalates_without_drafting(wire):
     assert result.display_answer.startswith("Je n'ai pas pu")
 
 
-def test_schema_accepts_spec_output_shape():
-    memo = schemas.ResearchMemorandum.model_validate(GOOD_MEMO)
-    assert memo.governing_law[0].claim_id == "C1"
+def test_memo_schema_limits_each_claim_to_retrieved_sources():
+    turn_schema = schemas.grounded_memorandum_schema([SOURCE])
+    wire_schema = json.dumps(turn_schema.model_json_schema(), ensure_ascii=False)
+    assert SOURCE in wire_schema and '"minItems": 1' in wire_schema
+    invented = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "source_ids": ["made-up:1"]}]}
+    with pytest.raises(ValidationError):
+        turn_schema.model_validate(invented)
+
+
+def test_a_claim_naming_no_source_gets_the_evidence_it_quotes(wire):
+    quoting = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "source_ids": [],
+                                              "text": "מי שהתקשר בחוזה עקב טעות רשאי לבטל את החוזה."}]}
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_language_id": [{"language": "en"}],
+            "legal_research_memo": [quoting],
+            "legal_draft": [{"answer_draft": f"A mistaken party may rescind. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}],
+        },
+    )
+    wire(qwen, FakeClient("dicta"))
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    support = result.output["research_memorandum"]["supporting_authority"]
+    assert [(a["source_id"], a["attached_by"], a["section"], a["law"]) for a in support] == [
+        (SOURCE, "pipeline", "14", LAW)
+    ]
+    assert qwen.names().count("legal_research_memo") == 1 and not result.output["escalation_flag"]
 
 
 def test_short_form_citation_is_expanded_and_a_citationless_draft_escalates(wire):
@@ -255,7 +281,8 @@ def test_short_form_citation_is_expanded_and_a_citationless_draft_escalates(wire
 def test_memo_revisions_start_from_the_best_attempt_not_the_last(wire):
     # One problem the gate can't auto-fix: a claim linked to a fact that doesn't exist.
     nearly = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "fact_ids": ["F9"]}]}
-    worse = {**nearly, "supporting_authority": [], "authority_conflicts": ["C1 has no supporting_authority and is not listed in unresolved_questions"]}
+    worse = {**nearly, "governing_law": [{**nearly["governing_law"][0], "source_ids": []}],
+             "authority_conflicts": ["C1 lists no source_ids and is not listed in unresolved_questions"]}
     qwen = FakeClient(
         "qwen",
         json_responses={
@@ -271,14 +298,14 @@ def test_memo_revisions_start_from_the_best_attempt_not_the_last(wire):
 
     memo_calls = [messages for name, messages in qwen.calls if name == "legal_research_memo"]
     revised_from = memo_calls[2][2].content  # the assistant turn the third attempt was asked to fix
-    assert '"supporting_authority":[{' in revised_from.replace(" ", "")  # attempt 1, not the worse attempt 2
+    assert f'"source_ids":["{SOURCE}"]' in revised_from.replace(" ", "")  # attempt 1, not the worse attempt 2
     assert not result.output["escalation_flag"]
     assert result.output["research_memorandum"]["authority_conflicts"] == []
 
 
 def test_failed_gate_keeps_the_attempt_with_fewest_problems(wire):
     nearly = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "fact_ids": ["F9"]}]}
-    worse = {**nearly, "supporting_authority": [], "unresolved_questions": []}
+    worse = {**nearly, "governing_law": [{**nearly["governing_law"][0], "source_ids": []}], "unresolved_questions": []}
     qwen = FakeClient(
         "qwen",
         json_responses={"legal_language_id": [{"language": "en"}], "legal_research_memo": [nearly, worse, worse]},

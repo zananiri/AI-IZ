@@ -66,3 +66,33 @@ def test_rescore_after_reuses_stored_coverage():
     record = {"retrieval": 1.0, "citation": 0.0}
     assert ev.rescore_after(q, record, "correct", False, [])["score"] == 2 / 3
     assert ev.rescore_after(q, record, "abstained", False, [])["score"] == 1 / 3
+
+
+# --- grader safeguards ---------------------------------------------------------------------
+
+
+def test_judge_input_uses_gershayim_so_the_judge_cannot_truncate_on_a_quote():
+    from docslides.legal import evaluation as ev
+
+    q = ev.EvalQuestion(id="A1", group="A", question='מה הסכום בש"ח?', gold='2.5 מיליון ש"ח', key_facts=["2[.,]5"])
+    text = ev._judge_input(q, 'מעל 2.5 מיליון ש"ח')
+    assert '"' not in text and "ש״ח" in text
+
+
+def test_only_answers_holding_every_key_fact_get_the_contradiction_check():
+    from docslides.legal import evaluation as ev
+
+    q = ev.EvalQuestion(id="B8", group="B", question="?", gold="!", key_facts=["a", "b"])
+    c = ev.EvalQuestion(id="C1", group="C", question="?", gold="!", traps=["x"])
+    assert ev.needs_contradiction_check(q, "incorrect", 1.0, [])
+    assert ev.needs_contradiction_check(q, "partially_correct", 1.0, [])
+    assert not ev.needs_contradiction_check(q, "incorrect", 0.5, [])  # a key fact is missing
+    assert not ev.needs_contradiction_check(q, "abstained", 1.0, [])
+    assert not ev.needs_contradiction_check(c, "incorrect", None, [])  # unanswerables are judged as before
+
+
+def test_the_question_shown_to_the_model_uses_gershayim():
+    from docslides.legal import pipeline
+
+    assert "יו״ר" in pipeline._question_block('האם סמכויות יו"ר הוועדה חלות?', None)
+    assert '"' in pipeline._question_block('Does "section 5" apply?', None)  # not Hebrew: untouched

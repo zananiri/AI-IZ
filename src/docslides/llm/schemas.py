@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 LayoutType = Literal["title_bullets", "two_column", "section_header", "image_caption", "quote"]
 
@@ -109,6 +109,8 @@ class SupportingAuthority(BaseModel):
     section: str
     effective: str
     source_type: LegalSourceType
+    # "pipeline" when legal/validation.ground_memorandum attached the source the claim quotes
+    attached_by: Literal["model", "pipeline"] = "model"
 
 
 class ContraryAuthority(SupportingAuthority):
@@ -129,6 +131,70 @@ class ResearchMemorandum(BaseModel):
     unresolved_questions: list[str] = Field(default_factory=list)
     temporal_issues: list[str] = Field(default_factory=list)
     authority_conflicts: list[str] = Field(default_factory=list)
+
+
+_SOURCE_IDS_DESCRIPTION = (
+    "source_id of every evidence item that states this proposition, exactly as in the evidence -- at least one"
+)
+
+
+class GroundedClaim(BaseModel):
+    claim_id: str = Field(description="'C1', 'C2', ... -- the only claim IDs the draft may cite")
+    text: str = Field(description="The legal proposition")
+    issue_id: str
+    fact_ids: list[str] = Field(
+        default_factory=list, description="fact_ids from facts_relied_on this proposition applies to, if any"
+    )
+    source_ids: list[str] = Field(
+        default_factory=list, description=_SOURCE_IDS_DESCRIPTION, json_schema_extra={"minItems": 1}
+    )
+
+
+class GroundedContrary(BaseModel):
+    claim_id: str
+    source_id: str
+    note: str = Field(description="How this source qualifies, limits or contradicts the claim")
+
+
+class GroundedMemorandum(BaseModel):
+    """Pass A as the model writes it. Each claim names its own sources, and the
+    model never copies law / section / effective / source_type -- that is
+    what small models got wrong or skipped, leaving supporting_authority empty
+    and failing the gate. legal/validation.ground_memorandum turns this into
+    the ResearchMemorandum everything downstream uses."""
+
+    issues: list[LegalIssue]
+    facts_relied_on: list[LegalFact] = Field(default_factory=list)
+    governing_law: list[GroundedClaim]
+    contrary_authority: list[GroundedContrary] = Field(default_factory=list)
+    contrary_search_performed: bool
+    unresolved_questions: list[str] = Field(default_factory=list)
+    temporal_issues: list[str] = Field(default_factory=list)
+    authority_conflicts: list[str] = Field(default_factory=list)
+
+
+def grounded_memorandum_schema(source_ids: list[str]) -> type[GroundedMemorandum]:
+    """GroundedMemorandum with every source_id limited to this turn's retrieved
+    sources, and each claim required to name at least one: constrained
+    decoding can then neither invent a source nor leave a claim unsourced.
+    (minItems is in the JSON schema only, so a backend that doesn't enforce
+    it still parses -- ground_memorandum handles that case.)"""
+    if not source_ids:
+        return GroundedMemorandum
+    source_id = Literal[tuple(source_ids)]
+    claim = create_model(
+        "GroundedClaim",
+        __base__=GroundedClaim,
+        source_ids=(list[source_id], Field(default_factory=list, description=_SOURCE_IDS_DESCRIPTION,
+                                           json_schema_extra={"minItems": 1})),
+    )
+    contrary = create_model("GroundedContrary", __base__=GroundedContrary, source_id=(source_id, ...))
+    return create_model(
+        "GroundedMemorandum",
+        __base__=GroundedMemorandum,
+        governing_law=(list[claim], ...),
+        contrary_authority=(list[contrary], Field(default_factory=list)),
+    )
 
 
 class LegalDraft(BaseModel):
@@ -172,6 +238,16 @@ class EvalJudgement(BaseModel):
         description="True if the answer states a specific number, date, amount or rule that is not in the gold answer"
     )
     explanation: str
+
+
+class EvalContradiction(BaseModel):
+    """scripts/eval_legal.py: the narrow second question asked before an answer
+    holding every key fact may be graded down."""
+
+    contradicts_gold: bool = Field(
+        description="True only if the answer states something that conflicts with a fact in the gold answer"
+    )
+    conflict: str = Field(description="The conflicting statement, quoted, or empty if none")
 
 
 class ReplyLanguage(BaseModel):

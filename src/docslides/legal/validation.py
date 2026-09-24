@@ -18,7 +18,13 @@ import re
 
 from docslides.legal.citations import parse_citations
 from docslides.legal.models import ChunkMetadata
-from docslides.llm.schemas import ResearchMemorandum
+from docslides.llm.schemas import (
+    ContraryAuthority,
+    GoverningLawClaim,
+    GroundedMemorandum,
+    ResearchMemorandum,
+    SupportingAuthority,
+)
 
 _MIN_EXPLANATION_WORDS = 3
 
@@ -36,7 +42,7 @@ def _mentions(texts: list[str], claim_id: str) -> bool:
 # Phrases only the gate's own error messages contain (see validate_memorandum):
 # a small model asked to fix them sometimes pastes them into the memo instead.
 _ECHOED_ERROR_RE = re.compile(
-    r"has no supporting_authority|has no contrary_authority|contrary_search_performed must be true|"
+    r"has no supporting_authority|lists no source_ids|has no contrary_authority|contrary_search_performed must be true|"
     r"is not listed in unresolved_questions|never invent a source_id|must be carried through unchanged"
 )
 
@@ -58,6 +64,86 @@ def clean_memorandum(memo: ResearchMemorandum) -> ResearchMemorandum:
 
 
 AUTO_NOTE_MARK = "(auto-recorded)"
+_MIN_QUOTED_WEIGHT = 4  # shared terms (numbers count double) for a claim to "quote" a source
+
+
+def _authority_fields(claim_id: str, meta: ChunkMetadata) -> dict:
+    return {
+        "claim_id": claim_id,
+        "source_id": meta.source_id,
+        "law": meta.law_name,
+        "section": meta.display_section,
+        "effective": f"{meta.effective_date_start} to {meta.effective_date_end or 'current'}",
+        "source_type": meta.source_type,
+    }
+
+
+def _quoted_source(claim_text: str, evidence_texts: dict[str, str]) -> str | None:
+    """The one evidence item a claim's wording and numbers clearly come from,
+    or None when no item stands out. Terms every item shares (the law's name
+    in each breadcrumb) don't count."""
+    from docslides.legal.keyword import terms
+
+    claim = set(terms(claim_text))
+    per_source = {source_id: set(terms(text)) for source_id, text in evidence_texts.items()}
+    if not per_source:
+        return None
+    everywhere = set.intersection(*per_source.values()) if len(per_source) > 1 else set()
+
+    def weight(source_id: str) -> int:
+        return sum(2 if term[0].isdigit() else 1 for term in (claim & per_source[source_id]) - everywhere)
+
+    ranked = sorted(per_source, key=weight, reverse=True)
+    if weight(ranked[0]) < _MIN_QUOTED_WEIGHT:
+        return None
+    if len(ranked) > 1 and weight(ranked[1]) == weight(ranked[0]):
+        return None  # no clear source
+    return ranked[0]
+
+
+def ground_memorandum(
+    grounded: GroundedMemorandum, evidence: dict[str, ChunkMetadata], evidence_texts: dict[str, str]
+) -> tuple[ResearchMemorandum, list[str]]:
+    """The model's Pass A output as a ResearchMemorandum: each claim's
+    source_ids become supporting_authority entries filled from the source's
+    metadata, so the model never has to copy law, section or dates. A claim
+    that names no retrieved source gets the evidence item it quotes, when one
+    clearly stands out, marked attached_by="pipeline" -- Pass B's entailment
+    check still verifies that pairing before anything is cited. Returns the
+    memo and a note per attached source."""
+    supporting: list[SupportingAuthority] = []
+    attached: list[str] = []
+    for claim in grounded.governing_law:
+        source_ids = [s for s in dict.fromkeys(claim.source_ids) if s in evidence]
+        by = "model"
+        if not source_ids:
+            quoted = _quoted_source(claim.text, evidence_texts)
+            if quoted:
+                source_ids, by = [quoted], "pipeline"
+                attached.append(f"{claim.claim_id} -> {quoted}")
+        supporting += [
+            SupportingAuthority(**_authority_fields(claim.claim_id, evidence[s]), attached_by=by) for s in source_ids
+        ]
+    contrary = [
+        ContraryAuthority(**_authority_fields(c.claim_id, evidence[c.source_id]), note=c.note)
+        for c in grounded.contrary_authority
+        if c.source_id in evidence
+    ]
+    memo = ResearchMemorandum(
+        issues=grounded.issues,
+        facts_relied_on=grounded.facts_relied_on,
+        governing_law=[
+            GoverningLawClaim(claim_id=c.claim_id, text=c.text, issue_id=c.issue_id, fact_ids=c.fact_ids)
+            for c in grounded.governing_law
+        ],
+        supporting_authority=supporting,
+        contrary_authority=contrary,
+        contrary_search_performed=grounded.contrary_search_performed,
+        unresolved_questions=grounded.unresolved_questions,
+        temporal_issues=grounded.temporal_issues,
+        authority_conflicts=grounded.authority_conflicts,
+    )
+    return memo, attached
 
 
 def record_contrary_search_notes(memo: ResearchMemorandum) -> tuple[ResearchMemorandum, list[str]]:

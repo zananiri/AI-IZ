@@ -57,13 +57,21 @@ async def _grade(qwen, q: ev.EvalQuestion, answer: str) -> dict:
         verdict, fabricated, explanation = judgement.verdict, judgement.fabricated_specifics, judgement.explanation
     except Exception as exc:  # noqa: BLE001 -- an ungradable answer is recorded, not fatal
         verdict, fabricated, explanation = "incorrect", False, f"judge failed: {exc}"
-    return {
-        "verdict": verdict,
-        "fabricated_specifics": fabricated,
-        "judge_explanation": explanation,
-        "fact_coverage": ev.fact_coverage(answer, q.key_facts),
-        "trap_hits": ev.trap_hits(answer, q.traps),
-    }
+    facts, traps = ev.fact_coverage(answer, q.key_facts), ev.trap_hits(answer, q.traps)
+    graded = {"verdict": verdict, "fabricated_specifics": fabricated, "judge_explanation": explanation,
+              "fact_coverage": facts, "trap_hits": traps}
+    if ev.needs_contradiction_check(q, verdict, facts, traps):
+        try:
+            check = await ev.contradiction(qwen, q, answer)
+        except Exception as exc:  # noqa: BLE001
+            graded["contradiction_check"] = f"failed: {exc}"
+            return graded
+        graded["contradiction_check"] = {"contradicts_gold": check.contradicts_gold, "conflict": check.conflict}
+        if not check.contradicts_gold:
+            # Every key fact present and nothing contradicts the gold answer: the judge's
+            # verdict is kept for the record, the grade is correct.
+            graded.update(judge_verdict=verdict, verdict="correct", fabricated_specifics=False)
+    return graded
 
 
 async def run_before(questions, out: Path) -> dict:

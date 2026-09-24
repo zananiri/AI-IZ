@@ -95,11 +95,9 @@ RESEARCH_MEMO_PROMPT = (
 TASK -- Pass A, research memorandum. Before any prose is drafted, produce the structured research memorandum (JSON). Do not draft an answer.
 - issues: the legal questions raised (I1, I2, ...).
 - facts_relied_on: facts taken from the user's message (F1, ...), source "user_input". Link claims to the facts they apply to via fact_ids.
-- governing_law: each legal proposition you rely on, with a claim_id (C1, C2, ...) and its issue_id. These are the ONLY claim IDs the draft may later cite.
-- supporting_authority: for each claim, the evidence items that state it. source_id, law, section, effective and source_type must be copied exactly from the evidence item's attributes.
-- contrary_authority: you MUST actively search the evidence for authority that limits, qualifies or contradicts EVERY supporting proposition, and record each hit with a note on how it qualifies the claim. If a genuine search found none for a claim, say so explicitly in unresolved_questions, mentioning that claim_id -- never leave it silently empty.
+- governing_law: each legal proposition you rely on, with a claim_id (C1, C2, ...), its issue_id, and source_ids: the source_id of every evidence item that states it, exactly as written in the evidence (at least one). These are the ONLY claim IDs the draft may later cite. A proposition no evidence item states is not a claim -- put it in unresolved_questions instead.
+- contrary_authority: you MUST actively search the evidence for authority that limits, qualifies or contradicts EVERY supporting proposition, and record each hit (claim_id, the source's source_id, and a note on how it qualifies the claim). If a genuine search found none for a claim, say so explicitly in unresolved_questions, mentioning that claim_id -- never leave it silently empty.
 - contrary_search_performed: true only once you've actually done that search for every claim.
-- A claim with no supporting evidence must be listed (by claim_id) in unresolved_questions.
 - temporal_issues: version / effective-date concerns. authority_conflicts: unresolved conflicts between sources."""
 )
 

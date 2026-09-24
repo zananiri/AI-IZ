@@ -30,6 +30,7 @@ from dataclasses import asdict, dataclass, field
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
 from docslides.legal import amendments, audit, prompts
+from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.citations import (
     CitationLockError,
     expand_citations,
@@ -52,6 +53,7 @@ from docslides.legal.retrieval import (
 from docslides.legal.validation import (
     check_draft_citations,
     clean_memorandum,
+    ground_memorandum,
     record_contrary_search_notes,
     validate_memorandum,
 )
@@ -69,6 +71,7 @@ from docslides.llm.schemas import (
     LegalDraft,
     ReplyLanguage,
     ResearchMemorandum,
+    grounded_memorandum_schema,
 )
 from docslides.logging_setup import get_logger
 
@@ -189,6 +192,11 @@ _THIN_COVERAGE_NOTE = (
 
 
 def _question_block(query: str, normalized: str | None, thin_coverage: bool = False) -> str:
+    # ״ for the ASCII quote, as in the evidence: a model that copies 'יו"ר' from the question
+    # into its JSON answer unescaped cuts the answer off there (legal/chunking.py).
+    if _dominant_rtl_script(query) == "he":
+        query = normalize_hebrew_quotes(query)
+        normalized = normalize_hebrew_quotes(normalized) if normalized else normalized
     block = f"User's question (original):\n{query}"
     if normalized and normalized != query:
         block += f"\n\nNormalized Hebrew form of the question (text form only, same meaning):\n{normalized}"
@@ -197,57 +205,70 @@ def _question_block(query: str, normalized: str | None, thin_coverage: bool = Fa
     return block
 
 
+def _for_model(error: str) -> str:
+    """A gate error in the words of the memo the model writes (GroundedMemorandum)."""
+    return error.replace("has no supporting_authority", "lists no source_ids")
+
+
 async def research_memorandum(
-    qwen: QwenClient, evidence_text: str, question: str, evidence: dict[str, ChunkMetadata], attempts_log: list
+    qwen: QwenClient,
+    evidence_text: str,
+    question: str,
+    evidence: dict[str, ChunkMetadata],
+    evidence_texts: dict[str, str],
+    attempts_log: list,
 ) -> tuple[ResearchMemorandum | None, list[str]]:
     max_revisions = get_config().legal.pipeline.max_memo_revisions
+    schema = grounded_memorandum_schema(list(evidence))
     messages = [
         ChatMessage("system", prompts.RESEARCH_MEMO_PROMPT),
         ChatMessage("user", f"<evidence_set>\n{evidence_text}\n</evidence_set>\n\n{question}"),
     ]
     errors: list[str] = ["no memorandum produced"]
     memo: ResearchMemorandum | None = None
-    best: tuple[ResearchMemorandum, list[str]] | None = None
+    best: tuple[ResearchMemorandum, list[str], str] | None = None
     for attempt in range(1 + max_revisions):
         try:
-            memo = await qwen.complete_json(
+            grounded = await qwen.complete_json(
                 messages,
                 LLMCallSite("legal_research_memo"),
-                schema=ResearchMemorandum,
+                schema=schema,
                 sampling=SamplingParams(temperature=0.1, top_p=0.9, max_tokens=3072),
             )
-            memo = clean_memorandum(memo)
         except Exception as exc:  # noqa: BLE001 -- schema failure after retries counts as a failed attempt
             errors = [f"memorandum generation failed: {exc}"]
             attempts_log.append({"attempt": attempt + 1, "memorandum": None, "errors": errors})
             continue
+        memo, attached = ground_memorandum(grounded, evidence, evidence_texts)
+        memo = clean_memorandum(memo)
         memo, auto_notes = record_contrary_search_notes(memo)
         errors = validate_memorandum(memo, evidence)
-        attempts_log.append(
-            {"attempt": attempt + 1, "memorandum": memo.model_dump(), "errors": errors, "auto_recorded_notes": auto_notes}
-        )
+        attempts_log.append({
+            "attempt": attempt + 1, "memorandum": memo.model_dump(), "errors": errors,
+            "auto_recorded_notes": auto_notes, "auto_attached_sources": attached,
+        })
         if not errors:
             return memo, []
         # A revision can come back worse than what it revised (a small model asked to add one
-        # note may drop its supporting source instead): always revise from, and fall back to,
+        # note may drop a claim's sources instead): always revise from, and fall back to,
         # the attempt with the fewest problems.
         if best is None or len(errors) < len(best[1]):
-            best = (memo, errors)
-        base, base_errors = best
+            best = (memo, errors, grounded.model_dump_json())
+        _, base_errors, base_json = best
         messages = [
             *messages[:2],
-            ChatMessage("assistant", base.model_dump_json()),
+            ChatMessage("assistant", base_json),
             ChatMessage(
                 "user",
                 "The memorandum failed validation and cannot go forward to drafting. Keep everything that is "
-                "already correct -- in particular every supporting_authority entry -- and fix only the problems "
+                "already correct -- in particular every claim's source_ids -- and fix only the problems "
                 "below. Do not copy these problem descriptions into any field. Return the complete corrected "
-                "memorandum:\n- " + "\n- ".join(base_errors),
+                "memorandum:\n- " + "\n- ".join(_for_model(e) for e in base_errors),
             ),
         ]
     if best is not None:
         attempts_log.append({"kept_attempt_with_fewest_problems": len(best[1])})
-        return best
+        return best[0], best[1]
     return memo, errors
 
 
@@ -569,7 +590,8 @@ async def run_legal_turn(
 
     await status(f"Pass A: research memorandum over {len(grouped)} source(s)")
     memo_attempts: list = []
-    memo, gate_errors = await research_memorandum(qwen, evidence_text, question, evidence, memo_attempts)
+    evidence_texts = {source_id: "\n".join(p.text for p in parts) for source_id, parts in grouped.items()}
+    memo, gate_errors = await research_memorandum(qwen, evidence_text, question, evidence, evidence_texts, memo_attempts)
     entry["memorandum_attempts"] = memo_attempts
 
     if gate_errors:

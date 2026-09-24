@@ -33,8 +33,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.llm.client import ChatMessage, LLMCallSite, QwenClient, SamplingParams
-from docslides.llm.schemas import EvalJudgement
+from docslides.llm.schemas import EvalContradiction, EvalJudgement
 
 BASELINE_SYSTEM_PROMPT = "You are a legal assistant. Answer the user's question in the language it was asked in."
 
@@ -95,11 +96,44 @@ def evidence_coverage(texts: list[str], groups: list[list[str]]) -> float | None
     return hit / len(groups)
 
 
+def _judge_input(q: EvalQuestion, answer: str) -> str:
+    # ״ for ASCII quotes: the judge quotes the texts in its JSON explanation, and an unescaped
+    # 'ש"ח' there cuts it off (the same failure legal/chunking.normalize_hebrew_quotes prevents).
+    return normalize_hebrew_quotes(
+        f"Question:\n{q.question}\n\nGold answer:\n{q.gold}\n\nAnswer to grade:\n{answer}"
+    )
+
+
+CONTRADICTION_PROMPT = """\
+You check one thing: does the answer CONTRADICT the gold answer? Contradict means it states something that conflicts
+with a fact in the gold answer -- a different number, date or amount, yes instead of no, a condition reversed, a rule
+attributed to the wrong body. Extra accurate detail, longer wording, quoting the law, or citing a different section
+number for the same provision is NOT a contradiction. Omitting something is not a contradiction either.
+The texts may be in Hebrew."""
+
+
+async def contradiction(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalContradiction:
+    return await qwen.complete_json(
+        [ChatMessage("system", CONTRADICTION_PROMPT), ChatMessage("user", _judge_input(q, answer))],
+        LLMCallSite("legal_eval_judge"),
+        schema=EvalContradiction,
+        sampling=SamplingParams(temperature=0.0, max_tokens=512),
+    )
+
+
+def needs_contradiction_check(q: EvalQuestion, verdict: str, facts: float | None, traps: list[str]) -> bool:
+    """An 8B judge grades long, accurate answers down for extra detail. When an
+    answer holds every key fact of an answerable question and trips no trap, a
+    "wrong" or "partly right" verdict must survive a narrower question: does it
+    actually contradict the gold answer?"""
+    return q.group != "C" and verdict in ("incorrect", "partially_correct") and facts == 1.0 and not traps
+
+
 async def judge(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalJudgement:
     return await qwen.complete_json(
         [
             ChatMessage("system", JUDGE_PROMPT),
-            ChatMessage("user", f"Question:\n{q.question}\n\nGold answer:\n{q.gold}\n\nAnswer to grade:\n{answer}"),
+            ChatMessage("user", _judge_input(q, answer)),
         ],
         LLMCallSite("legal_eval_judge"),
         schema=EvalJudgement,

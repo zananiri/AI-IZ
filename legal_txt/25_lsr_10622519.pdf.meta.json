@@ -1,0 +1,17 @@
+{
+  "law_name": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+  "effective_date_start": "2026-01-05",
+  "effective_date_end": null,
+  "status": "current",
+  "source_type": "statute",
+  "source_origin": "knesset",
+  "language": "he",
+  "gazette": "ספר החוקים 3481",
+  "_derived": [
+    "law_name",
+    "source_type",
+    "source_origin",
+    "gazette"
+  ],
+  "_note": "Auto-derived by scripts/ingest_legal_txt.py -- check the fields listed in _derived (especially effective_date_start), edit them, and re-run the script to re-index."
+}

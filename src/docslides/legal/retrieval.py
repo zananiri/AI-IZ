@@ -387,7 +387,10 @@ def retrieve(query: str) -> RetrievalResult:
     for candidate in sorted(candidates.values(), key=lambda c: (-c.fused(), c.distance)):
         if not verified(candidate.chunk_id, candidate.text, candidate.meta):
             continue
-        body = normalized_body(candidate.text)
+        # Same law version + same body = the same provision indexed twice. Identical wording in two
+        # different laws (a shared definition) is two provisions and both must stay citable.
+        body = (candidate.meta.get("law_id"), candidate.meta.get("effective_date_start"),
+                normalized_body(candidate.text))
         if body in seen_bodies:
             duplicates.append(candidate.chunk_id)
             continue

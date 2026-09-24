@@ -82,3 +82,22 @@ def test_inner_lists_of_the_same_marker_kind_stay_inside_their_subsection():
     (section,) = [s for s in parse_sections(text) if s.number == "25"]
     assert [s.label for s in section.subsections] == ["א", "ב", "ג"]
     assert "24 שעות" in section.subsections[0].text and "במהלך הדיון" in section.subsections[0].text
+
+
+def test_several_laws_flag_counts_named_sections_lower_and_ignores_repealed_laws():
+    from types import SimpleNamespace
+
+    from docslides.legal.retrieval import _laws_in_play
+
+    cfg = SimpleNamespace(ambiguity_min_score=0.5, ambiguity_margin=0.3, ambiguity_lookup_floor=0.2)
+
+    def hit(law, via, score, status="current"):
+        meta = SimpleNamespace(law_id=law, law_name=f"חוק {law}", status=status)
+        return SimpleNamespace(via=via, score=score, metadata=meta)
+
+    # "סעיף 62" named, found in two laws with modest scores: ambiguous.
+    assert len(_laws_in_play([hit("a", "section_lookup", 0.38), hit("b", "section_lookup", 0.25)], 0.38, cfg)) == 2
+    # The other law's section scores near zero: the question is about one law.
+    assert _laws_in_play([hit("a", "search", 0.95), hit("b", "section_lookup", 0.02)], 0.95, cfg) == []
+    # A repealed law matching well doesn't count.
+    assert _laws_in_play([hit("a", "search", 1.0), hit("old", "search", 0.92, "repealed")], 1.0, cfg) == []

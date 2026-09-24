@@ -113,6 +113,9 @@ class LegalRetrievalConfig(BaseModel):
     # question names no law and hits from 2+ laws score at least this, within this of the best.
     ambiguity_min_score: float = 0.5
     ambiguity_margin: float = 0.3
+    # A section the question names ('סעיף 25') found in another law counts at this lower
+    # reranker score: the named number itself is the ambiguity.
+    ambiguity_lookup_floor: float = 0.2
 
 
 class LegalIngestionConfig(BaseModel):

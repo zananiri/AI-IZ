@@ -541,11 +541,15 @@ def _laws_in_play(chunks: list[RetrievedLegalChunk], best_score: float | None, c
     for chunk in chunks:
         if chunk.via not in ("search", "section_lookup"):
             continue
+        if chunk.metadata.status != "current":
+            continue  # a repealed or superseded law doesn't make a question ambiguous
         if chunk.score is None:
             if chunk.via == "section_lookup":
                 strong.setdefault(chunk.metadata.law_id, chunk.metadata.law_name)
             continue
-        if top is not None and chunk.score >= max(cfg.ambiguity_min_score, top - cfg.ambiguity_margin):
+        floor = (cfg.ambiguity_lookup_floor if chunk.via == "section_lookup"
+                 else max(cfg.ambiguity_min_score, (top or 0.0) - cfg.ambiguity_margin))
+        if top is not None and chunk.score >= floor:
             strong.setdefault(chunk.metadata.law_id, chunk.metadata.law_name)
     return list(strong.values()) if len(strong) >= 2 else []
 

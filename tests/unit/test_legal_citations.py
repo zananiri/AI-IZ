@@ -1,18 +1,11 @@
-import pytest
-
 from docslides.legal.citations import (
-    CitationLockError,
     expand_citations,
     format_citation,
-    lock,
-    lock_problems,
     parse_citations,
     render_with_footnotes,
     sentence_before,
-    unlock,
 )
 from docslides.legal.models import ChunkMetadata
-from docslides.legal.resources import MemorySnapshot, TierStatus, evaluate_tier, suggestion
 from docslides.legal.validation import (
     AUTO_NOTE_MARK,
     check_draft_citations,
@@ -64,21 +57,6 @@ def test_parse_handles_quotes_inside_law_names():
     assert citation.law == LAW
     assert citation.source_id == "law@1973:14"
     assert citation.relation == "supports"
-
-
-def test_lock_round_trip_and_tamper_detection():
-    text = f"First claim. {cite()} Second claim. {cite('C2', 'law@1973:3', 'contrary')}"
-    locked, citation_lock = lock(text)
-    assert "[[CITE:1]]" in locked and "[[CITE:2]]" in locked and "claim_id" not in locked
-    assert unlock(locked, citation_lock) == text
-    assert unlock(locked.replace("[[CITE:2]]", "[[ CITE : 2 ]]"), citation_lock) == text  # spacing tolerated
-
-    assert lock_problems(locked.replace("[[CITE:2]]", ""), citation_lock)
-    swapped = locked.replace("[[CITE:1]]", "@@").replace("[[CITE:2]]", "[[CITE:1]]").replace("@@", "[[CITE:2]]")
-    with pytest.raises(CitationLockError):
-        unlock(swapped, citation_lock)
-    with pytest.raises(CitationLockError):
-        unlock(locked + " [[CITE: claim_id=\"C9\"]]", citation_lock)
 
 
 def test_render_numbers_footnotes_by_source():
@@ -136,27 +114,6 @@ def test_draft_citation_structural_checks():
     assert "not established in Pass A" in problems[0][0]
     assert "contrary authority" in problems[1][0]
     assert "differs from the source" in problems[2][0]
-
-
-def test_tier_suggestion_logic():
-    snapshot = MemorySnapshot(ram_available_gb=6, ram_total_gb=16, vram_free_gb=4, vram_total_gb=8)
-
-    class Tier:
-        def __init__(self, backend, min_gb):
-            self.min_memory_gb = min_gb
-            self.llm = type("LLM", (), {"backend": backend})()
-
-    assert evaluate_tier(Tier("ollama", 16), snapshot, loaded=False) == (10, False)
-    assert evaluate_tier(Tier("ollama", 8), snapshot, loaded=False) == (10, True)
-    assert evaluate_tier(Tier("vllm", 8), snapshot, loaded=False) == (4, False)
-    assert evaluate_tier(Tier("ollama", 16), snapshot, loaded=True)[1] is True
-
-    heavy = TierStatus("heavy", "Heavy", "24b", 16, 10, False, False)
-    light = TierStatus("light", "Light", "12b", 8, 10, False, True)
-    result = suggestion("heavy", [heavy, light])
-    assert result["suggest"] == "light"
-    assert result["message"].startswith("Insufficient RAM detected for the Heavy DictaLM model.")
-    assert suggestion("light", [heavy, light]) == {"suggest": None, "message": None}
 
 
 def test_expand_short_form_fills_from_metadata_and_keeps_conflicting_values():

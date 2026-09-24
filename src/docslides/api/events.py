@@ -10,7 +10,7 @@
   * "citations" -- Legal / Canon tabs: structured source citations,
     rendered in a side panel rather than the chat bubble.
   * "legal_report" -- Legal tab only: the pipeline's structured output
-    (research memorandum, escalation, DictaLM tier) -- see
+    (research memorandum, escalation, coverage gaps) -- see
     api/routes_legal.py.
 
 Each job/chat-turn gets its own asyncio.Queue so multiple concurrent

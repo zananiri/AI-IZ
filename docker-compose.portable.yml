@@ -37,14 +37,11 @@ services:
       - DOCSLIDES_LLM_BACKEND=ollama
       - DOCSLIDES_LLM_BASE_URL=http://host.docker.internal:11434
       - DOCSLIDES_LLM_MODEL=${OLLAMA_MODEL:-qwen3:32b}
-      # Legal tab: independent deployments (see config/config.yaml's `legal:`
+      # Legal tab: an independent deployment (see config/config.yaml's `legal:`
       # section) -- also routed to the same host Ollama instance rather than
-      # config.yaml's vLLM-only defaults (http://vllm:8000, http://vllm-dictalm:8000).
+      # config.yaml's vLLM-only default (http://vllm:8000).
       - DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
       - DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://host.docker.internal:11434
       - DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=${OLLAMA_MODEL:-qwen3:32b}
-      - DOCSLIDES_LEGAL_HEBREW_BACKEND=ollama
-      - DOCSLIDES_LEGAL_HEBREW_BASE_URL=http://host.docker.internal:11434
-      - DOCSLIDES_LEGAL_HEBREW_MODEL=${OLLAMA_DICTALM_MODEL:-dicta-il/DictaLM-3.0-24B-Thinking}
     extra_hosts:
       - "host.docker.internal:host-gateway"  # Linux needs this; Docker Desktop (Win/Mac) provides it natively

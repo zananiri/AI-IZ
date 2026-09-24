@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Multi-law knowledge test for the Legal tab, graded against a separate gold file.
 
-    python scripts/eval_legal_gold.py --run-dir data/legal/eval/multi1 --no-dicta        # answer + grade
+    python scripts/eval_legal_gold.py --run-dir data/legal/eval/multi1                    # answer + grade
     python scripts/eval_legal_gold.py --run-dir data/legal/eval/multi1 --phase grade     # re-grade saved answers
     python scripts/eval_legal_gold.py --retrieval-only                                    # seconds, no model
 
@@ -156,7 +156,7 @@ def _gold_gazettes(gold: dict) -> dict[str, str]:
 
 # --- phases ----------------------------------------------------------------------------------
 
-async def answer_phase(questions: list[dict], run_dir: Path, use_dicta: bool) -> None:
+async def answer_phase(questions: list[dict], run_dir: Path) -> None:
     from docslides.legal import retrieval
     from docslides.legal.citations import strip_citations
     from docslides.legal.pipeline import run_legal_turn
@@ -177,7 +177,7 @@ async def answer_phase(questions: list[dict], run_dir: Path, use_dicta: bool) ->
                 _log(f"  {qid}: {message}")
 
             try:
-                turn = await run_legal_turn(q["question"], None, f"gold-{q['id']}", status, use_dicta=use_dicta)
+                turn = await run_legal_turn(q["question"], f"gold-{q['id']}", status)
             except Exception as exc:  # noqa: BLE001 -- recorded, graded as an error
                 answers[q["id"]] = {"error": f"{type(exc).__name__}: {exc}", "seconds": round(time.monotonic() - started)}
                 _save(out, answers)
@@ -319,7 +319,8 @@ def main() -> int:
     parser.add_argument("--run-dir", default=f"data/legal/eval/multi-{datetime.now():%Y%m%d-%H%M%S}")
     parser.add_argument("--phase", choices=["answer", "grade", "both"], default="both")
     parser.add_argument("--only", help="comma-separated question ids")
-    parser.add_argument("--no-dicta", action="store_true")
+    # Accepted and ignored: older copies of notebooks/kaggle_legal_eval.ipynb still pass it.
+    parser.add_argument("--no-dicta", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--retrieval-only", action="store_true")
     args = parser.parse_args()
 
@@ -341,12 +342,11 @@ def main() -> int:
             "eval_set": "multi-law-24-he", "started": datetime.now().isoformat(timespec="seconds"),
             "model (pipeline)": legal.orchestrator.model,
             "judge": __import__("os").environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
-            "DictaLM": "skipped (--no-dicta)" if args.no_dicta else "used",
             "retrieval": f"{legal.retrieval.embedding_model}, reranker={legal.retrieval.reranker_model}, "
                          f"keyword={legal.retrieval.keyword_search}, evidence budget={legal.retrieval.max_evidence_tokens}",
         })
     if args.phase in ("answer", "both"):
-        asyncio.run(answer_phase(questions, run_dir, not args.no_dicta))
+        asyncio.run(answer_phase(questions, run_dir))
     if args.phase in ("grade", "both"):
         asyncio.run(grade_phase(questions, run_dir))
         summary = _load(run_dir / "summary.json")

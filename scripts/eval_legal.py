@@ -4,7 +4,7 @@
     python scripts/eval_legal.py                         # both phases, full pipeline
     python scripts/eval_legal.py --ingest                # index legal_txt/ between the phases
     python scripts/eval_legal.py --phase before          # baseline only (model alone)
-    python scripts/eval_legal.py --phase after --no-dicta
+    python scripts/eval_legal.py --phase after
     python scripts/eval_legal.py --run-dir data/legal/eval/<run>   # resume / re-report a run
     python scripts/eval_legal.py --only A1,B4,C2
     python scripts/eval_legal.py --run-dir data/legal/eval/<run> --rejudge   # re-grade saved answers
@@ -14,10 +14,6 @@ AFTER: the full Legal pipeline answers over the index. Every answer is graded
 by the same model as an LLM judge against the gold answer. Scoring rules:
 src/docslides/legal/evaluation.py. Results are saved after every question
 (before.json / after.json in the run directory) and summarized in report.md.
-
---no-dicta skips the DictaLM normalization/polish stages. They don't affect
-retrieval or facts, and on CPU they cost several model swaps per question;
-the report records whether they ran.
 """
 
 from __future__ import annotations
@@ -101,7 +97,7 @@ async def run_before(questions, out: Path) -> dict:
     return results
 
 
-async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | None) -> dict:
+async def run_after(questions, out: Path) -> dict:
     from docslides.legal import retrieval
     from docslides.legal.pipeline import run_legal_turn
 
@@ -118,7 +114,7 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
             _log(f"  {qid}: {message}")
 
         try:
-            turn = await run_legal_turn(q.question, dicta_tier, f"eval-{q.id}", status, use_dicta=use_dicta)
+            turn = await run_legal_turn(q.question, f"eval-{q.id}", status)
         except Exception as exc:  # noqa: BLE001
             # Retrieval and citation are unknown, not zero: the pipeline failed (e.g. a model
             # timeout), which says nothing about what retrieval found.
@@ -142,7 +138,6 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
             "cited": [f"{n['law']} {n['section']} ({'verified' if n['verified'] else 'unverified'})"
                       for n in turn.footnotes],
             "retrieved": [c["source_id"] for c in turn.retrieved_chunks],
-            "dicta_used": turn.dicta_used,
             "audit_path": turn.audit_path,
             **graded,
             **scores,
@@ -193,13 +188,11 @@ async def main_async(args) -> int:
     from docslides.config import get_config
 
     legal = get_config().legal
-    tier_key, tier_cfg = legal.dicta_tier(args.dicta_tier)
     meta = _load(run_dir / "meta.json") or {
         "eval_set": meta_set["name"],
         "started": datetime.now().isoformat(timespec="seconds"),
         "model (before RAG, pipeline, judge)": legal.orchestrator.model,
         "judge": os.environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
-        "DictaLM in after-RAG run": "skipped (--no-dicta)" if args.no_dicta else f"{tier_key}: {tier_cfg.llm.model}",
         "retrieval": f"{legal.retrieval.embedding_model}, top_k={legal.retrieval.top_k}, "
                      f"keyword={legal.retrieval.keyword_search}, reranker={legal.retrieval.reranker_model}, "
                      f"evidence budget={legal.retrieval.max_evidence_tokens}",
@@ -222,7 +215,7 @@ async def main_async(args) -> int:
             for r in folder_ingest.run():
                 _log(f"  [{r.action}] {r.path.name} {r.law_name} {r.chunk_count or ''} {r.message}")
         after = (
-            await run_after(questions, run_dir / "after.json", not args.no_dicta, args.dicta_tier)
+            await run_after(questions, run_dir / "after.json")
             if args.phase in ("after", "both") else _load(run_dir / "after.json")
         )
     finally:
@@ -255,8 +248,8 @@ def main() -> int:
     parser.add_argument("--run-dir", help="existing run directory to resume or re-report")
     parser.add_argument("--only", help="comma-separated question ids")
     parser.add_argument("--ingest", action="store_true", help="index legal_txt/ before the after-RAG phase")
-    parser.add_argument("--no-dicta", action="store_true", help="skip DictaLM stages in the after-RAG run")
-    parser.add_argument("--dicta-tier", default=None)
+    # Accepted and ignored: older copies of notebooks/kaggle_legal_eval.ipynb still pass it.
+    parser.add_argument("--no-dicta", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--rejudge", action="store_true",
                         help="re-grade the run's saved answers with the current judge prompt, then re-report")
     parser.add_argument("--after-only", action="store_true", help="with --rejudge: leave before-RAG grades alone")

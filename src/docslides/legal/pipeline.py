@@ -1,23 +1,16 @@
 """Legal tab pipeline: grounded RAG over Israeli law.
 
-    language routing -> [he] DictaLM query normalization -> retrieval
-    -> Pass A research memorandum (Qwen) -> validation gate
-    -> Pass B draft (Qwen) -> citation verification (structural + entailment)
-    -> citation lock -> [he] DictaLM polish -> semantic equivalence (Qwen)
-    -> final citation integrity re-check -> numeric grounding check -> audit log
+    language routing -> retrieval -> Pass A research memorandum -> validation gate
+    -> Pass B draft -> citation verification (structural + entailment)
+    -> final citation check -> numeric grounding check -> audit log
 
-Qwen does all research, drafting and verification. DictaLM, at the tier
-the user picked, only runs when Hebrew is involved: normalizing a Hebrew
-query, and polishing a Hebrew reply. Every instruction it gets is in Hebrew
-(legal/prompts.py). The reply is always in the question's language.
+One model (the orchestrator, Qwen) does all of it: research, drafting and
+verification. The reply is always in the question's language.
 
 Nothing flagged is resolved silently. A memorandum that fails the gate is
 revised, and if it still fails no draft is written: the turn escalates.
 Citations that fail verification are sent back for a redraft, and if they
-still fail they stay marked unverified and the turn escalates. A polish
-that breaks the citation lock or fails the equivalence check is retried,
-and if it still fails the unpolished (verified) draft is delivered and the
-rejection is recorded.
+still fail they stay marked unverified and the turn escalates.
 """
 
 from __future__ import annotations
@@ -32,15 +25,11 @@ from docslides.ingestion.language_detect import detect_language
 from docslides.legal import amendments, audit, prompts
 from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.citations import (
-    CitationLockError,
     expand_citations,
-    lock,
-    lock_problems,
     parse_citations,
     render_with_footnotes,
     sentence_before,
     strip_citations,
-    unlock,
 )
 from docslides.legal.models import ChunkMetadata
 from docslides.legal.numeric_check import unsupported_numbers
@@ -62,12 +51,10 @@ from docslides.llm.client import (
     LLMCallSite,
     QwenClient,
     SamplingParams,
-    get_legal_dicta_client,
     get_legal_orchestrator_client,
 )
 from docslides.llm.schemas import (
     EntailmentVerdict,
-    EquivalenceReport,
     LegalDraft,
     ReplyLanguage,
     ResearchMemorandum,
@@ -115,10 +102,6 @@ class LegalTurnResult:
     footnotes: list[dict]
     reply_language: str
     escalation_reasons: list[str]
-    polish_status: str  # not_applicable | accepted | rejected_used_draft
-    dicta_tier: str
-    dicta_model: str
-    dicta_used: bool
     audit_path: str
     notes: list[str] = field(default_factory=list)
     retrieved_chunks: list[dict] = field(default_factory=list)  # chunk_id, source_id, text, distance, via
@@ -163,24 +146,6 @@ async def detect_reply_language(qwen: QwenClient, query: str) -> str:
     return detect_language(query) or "en"
 
 
-# --- DictaLM stages --------------------------------------------------------------
-
-
-async def normalize_hebrew_query(dicta: QwenClient, query: str) -> tuple[str, str | None]:
-    """Returns (query to retrieve with, rejection reason if Dicta's output was discarded)."""
-    normalized = await dicta.complete_text(
-        [ChatMessage("system", prompts.DICTA_NORMALIZATION_PROMPT), ChatMessage("user", query)],
-        LLMCallSite("legal_query_normalization"),
-        sampling=SamplingParams(temperature=0.0, max_tokens=512),
-    )
-    if not normalized or _dominant_rtl_script(normalized) != "he":
-        return query, "normalized output was empty or not Hebrew"
-    ratio = len(normalized) / max(len(query), 1)
-    if not 0.5 <= ratio <= 2.5:
-        return query, f"normalized output length changed by {ratio:.1f}x -- likely answered or rewrote the question"
-    return normalized, None
-
-
 # --- Pass A ------------------------------------------------------------------------
 
 
@@ -191,17 +156,12 @@ _THIN_COVERAGE_NOTE = (
 )
 
 
-def _question_block(
-    query: str, normalized: str | None, thin_coverage: bool = False, laws_in_play: list[str] | None = None
-) -> str:
+def _question_block(query: str, thin_coverage: bool = False, laws_in_play: list[str] | None = None) -> str:
     # ״ for the ASCII quote, as in the evidence: a model that copies 'יו"ר' from the question
     # into its JSON answer unescaped cuts the answer off there (legal/chunking.py).
     if _dominant_rtl_script(query) == "he":
         query = normalize_hebrew_quotes(query)
-        normalized = normalize_hebrew_quotes(normalized) if normalized else normalized
-    block = f"User's question (original):\n{query}"
-    if normalized and normalized != query:
-        block += f"\n\nNormalized Hebrew form of the question (text form only, same meaning):\n{normalized}"
+    block = f"User's question:\n{query}"
     if thin_coverage:  # the reranker found nothing that directly answers (legal/retrieval.py)
         block += f"\n\n{_THIN_COVERAGE_NOTE}"
     if laws_in_play:  # provisions of several laws match and the question names none
@@ -399,47 +359,6 @@ async def draft_answer(
     raise AssertionError("unreachable")
 
 
-# --- polish -------------------------------------------------------------------------
-
-
-async def polish_hebrew(
-    dicta: QwenClient, qwen: QwenClient, locked_draft: str, citation_lock, attempts_log: list
-) -> str | None:
-    """Returns the accepted polished (still locked) text, or None if every attempt was rejected."""
-    max_attempts = get_config().legal.pipeline.max_polish_attempts
-    user_message = locked_draft
-    for attempt in range(max_attempts):
-        polished = await dicta.complete_text(
-            [ChatMessage("system", prompts.DICTA_POLISH_PROMPT), ChatMessage("user", user_message)],
-            LLMCallSite("legal_hebrew_polish"),
-            sampling=SamplingParams(temperature=0.2, top_p=0.9, max_tokens=4096),
-        )
-        record: dict = {"attempt": attempt + 1, "polished": polished}
-        attempts_log.append(record)
-
-        tag_problems = lock_problems(polished, citation_lock)
-        if tag_problems:
-            record["lock_problems"] = tag_problems
-            user_message = prompts.dicta_repolish_message(locked_draft, [], tags_broken=True)
-            continue
-
-        report = await qwen.complete_json(
-            [
-                ChatMessage("system", prompts.EQUIVALENCE_PROMPT),
-                ChatMessage("user", f"PRE-POLISH:\n{locked_draft}\n\nPOST-POLISH:\n{polished}"),
-            ],
-            LLMCallSite("legal_equivalence_check"),
-            schema=EquivalenceReport,
-            sampling=SamplingParams(temperature=0.0, max_tokens=2048),
-        )
-        record["equivalence"] = report.model_dump()
-        if report.equivalent and not report.discrepancies:
-            return polished
-        discrepancies = [f'"{d.pre_polish}" ← "{d.post_polish}": {d.issue}' for d in report.discrepancies]
-        user_message = prompts.dicta_repolish_message(locked_draft, discrepancies, tags_broken=False)
-    return None
-
-
 # --- assembly -------------------------------------------------------------------------
 
 
@@ -536,41 +455,16 @@ async def _localized_notice(qwen: QwenClient, reply_language: str) -> str:
         return _GATE_FAILED_NOTICE["en"]
 
 
-async def run_legal_turn(
-    query: str, dicta_tier: str | None, job_id: str, status: StatusFn, use_dicta: bool = True
-) -> LegalTurnResult:
-    """`use_dicta=False` skips both DictaLM stages (normalization, polish) --
-    only for evaluation runs that measure retrieval and grounding; the audit
-    entry records it."""
-    legal_cfg = get_config().legal
-    tier_key, tier_cfg = legal_cfg.dicta_tier(dicta_tier)
+async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnResult:
     qwen = get_legal_orchestrator_client()
-    entry: dict = {
-        "job_id": job_id,
-        "query": query,
-        "orchestrator_model": qwen.model,
-        "dicta_tier": tier_key,
-        "dicta_model": tier_cfg.llm.model,
-        "dicta_used": False,
-        "dicta_disabled": not use_dicta,
-    }
+    entry: dict = {"job_id": job_id, "query": query, "orchestrator_model": qwen.model}
 
     await status("Detecting the question's language")
     reply_language = await detect_reply_language(qwen, query)
     entry["reply_language"] = reply_language
 
-    normalized: str | None = None
-    retrieval_query = query
-    if reply_language == "he" and use_dicta:
-        dicta = get_legal_dicta_client(tier_key)
-        entry["dicta_used"] = True
-        await status(f"Normalizing the Hebrew query ({tier_cfg.label})")
-        retrieval_query, rejection = await normalize_hebrew_query(dicta, query)
-        normalized = retrieval_query if rejection is None else None
-        entry["normalization"] = {"output": retrieval_query, "rejected": rejection}
-
     await status("Searching the Israeli-law index")
-    retrieval = await asyncio.to_thread(retrieve, retrieval_query)
+    retrieval = await asyncio.to_thread(retrieve, query)
     grouped = retrieval.by_source_id()
     evidence = {source_id: parts[0].metadata for source_id, parts in grouped.items()}
     amendment_notes = _amendment_notes(evidence)
@@ -579,10 +473,9 @@ async def run_legal_turn(
         {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "text": c.text, "distance": c.distance, "via": c.via}
         for c in retrieval.chunks
     ]
-    question = _question_block(query, normalized, thin_coverage=retrieval.low_relevance,
-                               laws_in_play=retrieval.laws_in_play)
+    question = _question_block(query, thin_coverage=retrieval.low_relevance, laws_in_play=retrieval.laws_in_play)
     entry["retrieval"] = {
-        "query": retrieval_query,
+        "query": query,
         "bundle_verification": retrieval.bundle_verification,
         "best_distance": retrieval.best_distance,
         "best_rerank_score": retrieval.best_rerank_score,
@@ -616,11 +509,9 @@ async def run_legal_turn(
             "escalation_reason": "; ".join(reasons),
             "coverage_gaps": None,
         }
-        entry.update(output=output, polish_status="not_applicable")
+        entry.update(output=output)
         path = audit.write_entry(entry)
-        return LegalTurnResult(output, notice, [], reply_language, reasons, "not_applicable",
-                               tier_key, tier_cfg.llm.model, entry["dicta_used"], str(path),
-                               retrieved_chunks=retrieved)
+        return LegalTurnResult(output, notice, [], reply_language, reasons, str(path), retrieved_chunks=retrieved)
 
     await status("Pass B: drafting the answer and verifying every citation")
     draft_attempts: list = []
@@ -628,37 +519,12 @@ async def run_legal_turn(
         qwen, reply_language, evidence_text, question, memo, retrieval, evidence, draft_attempts
     )
     entry["draft_attempts"] = draft_attempts
-
-    locked, citation_lock = lock(draft.answer_draft)
-    entry["citation_lock"] = {"digest": citation_lock.digest, "count": len(citation_lock.tokens)}
-    final_locked = locked
-    polish_status = "not_applicable"
     notes: list[str] = []
 
-    if reply_language == "he" and use_dicta:
-        dicta = get_legal_dicta_client(tier_key)
-        entry["dicta_used"] = True
-        await status(f"Polishing the Hebrew ({tier_cfg.label}) and checking it kept the meaning")
-        polish_attempts: list = []
-        polished = await polish_hebrew(dicta, qwen, locked, citation_lock, polish_attempts)
-        entry["polish_attempts"] = polish_attempts
-        if polished is None:
-            polish_status = "rejected_used_draft"
-            notes.append("The Hebrew polish changed the meaning or citations and was rejected; "
-                         "showing the verified unpolished draft.")
-        else:
-            final_locked, polish_status = polished, "accepted"
-
-    await status("Final citation integrity check")
-    try:
-        final_text = unlock(final_locked, citation_lock)
-    except CitationLockError as exc:
-        final_text, polish_status = draft.answer_draft, "rejected_used_draft"
-        notes.append("The polished text failed the final citation integrity check; showing the verified draft.")
-        entry["final_integrity_error"] = str(exc)
+    await status("Final citation check")
+    final_text = draft.answer_draft
     final_structural = check_draft_citations(final_text, memo, evidence)
     entry["final_integrity"] = {
-        "tokens_match_lock": [c.raw for c in parse_citations(final_text)] == citation_lock.tokens,
         "structural_problems": {f"citation #{i + 1}": p for i, p in final_structural.items()},
     }
 
@@ -696,8 +562,7 @@ async def run_legal_turn(
         "escalation_reason": "; ".join(reasons) or None,
         "coverage_gaps": draft.coverage_gaps,
     }
-    entry.update(output=output, polish_status=polish_status, footnotes=footnotes)
+    entry.update(output=output, footnotes=footnotes)
     path = audit.write_entry(entry)
-    return LegalTurnResult(output, display, footnotes, reply_language, reasons, polish_status,
-                           tier_key, tier_cfg.llm.model, entry["dicta_used"], str(path), notes,
+    return LegalTurnResult(output, display, footnotes, reply_language, reasons, str(path), notes,
                            retrieved_chunks=retrieved)

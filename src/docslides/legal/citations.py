@@ -1,5 +1,5 @@
-"""[[CITE: ...]] claim-level citation tokens (spec section 3): parsing, the
-citation lock around DictaLM's Hebrew polish, and rendering for the UI.
+"""[[CITE: ...]] claim-level citation tokens (spec section 3): parsing,
+expansion and rendering for the UI.
 
 Token format:
     [[CITE: claim_id="C1" | source_id="..." | law="..." | section="..." |
@@ -8,30 +8,16 @@ Token format:
 Values are split on "|" rather than parsed as quoted strings: Hebrew law
 names routinely contain an ASCII double quote (תשל"ג), which would break a
 quote-delimited parser.
-
-Citation lock: before polishing, each full token is swapped for a short
-numbered placeholder ([[CITE:1]], [[CITE:2]], ...). The polish prompt tells
-DictaLM to leave [[CITE...]] tags alone, and short placeholders give it far
-less to mangle than long ASCII attribute strings. `unlock` then requires
-every placeholder to come back exactly once and in the original order.
-Anything else raises CitationLockError and the polish is rejected.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from dataclasses import dataclass
 
 _TOKEN_RE = re.compile(r"\[\[CITE:(?P<body>(?:(?!\]\]).)*?=(?:(?!\]\]).)*)\]\]")
-_PLACEHOLDER_RE = re.compile(r"\[\[\s*CITE\s*:\s*(\d+)\s*\]\]")
-_ANY_CITE_TAG_RE = re.compile(r"\[\[\s*CITE\b[^\]]*\]\]")
 _FIELDS = ("claim_id", "source_id", "law", "section", "effective", "source_type", "relation")
-
-
-class CitationLockError(Exception):
-    pass
+_ANY_CITE_TAG_RE = re.compile(r"\[\[\s*CITE\b[^\]]*\]\]")
 
 
 @dataclass
@@ -120,48 +106,6 @@ def sentence_before(text: str, token_start: int) -> str:
     for match in re.finditer(r"[.!?]\s", segment[:-1]):
         cut = max(cut, match.end() - 1)
     return strip_citations(segment[cut + 1 :]).strip()
-
-
-@dataclass
-class CitationLock:
-    tokens: list[str]
-    digest: str
-
-
-def _digest(tokens: list[str]) -> str:
-    return hashlib.sha256(json.dumps(tokens, ensure_ascii=False).encode("utf-8")).hexdigest()
-
-
-def lock(text: str) -> tuple[str, CitationLock]:
-    tokens: list[str] = []
-
-    def swap(match: re.Match[str]) -> str:
-        tokens.append(match.group(0))
-        return f"[[CITE:{len(tokens)}]]"
-
-    return _TOKEN_RE.sub(swap, text), CitationLock(tokens=tokens, digest=_digest(tokens))
-
-
-def lock_problems(locked_text: str, citation_lock: CitationLock) -> list[str]:
-    found = [int(n) for n in _PLACEHOLDER_RE.findall(locked_text)]
-    expected = list(range(1, len(citation_lock.tokens) + 1))
-    problems = []
-    if found != expected:
-        problems.append(f"citation tags changed: expected {expected}, found {found}")
-    stray = len(_ANY_CITE_TAG_RE.findall(locked_text)) - len(found)
-    if stray:
-        problems.append(f"{stray} citation tag(s) altered beyond the numbered placeholder form")
-    return problems
-
-
-def unlock(locked_text: str, citation_lock: CitationLock) -> str:
-    problems = lock_problems(locked_text, citation_lock)
-    if problems:
-        raise CitationLockError("; ".join(problems))
-    text = _PLACEHOLDER_RE.sub(lambda m: citation_lock.tokens[int(m.group(1)) - 1], locked_text)
-    if _digest([c.raw for c in parse_citations(text)]) != citation_lock.digest:
-        raise CitationLockError("citation tokens differ from the locked set after unlocking")
-    return text
 
 
 def render_with_footnotes(text: str) -> tuple[str, list[Citation], list[int]]:

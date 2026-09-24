@@ -70,12 +70,9 @@ class LLMCallSite:
         "tone_rewrite",
         "chunk_summary",
         "legal_language_id",
-        "legal_query_normalization",
         "legal_research_memo",
         "legal_draft",
         "legal_citation_verification",
-        "legal_hebrew_polish",
-        "legal_equivalence_check",
         "legal_eval_baseline",
         "legal_eval_judge",
         "canon_orchestration",
@@ -208,8 +205,7 @@ class QwenClient:
         enable_thinking: bool | None = None,
     ) -> str:
         """Free-text generation, for call sites whose output is prose that
-        must not be forced through a JSON schema (e.g. DictaLM's normalized
-        query / polished reply in legal/pipeline.py)."""
+        must not be forced through a JSON schema."""
         payload = self._build_payload(
             messages, call_site, sampling, enable_thinking, guided_json_schema=None, stream=False
         )
@@ -356,7 +352,6 @@ class QwenClient:
 
 _client_singleton: QwenClient | None = None
 _legal_orchestrator_singleton: QwenClient | None = None
-_legal_dicta_clients: dict[str, QwenClient] = {}
 _canon_generation_singleton: QwenClient | None = None
 
 
@@ -376,15 +371,6 @@ def get_legal_orchestrator_client() -> QwenClient:
     return _legal_orchestrator_singleton
 
 
-def get_legal_dicta_client(tier: str) -> QwenClient:
-    """DictaLM at the user-selected tier (config.legal.dicta_tiers): Hebrew
-    query normalization and Hebrew polish only. See legal/pipeline.py."""
-    if tier not in _legal_dicta_clients:
-        _, tier_cfg = get_config().legal.dicta_tier(tier)
-        _legal_dicta_clients[tier] = QwenClient(tier_cfg.llm)
-    return _legal_dicta_clients[tier]
-
-
 def get_canon_generation_client() -> QwenClient:
     """Answers Canon GPT questions grounded in retrieved canon-law chunks.
     See canon/pipeline.py."""
@@ -401,7 +387,6 @@ async def aclose_all_clients() -> None:
     for client in (
         _client_singleton,
         _legal_orchestrator_singleton,
-        *_legal_dicta_clients.values(),
         _canon_generation_singleton,
     ):
         if client is not None:

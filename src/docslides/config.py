@@ -27,12 +27,9 @@ class ThinkingDefaults(BaseModel):
     tone_rewrite: bool = True
     chunk_summary: bool = False
     legal_language_id: bool = False
-    legal_query_normalization: bool = False
     legal_research_memo: bool = False
     legal_draft: bool = False
     legal_citation_verification: bool = False
-    legal_hebrew_polish: bool = False
-    legal_equivalence_check: bool = False
     legal_eval_baseline: bool = False
     legal_eval_judge: bool = False
     canon_orchestration: bool = True
@@ -60,16 +57,6 @@ class LLMConfig(BaseModel):
     guided_decoding_backend: str = "xgrammar"
     thinking_defaults: ThinkingDefaults = Field(default_factory=ThinkingDefaults)
     default_sampling: SamplingDefaults = Field(default_factory=SamplingDefaults)
-
-
-class DictaTierConfig(BaseModel):
-    """One user-selectable DictaLM size for the Legal tab's Hebrew stages
-    (query normalization + final polish). `min_memory_gb` drives the tab's
-    "insufficient RAM" suggestion banner -- see legal/resources.py."""
-
-    label: str
-    min_memory_gb: float
-    llm: LLMConfig
 
 
 class LegalRetrievalConfig(BaseModel):
@@ -130,30 +117,20 @@ class LegalIngestionConfig(BaseModel):
 class LegalPipelineConfig(BaseModel):
     max_memo_revisions: int = 2
     max_draft_revisions: int = 1
-    max_polish_attempts: int = 2
     entailment_concurrency: int = 4
 
 
 class LegalConfig(BaseModel):
     """Legal tab: grounded RAG over Israeli law (see src/docslides/legal/).
     `orchestrator` (Qwen) does research, drafting and every verification
-    step; `dicta_tiers` are the DictaLM sizes the user can pick between for
-    the Hebrew-only normalization/polish stages. Each model is a full
-    `LLMConfig` -- independent deployments from the general `llm:` section."""
+    step. It is a full `LLMConfig` -- an independent deployment from the
+    general `llm:` section."""
 
     orchestrator: LLMConfig
-    dicta_tiers: dict[str, DictaTierConfig]
-    default_dicta_tier: str = "heavy"
     retrieval: LegalRetrievalConfig = Field(default_factory=LegalRetrievalConfig)
     ingestion: LegalIngestionConfig = Field(default_factory=LegalIngestionConfig)
     pipeline: LegalPipelineConfig = Field(default_factory=LegalPipelineConfig)
     audit_dir: str = "./data/legal/audit"
-
-    def dicta_tier(self, key: str | None) -> tuple[str, DictaTierConfig]:
-        key = key or self.default_dicta_tier
-        if key not in self.dicta_tiers:
-            raise KeyError(f"Unknown DictaLM tier '{key}' (configured: {sorted(self.dicta_tiers)})")
-        return key, self.dicta_tiers[key]
 
 
 class CanonConfig(BaseModel):
@@ -297,11 +274,9 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 # between the vLLM and Ollama backends without maintaining a second full
 # config.yaml -- config/config.yaml stays the single source of truth for
 # everything else (languages, OCR routing, sampling defaults, ...). The Legal
-# tab's orchestrator and DictaLM tiers are independent deployments (see
-# LegalConfig) and get their own override triples so they can be pointed at
-# Ollama separately from -- or together with -- the general `llm:` section.
-# DOCSLIDES_LEGAL_HEBREW_* keeps its old name (setup scripts write it) and
-# now targets the Heavy tier; DOCSLIDES_LEGAL_DICTA_LIGHT_* targets Light.
+# tab's orchestrator is an independent deployment (see LegalConfig) with its
+# own override triple, so it can be pointed at Ollama separately from -- or
+# together with -- the general `llm:` section.
 _LLM_ENV_OVERRIDES = {
     "DOCSLIDES_LLM_BACKEND": "backend",
     "DOCSLIDES_LLM_BASE_URL": "base_url",
@@ -311,16 +286,6 @@ _LEGAL_ORCHESTRATOR_ENV_OVERRIDES = {
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND": "backend",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL": "base_url",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL": "model",
-}
-_LEGAL_HEBREW_ENV_OVERRIDES = {
-    "DOCSLIDES_LEGAL_HEBREW_BACKEND": "backend",
-    "DOCSLIDES_LEGAL_HEBREW_BASE_URL": "base_url",
-    "DOCSLIDES_LEGAL_HEBREW_MODEL": "model",
-}
-_LEGAL_DICTA_LIGHT_ENV_OVERRIDES = {
-    "DOCSLIDES_LEGAL_DICTA_LIGHT_BACKEND": "backend",
-    "DOCSLIDES_LEGAL_DICTA_LIGHT_BASE_URL": "base_url",
-    "DOCSLIDES_LEGAL_DICTA_LIGHT_MODEL": "model",
 }
 _CANON_GENERATION_ENV_OVERRIDES = {
     "DOCSLIDES_CANON_BACKEND": "backend",
@@ -339,20 +304,10 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
         raw = {**raw, "llm": {**raw.get("llm", {}), **llm_overrides}}
 
     orchestrator_overrides = _env_overrides(_LEGAL_ORCHESTRATOR_ENV_OVERRIDES)
-    tier_overrides = {
-        "heavy": _env_overrides(_LEGAL_HEBREW_ENV_OVERRIDES),
-        "light": _env_overrides(_LEGAL_DICTA_LIGHT_ENV_OVERRIDES),
-    }
-    if orchestrator_overrides or any(tier_overrides.values()):
+    if orchestrator_overrides:
         legal = raw.get("legal", {})
-        if orchestrator_overrides:
-            legal = {**legal, "orchestrator": {**legal.get("orchestrator", {}), **orchestrator_overrides}}
-        tiers = dict(legal.get("dicta_tiers", {}))
-        for tier_key, overrides in tier_overrides.items():
-            if overrides and tier_key in tiers:
-                tier = tiers[tier_key]
-                tiers[tier_key] = {**tier, "llm": {**tier.get("llm", {}), **overrides}}
-        raw = {**raw, "legal": {**legal, "dicta_tiers": tiers}}
+        legal = {**legal, "orchestrator": {**legal.get("orchestrator", {}), **orchestrator_overrides}}
+        raw = {**raw, "legal": legal}
 
     canon_overrides = _env_overrides(_CANON_GENERATION_ENV_OVERRIDES)
     if canon_overrides:

@@ -22,8 +22,6 @@
 #                        briefly resident while loading) reliably hits
 #                        std::bad_alloc under ~48GB RAM, which looks like the
 #                        app "not responding" rather than a load failure.
-#   OLLAMA_DICTALM_MODEL Ollama path model tag for the Legal tab's Hebrew
-#                        analyst. default: dicta-il/DictaLM-3.0-24B-Thinking
 #   FORCE_BACKEND        "vllm" or "ollama" -- skip GPU auto-detection
 #   SKIP_MINERU=1     skip the magic-pdf (MinerU) extra -- it has a known
 #                     dependency conflict with gradio's huggingface-hub pin
@@ -151,9 +149,10 @@ else
   fi
 
   if command -v ollama >/dev/null 2>&1; then
-    # The Legal tab uses two independent Ollama deployments (orchestrator +
-    # Hebrew analyst) back to back. Left at Ollama's default of "as many as
-    # fit", both can end up loaded at once and the second load fails with the
+    # The app can call more than one Ollama model back to back (the general
+    # model, the Legal orchestrator if it's set to a different tag, and the
+    # judge model in evaluations). Left at Ollama's default of "as many as
+    # fit", two can end up loaded at once and the second load fails with the
     # same allocation error as an oversized single model on a modest host.
     # Pin it to one resident model at a time so the second call evicts the
     # first instead of fighting it for RAM.
@@ -181,19 +180,11 @@ else
       echo "       https://ollama.com/library/qwen3 and retry: ollama pull <tag>"
       SKIPPED+=("ollama pull $OLLAMA_MODEL")
     }
-
-    OLLAMA_DICTALM_MODEL="${OLLAMA_DICTALM_MODEL:-dicta-il/DictaLM-3.0-24B-Thinking}"
-    echo "Pulling $OLLAMA_DICTALM_MODEL (Legal tab's Hebrew analyst, ~13-20GB)..."
-    ollama pull "$OLLAMA_DICTALM_MODEL" || {
-      echo "[warn] 'ollama pull $OLLAMA_DICTALM_MODEL' failed. Check the exact tag at"
-      echo "       https://ollama.com/dicta-il/DictaLM-3.0-24B-Thinking and retry: ollama pull <tag>"
-      SKIPPED+=("ollama pull $OLLAMA_DICTALM_MODEL")
-    }
   fi
 
   # Read by the GUI launcher / any local (non-Docker) run of the app so
-  # config/config.yaml's vLLM defaults (general llm: + Legal orchestrator/
-  # hebrew_analyst) are overridden without editing it. docker-compose.
+  # config/config.yaml's vLLM defaults (general llm: + Legal orchestrator)
+  # are overridden without editing it. docker-compose.
   # portable.yml sets the same vars itself, so it does not read this file.
   cat > .env.local <<EOF
 DOCSLIDES_LLM_BACKEND=ollama
@@ -202,11 +193,8 @@ DOCSLIDES_LLM_MODEL=$OLLAMA_MODEL
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OLLAMA_MODEL
-DOCSLIDES_LEGAL_HEBREW_BACKEND=ollama
-DOCSLIDES_LEGAL_HEBREW_BASE_URL=http://localhost:11434
-DOCSLIDES_LEGAL_HEBREW_MODEL=$OLLAMA_DICTALM_MODEL
 EOF
-  echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL, legal hebrew_analyst=$OLLAMA_DICTALM_MODEL)"
+  echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL)"
 fi
 echo
 

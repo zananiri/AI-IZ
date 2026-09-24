@@ -94,5 +94,5 @@ def test_only_answers_holding_every_key_fact_get_the_contradiction_check():
 def test_the_question_shown_to_the_model_uses_gershayim():
     from docslides.legal import pipeline
 
-    assert "יו״ר" in pipeline._question_block('האם סמכויות יו"ר הוועדה חלות?', None)
-    assert '"' in pipeline._question_block('Does "section 5" apply?', None)  # not Hebrew: untouched
+    assert "יו״ר" in pipeline._question_block('האם סמכויות יו"ר הוועדה חלות?')
+    assert '"' in pipeline._question_block('Does "section 5" apply?')  # not Hebrew: untouched

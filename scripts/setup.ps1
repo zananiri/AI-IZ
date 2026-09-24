@@ -36,13 +36,6 @@
     "std::bad_alloc", which is exactly what makes the chat/Legal tabs look
     like they hang or don't respond.
 
-.PARAMETER OllamaDictalmModel
-    Model tag to pull for the Legal tab's Hebrew analyst when the Ollama
-    backend is selected. Default: dicta-il/DictaLM-3.0-24B-Thinking. This one
-    has no smaller official tag on Ollama's registry yet, so it's used as-is
-    on every host size -- on a <48GB-RAM machine expect it to work but run at
-    CPU speed (roughly 1-2 tok/s on a modest laptop CPU), not to fail outright.
-
 .EXAMPLE
     .\scripts\setup.ps1
 .EXAMPLE
@@ -57,8 +50,7 @@ param(
     [string]$QwenModelRepo = "Qwen/Qwen3-32B-AWQ",
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
-    [string]$OllamaModel = "qwen3:32b",
-    [string]$OllamaDictalmModel = "dicta-il/DictaLM-3.0-24B-Thinking"
+    [string]$OllamaModel = "qwen3:32b"
 )
 
 $ErrorActionPreference = "Continue"
@@ -235,12 +227,13 @@ if ($Backend -eq "vllm") {
     }
 
     if (Get-Command ollama -ErrorAction SilentlyContinue) {
-        # The Legal tab uses two independent Ollama deployments (orchestrator
-        # + Hebrew analyst) back to back. Left at Ollama's default of "as many
-        # as fit", both can end up loaded at once and the second load fails
-        # with the same allocation error as an oversized single model on a
-        # modest host. Pin it to one resident model at a time so the second
-        # call evicts the first instead of fighting it for RAM.
+        # The app can call more than one Ollama model back to back (the
+        # general model, the Legal orchestrator if it's set to a different
+        # tag, and the judge model in evaluations). Left at Ollama's default
+        # of "as many as fit", two can end up loaded at once and the second
+        # load fails with the same allocation error as an oversized single
+        # model on a modest host. Pin it to one resident model at a time so
+        # the second call evicts the first instead of fighting it for RAM.
         $NeedsRestart = $false
         if ([System.Environment]::GetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "User") -ne "1") {
             [System.Environment]::SetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "1", "User")
@@ -277,19 +270,11 @@ if ($Backend -eq "vllm") {
             Write-Host "       https://ollama.com/library/qwen3 and retry: ollama pull <tag>" -ForegroundColor Yellow
             $Skipped.Add("ollama pull $OllamaModel")
         }
-
-        Write-Host "Pulling $OllamaDictalmModel (Legal tab's Hebrew analyst, ~13-20GB)..."
-        ollama pull $OllamaDictalmModel
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "[warn] 'ollama pull $OllamaDictalmModel' failed. Check the exact tag at" -ForegroundColor Yellow
-            Write-Host "       https://ollama.com/dicta-il/DictaLM-3.0-24B-Thinking and retry: ollama pull <tag>" -ForegroundColor Yellow
-            $Skipped.Add("ollama pull $OllamaDictalmModel")
-        }
     }
 
     # Read by the GUI launcher / any local (non-Docker) run of the app so
-    # config/config.yaml's vLLM defaults (general llm: + Legal orchestrator/
-    # hebrew_analyst) are overridden without editing it. docker-compose.
+    # config/config.yaml's vLLM defaults (general llm: + Legal orchestrator)
+    # are overridden without editing it. docker-compose.
     # portable.yml sets the same vars itself, so it does not read this file.
     @"
 DOCSLIDES_LLM_BACKEND=ollama
@@ -298,11 +283,8 @@ DOCSLIDES_LLM_MODEL=$OllamaModel
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
-DOCSLIDES_LEGAL_HEBREW_BACKEND=ollama
-DOCSLIDES_LEGAL_HEBREW_BASE_URL=http://localhost:11434
-DOCSLIDES_LEGAL_HEBREW_MODEL=$OllamaDictalmModel
 "@ | Set-Content -Path ".env.local" -Encoding utf8
-    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, model=$OllamaModel, legal hebrew_analyst=$OllamaDictalmModel)"
+    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, model=$OllamaModel)"
 }
 Write-Host ""
 

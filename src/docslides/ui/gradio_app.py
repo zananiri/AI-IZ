@@ -306,8 +306,8 @@ def build_chat_tab() -> None:
 # ---------------------------------------------------------------------------
 # Legal tab -- grounded RAG over Israeli law (see api/routes_legal.py,
 # legal/pipeline.py): Qwen researches, drafts and verifies against sources
-# approved into the signed index; DictaLM (user-selected tier) only normalizes
-# Hebrew questions and polishes Hebrew answers. Citations appear as [n]
+# approved into the signed index, and answers in the question's language.
+# Citations appear as [n]
 # markers in the answer and as footnotes (with verification status) in the
 # side panel; the Pass A research memorandum is viewable below them.
 # ---------------------------------------------------------------------------
@@ -359,9 +359,9 @@ def _legal_bubble(content_text: str, report: dict | None) -> str:
 
 def _stream_legal_job(job_id: str, history: list):
     """Same SSE contract as `_stream_job`, plus "citations" (footnotes, to
-    the side panel) and "legal_report" (memorandum, escalation, DictaLM
-    tier used), which arrives after the answer text and wraps it with the
-    escalation banner, coverage gaps and disclaimer."""
+    the side panel) and "legal_report" (memorandum, escalation), which
+    arrives after the answer text and wraps it with the escalation banner,
+    coverage gaps and disclaimer."""
     content_text = ""
     status_text = "Connecting"
     llm_status = f"🔌 {status_text}..."
@@ -394,8 +394,6 @@ def _stream_legal_job(job_id: str, history: list):
                         memo = data.get("research_memorandum")
                     elif event_kind == "done":
                         llm_status = "✅ Done"
-                        if report and report.get("dicta_used"):
-                            llm_status += f" · DictaLM: {report.get('dicta_tier')} ({report.get('dicta_model')})"
                     elif event_kind == "error":
                         content_text += f"\n\n⚠️ {data.get('message')}"
                         started_streaming = True
@@ -417,14 +415,14 @@ def _stream_legal_job(job_id: str, history: list):
                         break
 
 
-def send_legal_message(message: str, history: list, dicta_tier: str):
+def send_legal_message(message: str, history: list):
     message = (message or "").strip()
     if not message:
         yield history, gr.update(), gr.update(), gr.update(), gr.update()
         return
 
     history = history + [{"role": "user", "content": message}]
-    payload = {"messages": [{"role": "user", "content": message}], "dicta_tier": dicta_tier}
+    payload = {"messages": [{"role": "user", "content": message}]}
 
     with httpx.Client(timeout=60) as client:
         resp = client.post(f"{API_BASE_URL}/api/legal-chat", json=payload)
@@ -434,43 +432,11 @@ def send_legal_message(message: str, history: list, dicta_tier: str):
     yield from _stream_legal_job(job_id, history)
 
 
-def check_dicta_tier(selected: str):
-    """Non-blocking RAM suggestion: shows the banner + a one-click switch when
-    the selected DictaLM tier doesn't fit, and never changes the tier itself."""
-    hidden = (gr.update(visible=False), gr.update(visible=False), None)
-    try:
-        with httpx.Client(timeout=15) as client:
-            resp = client.get(f"{API_BASE_URL}/api/legal/dicta-tiers", params={"selected": selected})
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPError:
-        return hidden
-    if not data.get("message"):
-        return hidden
-    suggest = data.get("suggest")
-    labels = {t["key"]: t["label"] for t in data.get("tiers", [])}
-    return (
-        gr.update(value=f"⚠️ {data['message']}", visible=True),
-        gr.update(value=f"Switch to {labels.get(suggest, suggest)}", visible=bool(suggest)),
-        suggest,
-    )
-
-
-def build_legal_tab(demo: gr.Blocks, legal_tab: gr.Tab) -> None:
+def build_legal_tab() -> None:
     legal = get_config().legal
     gr.Markdown(
-        f"_Research & verification: **{legal.orchestrator.model}** via **{legal.orchestrator.backend}** "
-        "· Hebrew normalization & polish: DictaLM (tier below)_"
+        f"_Research, drafting & verification: **{legal.orchestrator.model}** via **{legal.orchestrator.backend}**_"
     )
-    dicta_tier = gr.Radio(
-        choices=[(tier.label, key) for key, tier in legal.dicta_tiers.items()],
-        value=legal.default_dicta_tier,
-        label="DictaLM tier (Hebrew questions / answers only)",
-    )
-    with gr.Row():
-        tier_banner = gr.Markdown(visible=False)
-        switch_tier_btn = gr.Button(visible=False, size="sm", scale=0)
-    suggested_tier = gr.State(None)
 
     with gr.Row():
         with gr.Column(scale=3):
@@ -490,18 +456,11 @@ def build_legal_tab(demo: gr.Blocks, legal_tab: gr.Tab) -> None:
             with gr.Accordion("Research memorandum (Pass A)", open=False):
                 memo_view = gr.JSON(value=None, label="Claims → evidence")
 
-    send_inputs = [legal_msg_box, legal_chatbot, dicta_tier]
+    send_inputs = [legal_msg_box, legal_chatbot]
     send_outputs = [legal_chatbot, legal_msg_box, citations_panel, legal_llm_status, memo_view]
     send = _glow_while_running(send_legal_message, send_outputs, legal_msg_box)
     legal_send_btn.click(fn=send, inputs=send_inputs, outputs=send_outputs)
     legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
-
-    # Checked on app start, whenever the tab is opened, and on every tier change.
-    check_outputs = [tier_banner, switch_tier_btn, suggested_tier]
-    dicta_tier.change(fn=check_dicta_tier, inputs=[dicta_tier], outputs=check_outputs)
-    legal_tab.select(fn=check_dicta_tier, inputs=[dicta_tier], outputs=check_outputs)
-    demo.load(fn=check_dicta_tier, inputs=[dicta_tier], outputs=check_outputs)
-    switch_tier_btn.click(fn=lambda suggest: gr.update(value=suggest), inputs=[suggested_tier], outputs=[dicta_tier])
 
 
 # ---------------------------------------------------------------------------
@@ -631,8 +590,8 @@ def build_app() -> gr.Blocks:
         with gr.Tabs():
             with gr.Tab("General GPT"):
                 build_chat_tab()
-            with gr.Tab("Legal GPT") as legal_tab:
-                build_legal_tab(demo, legal_tab)
+            with gr.Tab("Legal GPT"):
+                build_legal_tab()
             with gr.Tab("Canon GPT"):
                 build_canon_tab()
     return demo

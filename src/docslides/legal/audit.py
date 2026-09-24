@@ -1,11 +1,9 @@
 """Legal tab audit log: one JSON line per answered question, appended to
 <config.legal.audit_dir>/<YYYY-MM-DD>.jsonl.
 
-Each entry records the full claim -> evidence trail: the query and its
-normalized form, the reply language, which models handled it (including
-the DictaLM tier, for reproducibility -- Hebrew phrasing differs subtly
-between tiers), the retrieved chunk ids with their bundle hashes and
-verification level, every memorandum/draft/polish attempt with the check
+Each entry records the full claim -> evidence trail: the query, the reply
+language, which model handled it, the retrieved chunk ids with their bundle
+hashes and verification level, every memorandum/draft attempt with the check
 results that accepted or rejected it, and the final answer. Entries contain
 the user's question verbatim; the directory is as sensitive as the questions.
 """

@@ -82,14 +82,11 @@ loading) reliably fails to allocate (`std::bad_alloc` /
 `ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate ...` in
 Ollama's server log) -- which looks like the chat/Legal tabs hanging or not
 responding rather than an install error. The setup scripts also set
-`OLLAMA_MAX_LOADED_MODELS=1` so the Legal tab's two Ollama deployments
-(Qwen orchestrator + DictaLM) evict each other instead of both trying to
-stay resident at once. DictaLM only runs for Hebrew questions/answers, at
-the tier picked in the Legal tab: Heavy (`DictaLM-3.0-24B-Thinking`, ~14GB)
-or Light (12B). The tab checks free RAM/VRAM and suggests Light when Heavy
-won't fit, but never switches on its own; Heavy on CPU works, at roughly
-1-2 tok/s on a modest laptop (`legal.dicta_tiers.heavy.llm.request_timeout_s`
-is 1800s for that reason).
+`OLLAMA_MAX_LOADED_MODELS=1` so that when two Ollama models are called back
+to back (e.g. the Legal orchestrator and an evaluation's judge model) the
+second evicts the first instead of both trying to stay resident at once.
+The Legal tab uses one model, the Qwen orchestrator, for every stage and
+answers in the question's language, Hebrew included.
 
 OCR runs on CPU by default (PaddleOCR PP-OCRv6, Tesseract). Only the
 low-confidence VLM-OCR fallback (PaddleOCR-VL / Surya) touches the GPU, and
@@ -120,10 +117,9 @@ Re-running either script is safe -- already-downloaded files are left in place.
 
 When the Ollama backend is selected, the script writes `.env.local` with the
 `DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` triple (general chat model) plus
-matching `DOCSLIDES_LEGAL_ORCHESTRATOR_*` / `DOCSLIDES_LEGAL_HEBREW_*` triples
-for the Legal tab's independent deployments (Qwen orchestrator, and the Heavy
-DictaLM tier; `DOCSLIDES_LEGAL_DICTA_LIGHT_*` points the Light tier) -- all
-overriding `config/config.yaml`'s vLLM defaults. See [Hardware requirements](#hardware-requirements).
+a matching `DOCSLIDES_LEGAL_ORCHESTRATOR_*` triple for the Legal tab's
+independent Qwen orchestrator deployment -- both overriding
+`config/config.yaml`'s vLLM defaults. See [Hardware requirements](#hardware-requirements).
 
 After setup, use **`gui/DocSlides.bat`** (Windows) or **`gui/DocSlides.command`**
 (macOS) to start/stop everything and watch live status (backend, app, Docker)
@@ -241,9 +237,8 @@ Edit `config/config.yaml`:
 
 Or leave `config.yaml` as-is and override the LLM sections via env vars --
 `DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` for the general model, and
-`DOCSLIDES_LEGAL_ORCHESTRATOR_*` / `DOCSLIDES_LEGAL_HEBREW_*` (Heavy tier) /
-`DOCSLIDES_LEGAL_DICTA_LIGHT_*` for the Legal tab's Qwen and DictaLM
-deployments -- this is what
+`DOCSLIDES_LEGAL_ORCHESTRATOR_*` for the Legal tab's Qwen deployment --
+this is what
 `.env.local` (written by the setup scripts) and `docker-compose.portable.yml`
 do.
 
@@ -292,7 +287,7 @@ answer citing a section the amendment itself changed escalates. Run
 `python scripts/ingest_legal.py retag` once for laws indexed before this existed.
 
 Every answer is appended to `data/legal/audit/<date>.jsonl` (question,
-models and DictaLM tier, retrieved chunks, memorandum/draft/polish attempts,
+model, retrieved chunks, memorandum/draft attempts,
 verification results). Those files hold users' questions verbatim.
 
 ### 4. Run

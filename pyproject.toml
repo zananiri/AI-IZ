@@ -26,7 +26,6 @@ dependencies = [
     "orjson>=3.10",
     "python-multipart>=0.0.9",
     "Pillow>=10.4",
-    "psutil>=5.9",  # Legal tab's DictaLM tier RAM check (legal/resources.py)
 ]
 
 [project.optional-dependencies]

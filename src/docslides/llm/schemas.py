@@ -215,21 +215,6 @@ class EntailmentVerdict(BaseModel):
     explanation: str
 
 
-class EquivalenceDiscrepancy(BaseModel):
-    location: str
-    pre_polish: str
-    post_polish: str
-    issue: str
-
-
-class EquivalenceReport(BaseModel):
-    """Legal tab: Qwen's independent check that DictaLM's Hebrew polish kept
-    the draft's meaning (modal verbs, attribution strength, qualifiers)."""
-
-    equivalent: bool
-    discrepancies: list[EquivalenceDiscrepancy] = Field(default_factory=list)
-
-
 class EvalJudgement(BaseModel):
     """scripts/eval_legal.py: grades one answer against its gold answer."""
 
@@ -299,7 +284,6 @@ SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "research_memorandum": ResearchMemorandum,
     "legal_draft": LegalDraft,
     "entailment_verdict": EntailmentVerdict,
-    "equivalence_report": EquivalenceReport,
     "reply_language": ReplyLanguage,
     "eval_judgement": EvalJudgement,
     "canon_query_plan": CanonQueryPlan,

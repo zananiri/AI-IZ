@@ -71,3 +71,14 @@ def test_evidence_says_when_an_amended_law_is_not_in_the_index():
     text = format_evidence({"c:1": [RetrievedLegalChunk("c:1", "חוק > סעיף 1\n\nטקסט", meta, 0.3, "search")]},
                            {}, indexed_law_keys={"חוק העמדה לדין"})
     assert "its text is not in the index" in text
+
+
+def test_inner_lists_of_the_same_marker_kind_stay_inside_their_subsection():
+    from docslides.legal.structure import parse_sections
+
+    text = ("1. מטרת החוק." + chr(10) + "25. (א) דיון יתקיים באופן שיבטיח את כל אלה:\n(1) ראשון;\n(2) (א) לפני הדיון תתקיים שיחה.\n"
+            "(ב) במהלך הדיון תתאפשר שיחה.\n(3) שלישי;\n(7) פרוטוקול לא יאוחר מ־24 שעות;\n"
+            "(ב) דיון יתקיים באולם שאושר.\n(ג) השר יקבע הוראות.")
+    (section,) = [s for s in parse_sections(text) if s.number == "25"]
+    assert [s.label for s in section.subsections] == ["א", "ב", "ג"]
+    assert "24 שעות" in section.subsections[0].text and "במהלך הדיון" in section.subsections[0].text

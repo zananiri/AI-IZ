@@ -119,21 +119,67 @@ def _marker_kind(label: str) -> str:
     return "hebrew"
 
 
+_HEB_VALUES = {c: v for v, c in enumerate("אבגדהוזחט", start=1)}
+_HEB_VALUES.update({c: v for c, v in zip("יכלמנסעפצ", range(10, 100, 10))})
+_INLINE_NESTED_RE = re.compile(r"^\s*\((?:\d{1,3}|[א-ת]{1,2}\d?|[a-z]{1,2})\)\s*\((?P<label>[^)]{1,3})\)")
+
+
+def _label_value(label: str) -> tuple[int, str]:
+    """(ordinal, suffix) of a marker label: "ג" -> (3, ""), "יא" -> (11, ""),
+    "ב1" -> (2, "1"), "12" -> (12, "")."""
+    match = re.match(r"^(\d+|[א-ת]{1,2}|[a-z]{1,2})(\d*)$", label)
+    if not match:
+        return 0, label
+    base, suffix = match.groups()
+    if base.isdigit():
+        return int(base), suffix
+    if base.isascii():
+        return sum(ord(c) - 96 for c in base), suffix
+    return sum(_HEB_VALUES.get(c, 0) for c in base), suffix
+
+
+def _follows(label: str, previous: str | None) -> bool:
+    """Is `label` the next marker after `previous` in the same list ("ג" after "ב",
+    "ב1" after "ב")?"""
+    value, suffix = _label_value(label)
+    if previous is None:
+        return value == 1 and not suffix
+    prev_value, _ = _label_value(previous)
+    return (value == prev_value + 1 and not suffix) or (value == prev_value and bool(suffix))
+
+
 def _split_subsections(body_lines: list[str]) -> tuple[str, list[Subsection]]:
+    """A section's intro and top-level subsections. A marker of the top-level kind
+    opens a new subsection only when it is the next label in sequence: an inner
+    list of the same kind -- "(2) (א) ... (ב) ..." or a list restarting at "(א)"
+    inside a subsection -- stays with the subsection it belongs to."""
     top_kind: str | None = None
     intro: list[str] = []
     subsections: list[Subsection] = []
+    nested: str | None = None  # last label of an open inner list of the top-level kind
     for raw in body_lines:
         quoted = raw.startswith(_QUOTED)
         line = raw.lstrip(_QUOTED)
         match = None if quoted else _SUBSECTION_RE.match(line)  # quoted text's markers aren't ours
         if match:
-            kind = _marker_kind(match.group("label"))
+            label = match.group("label")
+            kind = _marker_kind(label)
             if top_kind is None:
                 top_kind = kind
             if kind == top_kind:
-                subsections.append(Subsection(label=match.group("label"), text=line.strip()))
-                continue
+                previous = subsections[-1].label if subsections else None
+                if nested is not None and _follows(label, nested):
+                    nested = label  # next item of the inner list
+                elif not subsections or _follows(label, previous):
+                    nested = None
+                    subsections.append(Subsection(label=label, text=line.strip()))
+                    continue
+                elif subsections and _follows(label, None):
+                    nested = label  # an inner list restarting at (א) / (1)
+            else:
+                inline = _INLINE_NESTED_RE.match(line)
+                if inline and _marker_kind(inline.group("label")) == top_kind:
+                    nested = inline.group("label")  # "(2) (א) ..." opens an inner list
         if subsections:
             subsections[-1].text += "\n" + line.strip()
         else:

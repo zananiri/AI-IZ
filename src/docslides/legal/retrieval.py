@@ -438,6 +438,9 @@ def retrieve(query: str) -> RetrievalResult:
     trimmed.extend(c.chunk_id for c in picked if c not in kept)
 
     # Sections the question names come first: an exact identifier beats any similarity.
+    # Definition questions ("מהי X?") also get every provision that defines X, in every law.
+    for chunk_id, text, meta, distance in _definition_rows(query, query_vector):
+        admit(chunk_id, text, meta, distance, "section_lookup")
     named_laws = _named_law_ids(query)
     if cfg.section_lookup_max:
         index = _derived_indexes()["sections"] if named_sections(query) else {}
@@ -459,6 +462,16 @@ def retrieve(query: str) -> RetrievalResult:
 
     for candidate in kept:
         admit(candidate.chunk_id, candidate.text, candidate.meta, candidate.distance, "search", candidate.score)
+
+    # Subsections that qualify a retrieved subsection ("על אף האמור בסעיף קטן (ב)",
+    # "כאמור בסעיף קטן (ב)") -- where a provision's exceptions usually live.
+    for chunk_id, text, meta, distance in _qualifying_rows(list(chunks.values()), query_vector):
+        admit(chunk_id, text, meta, distance, "cross_reference")
+
+    if reranker is not None:  # lookups skip the ranking, so score them for the several-laws check
+        unscored = [c for c in chunks.values() if c.via == "section_lookup" and c.score is None]
+        for chunk, score in zip(unscored, reranker.predict([(query, c.text) for c in unscored]) if unscored else []):
+            chunk.score = float(score)
 
     search_hits = [c for c in chunks.values() if c.via in ("search", "section_lookup")]
     best = min((c.distance for c in search_hits if c.distance is not None), default=None)
@@ -518,16 +531,68 @@ def _named_law_ids(query: str) -> set[str]:
 
 
 def _laws_in_play(chunks: list[RetrievedLegalChunk], best_score: float | None, cfg) -> list[str]:
-    """Names of the laws that strongly match a question that names no law: each
-    has a section the question names, or a hit scoring near the best one."""
+    """Names of the laws that strongly match a question that names no law: each has
+    a hit -- found by search or by the section number / term the question names --
+    that the reranker scores near the best one. (Without a reranker, a named
+    section counts on its own.)"""
+    scores = [c.score for c in chunks if c.via in ("search", "section_lookup") and c.score is not None]
+    top = max([*scores, best_score or 0.0]) if scores or best_score is not None else None
     strong: dict[str, str] = {}
     for chunk in chunks:
-        if chunk.via == "section_lookup" or (
-            chunk.via == "search" and chunk.score is not None and best_score is not None
-            and chunk.score >= max(cfg.ambiguity_min_score, best_score - cfg.ambiguity_margin)
-        ):
+        if chunk.via not in ("search", "section_lookup"):
+            continue
+        if chunk.score is None:
+            if chunk.via == "section_lookup":
+                strong.setdefault(chunk.metadata.law_id, chunk.metadata.law_name)
+            continue
+        if top is not None and chunk.score >= max(cfg.ambiguity_min_score, top - cfg.ambiguity_margin):
             strong.setdefault(chunk.metadata.law_id, chunk.metadata.law_name)
     return list(strong.values()) if len(strong) >= 2 else []
+
+
+_DEFINITION_Q_RE = re.compile(r"^\s*(?:מהי|מהו|מה\s+(?:זה|זו|פירוש|הגדרת|ההגדרה\s+של)|מיהו|מיהי|מי\s+הוא|מי\s+היא)\s+(?P<term>.+?)\s*\?*\s*$")
+
+
+def _definition_rows(query: str, query_vector) -> list[tuple[str, str, dict, float]]:
+    """For "מהי "היוועדות חזותית"?" -- the chunks that define the term ('״היוועדות
+    חזותית״ -' / '"X" means'), nearest first, at most one per law."""
+    from docslides.legal.chunking import normalize_hebrew_quotes
+
+    match = _DEFINITION_Q_RE.match(normalize_hebrew_quotes(query))
+    if not match:
+        return []
+    term = match.group("term").strip().strip("״\"'").strip()
+    term = re.sub(r"\s+(?:לפי|בחוק|לעניין)\b.*$", "", term).strip("״\"' ")
+    if not term or len(term.split()) > 4:
+        return []
+    pattern = re.compile(rf"[״\"]{re.escape(term)}[״\"]\s*[-–—]")
+    ids = [chunk_id for chunk_id, text, _ in all_chunks() if pattern.search(text)]
+    per_law: dict[str, tuple] = {}
+    for row in _nearest_first(_get_embedded(ids=ids), query_vector):
+        per_law.setdefault(row[2].get("law_id", ""), row)
+    return list(per_law.values())
+
+
+def _qualifying_rows(found: list[RetrievedLegalChunk], query_vector) -> list[tuple[str, str, dict, float]]:
+    """Other subsections of a retrieved subsection's section that refer back to it
+    ("... בסעיף קטן (ב)"): its exceptions and qualifications."""
+    wanted: dict[str, set[str]] = {}
+    for chunk in found:
+        if chunk.via in ("search", "section_lookup") and chunk.metadata.subsection_number and not chunk.metadata.inserted_section:
+            wanted.setdefault(chunk.metadata.section_key, set()).add(chunk.metadata.subsection_number)
+    if not wanted:
+        return []
+    have = {c.chunk_id for c in found}
+    rows = _get_embedded(where={"section_key": {"$in": sorted(wanted)}})
+    picked = []
+    for row in rows:
+        chunk_id, text, meta, _ = row
+        subs = wanted.get(meta.get("section_key"), set())
+        if chunk_id in have or meta.get("subsection_number") in subs:
+            continue
+        if any(re.search(rf"סעיף\s+קטן\s+\({re.escape(s)}\)", text) for s in subs):
+            picked.append(row)
+    return _nearest_first(picked, query_vector)
 
 
 _CLAUSE_SPLIT_RE = re.compile(r",?\s+ו(?=(?:האם|מה|מהם|מהן|מי|מתי|כיצד|איך|אילו|היכן|לכמה)\s)")

@@ -110,9 +110,10 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
         try:
             turn = await run_legal_turn(q.question, dicta_tier, f"eval-{q.id}", status, use_dicta=use_dicta)
         except Exception as exc:  # noqa: BLE001
-            results[q.id] = {"answer_text": "", "error": str(exc), "verdict": "incorrect", "score": 0.0,
-                             "passed": False, "retrieval": 0.0 if q.group != "C" else None,
-                             "citation": 0.0 if q.group != "C" else None}
+            # Retrieval and citation are unknown, not zero: the pipeline failed (e.g. a model
+            # timeout), which says nothing about what retrieval found.
+            results[q.id] = {"answer_text": "", "error": f"{type(exc).__name__}: {exc}", "verdict": "error",
+                             "score": 0.0, "passed": False, "retrieval": None, "citation": None}
             _save(out, results)
             continue
 
@@ -186,7 +187,9 @@ async def main_async(args) -> int:
         "started": datetime.now().isoformat(timespec="seconds"),
         "model (before RAG, pipeline, judge)": legal.orchestrator.model,
         "DictaLM in after-RAG run": "skipped (--no-dicta)" if args.no_dicta else f"{tier_key}: {tier_cfg.llm.model}",
-        "retrieval": f"{legal.retrieval.embedding_model}, top_k={legal.retrieval.top_k}",
+        "retrieval": f"{legal.retrieval.embedding_model}, top_k={legal.retrieval.top_k}, "
+                     f"keyword={legal.retrieval.keyword_search}, reranker={legal.retrieval.reranker_model}, "
+                     f"evidence budget={legal.retrieval.max_evidence_tokens}",
     }
     _save(run_dir / "meta.json", meta)
 

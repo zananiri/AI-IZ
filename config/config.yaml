@@ -100,6 +100,15 @@ legal:
     sibling_margin: 0.12                       # add other parts of a split provision only this close
     max_evidence_tokens: 2500                  # all evidence, best-first; fits the 8k window with the
                                                # memo/draft outputs -- raise with max_model_len
+    keyword_search: true                       # Hebrew-aware BM25 fused with the embedding ranking
+    section_lookup_max: 2                      # chunks per section number the question names
+    reranker_model: "BAAI/bge-reranker-v2-m3"  # null = rank by embedding distance only
+    rerank_candidates: 16
+    rerank_max_length: 1024
+    rerank_margin: 0.6                         # keep hits within this of the best reranker score
+    rerank_floor: 0.1                          # ...and at least this
+    min_rerank_score: 0.35                     # best score under this = thin coverage
+                                               # (scripts/eval_retrieval.py calibrates these)
   ingestion:
     sources_dir: "./data/legal/sources"        # official texts + <file>.meta.json sidecars
     legal_txt_dir: "./legal_txt"               # drop-in law PDFs, indexed by scripts/ingest_legal_txt.py

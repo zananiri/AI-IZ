@@ -181,10 +181,19 @@ async def normalize_hebrew_query(dicta: QwenClient, query: str) -> tuple[str, st
 # --- Pass A ------------------------------------------------------------------------
 
 
-def _question_block(query: str, normalized: str | None) -> str:
+_THIN_COVERAGE_NOTE = (
+    "Retrieval note: none of the retrieved provisions was rated as directly answering this question. "
+    "If the evidence does not state the answer, the correct finding is that the indexed law does not "
+    "state it -- do not build an answer from loosely related provisions."
+)
+
+
+def _question_block(query: str, normalized: str | None, thin_coverage: bool = False) -> str:
     block = f"User's question (original):\n{query}"
     if normalized and normalized != query:
         block += f"\n\nNormalized Hebrew form of the question (text form only, same meaning):\n{normalized}"
+    if thin_coverage:  # the reranker found nothing that directly answers (legal/retrieval.py)
+        block += f"\n\n{_THIN_COVERAGE_NOTE}"
     return block
 
 
@@ -450,8 +459,7 @@ def _footnotes(final_text: str, evidence: dict[str, ChunkMetadata], checks: list
                 "number": number,
                 "source_id": citation.source_id,
                 "law": meta.law_name if meta else citation.law,
-                "section": (meta.section_number + (f"({meta.subsection_number})" if meta.subsection_number else ""))
-                if meta else citation.section,
+                "section": meta.display_section if meta else citation.section,
                 "breadcrumb": meta.breadcrumb if meta else "",
                 "effective": f"{meta.effective_date_start} – {meta.effective_date_end or 'current'}" if meta else citation.effective,
                 "status": meta.status if meta else "unknown",
@@ -541,18 +549,20 @@ async def run_legal_turn(
         {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "text": c.text, "distance": c.distance, "via": c.via}
         for c in retrieval.chunks
     ]
-    question = _question_block(query, normalized)
+    question = _question_block(query, normalized, thin_coverage=retrieval.low_relevance)
     entry["retrieval"] = {
         "query": retrieval_query,
         "bundle_verification": retrieval.bundle_verification,
         "best_distance": retrieval.best_distance,
+        "best_rerank_score": retrieval.best_rerank_score,
         "low_relevance": retrieval.low_relevance,
         "amendment_notes": {sid: [n.describe() for n in notes] for sid, notes in amendment_notes.items()},
         "rejected_chunk_ids": retrieval.rejected_chunk_ids,
         "duplicate_chunk_ids": retrieval.duplicate_chunk_ids,
         "trimmed_chunk_ids": retrieval.trimmed_chunk_ids,
         "chunks": [
-            {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "distance": c.distance, "via": c.via}
+            {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "distance": c.distance, "via": c.via,
+             "score": c.score}
             for c in retrieval.chunks
         ],
     }

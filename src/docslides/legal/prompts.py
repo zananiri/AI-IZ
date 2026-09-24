@@ -152,7 +152,7 @@ def format_evidence(grouped: dict[str, list[RetrievedLegalChunk]], amendment_not
     blocks = []
     for source_id, parts in grouped.items():
         meta = parts[0].metadata
-        section = meta.section_number + (f"({meta.subsection_number})" if meta.subsection_number else "")
+        section = meta.display_section
         effective = f"{meta.effective_date_start} to {meta.effective_date_end or 'current'}"
         body = "\n".join(p.text for p in parts).replace("</evidence>", "</ evidence>")
         if meta.language == "he":

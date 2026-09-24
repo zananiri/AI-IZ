@@ -65,6 +65,15 @@ class ChunkMetadata:
     gazette: str | None = None  # e.g. "ספר החוקים 3546" -- lets "what did amendment X change" match
     law_key: str = ""  # normalized law identity, matches amendments to this law (legal/amendments.py)
     amends: list[dict] = field(default_factory=list)  # what this chunk amends in other laws
+    # A provision this (amending) chunk inserts into another law, by that law's number:
+    # "116יז10(ד)" for a chunk of section 6(4) that adds it (legal/insertions.py).
+    inserted_section: str = ""
+
+    @property
+    def display_section(self) -> str:
+        """How a citation names this provision: "6(4) › 116יז10(ד)" for an inserted one."""
+        own = self.section_number + (f"({self.subsection_number})" if self.subsection_number else "")
+        return f"{own} › {self.inserted_section}" if self.inserted_section else own
 
     def to_chroma(self) -> dict[str, str | int]:
         flat: dict[str, str | int] = {}

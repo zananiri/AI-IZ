@@ -50,9 +50,13 @@ class FakeCollection:
             "embeddings": [np.array([r[3] for r in ranked])],
         }
 
-    def get(self, where, include):
-        ((field, condition),) = where.items()
-        hits = [r for r in self.rows if r[2][field] in condition["$in"]]
+    def get(self, where=None, ids=None, include=None):
+        hits = self.rows
+        if where:
+            ((field, condition),) = where.items()
+            hits = [r for r in hits if r[2][field] in condition["$in"]]
+        if ids is not None:
+            hits = [r for r in hits if r[0] in ids]
         return {
             "ids": [r[0] for r in hits],
             "documents": [r[1] for r in hits],
@@ -67,6 +71,9 @@ def load_index(monkeypatch):
     settings = {
         "top_k": 6, "fetch_k": 24, "mmr_lambda": 1.0, "low_relevance_distance": 0.55, "min_relevant_chunks": 2,
         "max_cross_refs": 4, "relevance_margin": 0.08, "sibling_margin": 0.12, "max_evidence_tokens": None,
+        # the distance path by default; tests below switch each of these on
+        "keyword_search": False, "section_lookup_max": 0, "reranker_model": None,
+        "rerank_margin": 0.6, "rerank_floor": 0.1, "min_rerank_score": 0.35, "rerank_candidates": 16,
     }
     for name, value in settings.items():
         monkeypatch.setattr(cfg, name, value)
@@ -78,6 +85,7 @@ def load_index(monkeypatch):
         entries = {cid: {"sha256": content_hash(text, meta)} for cid, text, meta, _ in rows}
         monkeypatch.setattr(retrieval, "_get_collection", lambda: collection)
         monkeypatch.setattr(retrieval.bundle, "verified_entries", lambda: (entries, "signed"))
+        retrieval._derived_cache.clear()
         return cfg
 
     return load
@@ -150,3 +158,56 @@ def test_evidence_text_uses_gershayim_for_hebrew_sources():
     text = "חוק > סעיף 1\n\nמאז יום כ\"ב בתשרי התשפ\"ד"
     chunk = RetrievedLegalChunk("v:1", text, meta, 0.3, "search")
     assert "מאז יום כ״ב בתשרי התשפ״ד" in prompts.format_evidence({"v:1": [chunk]})
+
+
+# --- section lookup, keyword fusion, reranker ------------------------------------------
+
+
+class FakeReranker:
+    """Scores a (question, chunk) pair by the number after "score=" in the chunk text."""
+
+    def predict(self, pairs):
+        return [float(text.split("score=")[1].split()[0]) for _, text in pairs]
+
+
+def test_a_section_the_question_names_is_fetched_first(load_index, monkeypatch):
+    cfg = load_index([
+        ("v:1", "סעיף אחד קרוב מאוד לשאלה", _meta("v:1", "v:1", "1"), 0.20),
+        ("v:6(6)>132א(ה)", "הוראות סעיפים קטנים לא יחולו על אות אזעקה",
+         {**_meta("v:6(6)>132א(ה)", "v:6(6)>132א(ה)", "6"), "inserted_section": "132א(ה)"}, 0.60),
+    ])
+    monkeypatch.setattr(cfg, "section_lookup_max", 2)
+    monkeypatch.setattr(cfg, "relevance_margin", 0.05)
+    result = retrieval.retrieve("האם הסמכויות לפי סעיף 132א חלות על אזעקות?")
+
+    assert [(c.chunk_id, c.via) for c in result.chunks] == [("v:6(6)>132א(ה)", "section_lookup"), ("v:1", "search")]
+    assert retrieval.named_sections("בסעיף 62(ג) ובסעיף 116 יז 10") == [("62", "ג"), ("116יז10", None)]
+
+
+def test_keyword_search_brings_in_what_embeddings_rank_low(load_index, monkeypatch):
+    cfg = load_index([("v:1", "סעיף כללי על הבחירות", _meta("v:1", "v:1", "1"), 0.30)]
+                     + [(f"v:{n}", f"הוראה אחרת מספר {n}", _meta(f"v:{n}", f"v:{n}", str(n)), 0.31) for n in range(2, 9)]
+                     + [("v:12", "המפרסם נחזות עמוקה יצרף גילוי", _meta("v:12", "v:12", "12"), 0.90)])
+    monkeypatch.setattr(cfg, "fetch_k", 3)
+    monkeypatch.setattr(cfg, "relevance_margin", None)
+    assert "v:12" not in [c.chunk_id for c in retrieval.retrieve("מה דין נחזות עמוקה?").chunks]
+
+    monkeypatch.setattr(cfg, "keyword_search", True)
+    assert "v:12" in [c.chunk_id for c in retrieval.retrieve("מה דין בנחזות עמוקה?").chunks]
+
+
+def test_reranker_orders_hits_and_sets_the_thin_coverage_flag(load_index, monkeypatch):
+    cfg = load_index([
+        ("v:1", "קרוב אבל לא עונה score=0.05", _meta("v:1", "v:1", "1"), 0.20),
+        ("v:2", "עונה ישירות score=0.95", _meta("v:2", "v:2", "2"), 0.40),
+        ("v:3", "עונה חלקית score=0.50", _meta("v:3", "v:3", "3"), 0.45),
+    ])
+    monkeypatch.setattr(cfg, "reranker_model", "fake")
+    monkeypatch.setattr(retrieval, "_reranker", lambda name: FakeReranker())
+    result = retrieval.retrieve("שאלה")
+
+    assert [(c.chunk_id, c.score) for c in result.chunks] == [("v:2", 0.95), ("v:3", 0.50)]  # v:1 under the floor
+    assert result.best_rerank_score == 0.95 and result.low_relevance is False
+
+    cfg = load_index([("v:1", "לא עונה score=0.10", _meta("v:1", "v:1", "1"), 0.20)])
+    assert retrieval.retrieve("שאלה").low_relevance is True  # best score under min_rerank_score

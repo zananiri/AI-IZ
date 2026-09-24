@@ -95,6 +95,20 @@ class LegalRetrievalConfig(BaseModel):
     relevance_margin: float | None = 0.08
     sibling_margin: float | None = 0.12
     max_evidence_tokens: int | None = 2500
+    # Hebrew-aware keyword search fused with the embedding ranking (legal/keyword.py).
+    keyword_search: bool = True
+    # Chunks fetched for each section number the question names ("סעיף 132א"); 0 disables.
+    section_lookup_max: int = 2
+    # Cross-encoder that reorders candidates and scores how directly each answers the
+    # question (0-1). None, or a model that can't load, falls back to embedding distance.
+    reranker_model: str | None = "BAAI/bge-reranker-v2-m3"
+    rerank_candidates: int = 16
+    rerank_max_length: int = 1024
+    # Calibrated on the 16-question elections eval with scripts/eval_retrieval.py: every
+    # answerable question's best score was >= 0.48, the unanswerable C2's 0.23.
+    rerank_margin: float | None = 0.6  # keep hits scoring within this of the best one...
+    rerank_floor: float = 0.1  # ...and at least this (the best hit always stays)
+    min_rerank_score: float = 0.35  # best score under this = thin coverage (flag + prompt note)
 
 
 class LegalIngestionConfig(BaseModel):

@@ -26,14 +26,17 @@ Hebrew chunks are stored with ״ in place of the ASCII double quote
 from __future__ import annotations
 
 import hashlib
+import itertools
 import re
 from dataclasses import dataclass
 
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
 from docslides.legal import amendments
+from docslides.legal.amendments import AmendmentRef
+from docslides.legal.insertions import Insertion, find_insertion, join_spaced_section_numbers
 from docslides.legal.models import ChunkMetadata, LegalChunk, SourceOrigin, SourceType, Status
-from docslides.legal.structure import Section, extract_cross_references
+from docslides.legal.structure import Section, _split_subsections, extract_cross_references
 from docslides.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -90,7 +93,9 @@ def _section_label(language: str, number: str) -> str:
 
 def _breadcrumb(meta: SourceMeta, section: Section, subsection: str | None) -> str:
     provision = _section_label(meta.language, section.number)
-    if subsection:
+    if subsection and section.number == "preamble":
+        provision += f" — {subsection}"
+    elif subsection:
         provision += f"({subsection})"
     if section.title:
         provision += f" — {section.title}"
@@ -138,74 +143,208 @@ def _part_suffix(language: str, index: int, count: int) -> str:
     return f" (חלק {index} מתוך {count})" if language == "he" else f" (part {index} of {count})"
 
 
+_ENACTED_RE = re.compile(r"^\*?\s*(?:התקבל בכנסת|Passed by the Knesset)")
+_FOOTNOTE_REF_RE = re.compile(r"^\d{1,3}\s+ס[\"״]ח\s")
+_GAZETTE_HEADER_LINES = {"רשומות", "ספר החוקים", "הערות שוליים:", "עמוד"}
+_SIGNATORY_RE = re.compile(r"ראש הממשלה|נשיא המדינה|יושב ראש הכנסת")
+_SENTENCE_END = (".", ";", ":", '."', ".״", '";', "״;")
+_ENACTED_LABEL = "קבלת החוק"
+_TOC_LABEL = "תיקונים עקיפים"
+_NUMBERED_ITEM_RE = re.compile(r"^\(\d{1,3}\)")  # "(2) בסעיף 62(ג) ..."
+
+
+def _preamble_pieces(section: Section) -> list[_Piece] | None:
+    """A gazette preamble reduced to what answers questions: when the Knesset
+    passed the law (the '* התקבל בכנסת ...' note) and the list of laws it
+    amends. Page headers, the title fragment and bare 'ס"ח' footnote
+    references are dropped. None if neither part is found (keep it whole)."""
+    lines = [line.strip() for line in section.text.splitlines() if line.strip()]
+    enacted: list[str] = []
+    toc: list[str] = []
+    collecting = False
+    for line in lines:
+        is_toc = bool(amendments.parse_toc(line))
+        if _ENACTED_RE.match(line):
+            collecting = True
+        elif collecting and (is_toc or _FOOTNOTE_REF_RE.match(line) or line in _GAZETTE_HEADER_LINES):
+            collecting = False
+        if collecting:
+            enacted.append(line)
+        elif is_toc:
+            toc.append(line)
+    pieces = []
+    if enacted:
+        pieces.append(_Piece(_ENACTED_LABEL, "\n".join(enacted)))
+    if toc:
+        pieces.append(_Piece(_TOC_LABEL, "תיקונים עקיפים:\n" + "\n".join(toc)))
+    return pieces or None
+
+
+def _strip_signature_block(text: str) -> str:
+    """Drops the signatories printed after a law's last section ('בנימין
+    נתניהו / ראש הממשלה ...'), which otherwise end up in its last chunk."""
+    lines = text.splitlines()
+    if not any(_SIGNATORY_RE.search(line) and len(line.split()) <= 6 for line in lines[-6:]):
+        return text
+    cut = len(lines)
+    for j in range(len(lines) - 1, -1, -1):
+        stripped = lines[j].strip()
+        if not stripped:
+            continue
+        if len(stripped.split()) > 6 or stripped.endswith(_SENTENCE_END):
+            break
+        cut = j
+    return "\n".join(lines[:cut])
+
+
+def _strip_last_section_signature(section: Section) -> None:
+    section.text = _strip_signature_block(section.text)
+    section.intro = _strip_signature_block(section.intro)
+    if section.subsections:
+        section.subsections[-1].text = _strip_signature_block(section.subsections[-1].text)
+
+
+def _inserts_label(language: str, inserted: str, target: str) -> str:
+    if language == "he":
+        return f"מוסיף את סעיף {inserted}" + (f" ל{target}" if target else "")
+    return f"inserts section {inserted}" + (f" into {target}" if target else "")
+
+
+def _provision_units(lines: list[str], room: int) -> list[tuple[str | None, str]]:
+    """An inserted provision as (subsection label, text) units: whole if it
+    fits `room`, else split at its top-level subsections (a short opening
+    line stays with each) -- the same rule chunk_sections applies to a law's
+    own sections."""
+    text = "\n".join(lines)
+    if count_tokens(text) <= room:
+        return [(None, text)]
+    intro, subsections = _split_subsections(lines)
+    if not subsections:
+        return [(None, text)]
+    units: list[tuple[str | None, str]] = []
+    intro_is_context = bool(intro) and count_tokens(intro) <= _SHORT_INTRO_TOKENS
+    if intro and not intro_is_context:
+        units.append((None, intro))
+    for sub in subsections:
+        units.append((sub.label, f"{intro}\n{sub.text}" if intro_is_context else sub.text))
+    return units
+
+
 def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: str) -> list[LegalChunk]:
     budget = get_config().legal.ingestion.chunk_max_tokens
     known_sections = {s.number for s in sections}
     toc = amendments.parse_toc(next((s.text for s in sections if s.number == "preamble"), ""))
     key = amendments.law_key(meta.law_name)
+    hebrew = meta.language == "he"
+    if sections and sections[-1].number != "preamble":
+        _strip_last_section_signature(sections[-1])
     chunks: list[LegalChunk] = []
+
+    def emit(section: Section, subsection: str | None, source_id: str, breadcrumb: str, body: str,
+             refs: list[str], amended: AmendmentRef | None, inserted: str = "") -> None:
+        if count_tokens(body) + count_tokens(breadcrumb) <= budget:
+            bodies = [body]
+        else:
+            bodies = _pack(body, max(budget - count_tokens(breadcrumb), 1))
+        for index, part in enumerate(bodies, start=1):
+            multipart = len(bodies) > 1
+            ref = amended
+            if ref is not None and not inserted:  # what this part itself touches
+                ref = amendments.extract_amendment(section.title, part, toc) or ref
+            header = breadcrumb + (_part_suffix(meta.language, index, len(bodies)) if multipart else "")
+            text = f"{header}\n\n{part}"
+            stored_breadcrumb = breadcrumb
+            if hebrew:
+                text, stored_breadcrumb = normalize_hebrew_quotes(text), normalize_hebrew_quotes(breadcrumb)
+            chunks.append(
+                LegalChunk(
+                    text=text,
+                    metadata=ChunkMetadata(
+                        chunk_id=f"{source_id}#p{index}" if multipart else source_id,
+                        source_id=source_id,
+                        section_key=f"{meta.version_id}:{section.number}",
+                        law_id=meta.law_id,
+                        law_name=meta.law_name,
+                        chapter=section.chapter,
+                        part=section.subchapter or section.division,
+                        section_number=section.number,
+                        subsection_number=subsection,
+                        breadcrumb=stored_breadcrumb,
+                        effective_date_start=meta.effective_date_start,
+                        effective_date_end=meta.effective_date_end,
+                        status=meta.status,
+                        source_type=meta.source_type,
+                        source_origin=meta.source_origin,
+                        ingestion_date=ingestion_date,
+                        language=meta.language,
+                        part_index=index,
+                        part_count=len(bodies),
+                        cross_references=refs,
+                        gazette=meta.gazette,
+                        law_key=key,
+                        amends=amendments.encode([ref]) if ref else [],
+                        inserted_section=inserted,
+                    ),
+                )
+            )
+
+    def emit_insertion(section: Section, subsection: str | None, source_id: str, breadcrumb: str,
+                       insertion: Insertion, amended: AmendmentRef | None) -> None:
+        """One chunk per inserted provision (or per subsection of a long one), labelled
+        with both numbers and carrying the amending instruction as context."""
+        context = "\n".join(insertion.context)
+        target = amended.target if amended else ""
+        for provision in insertion.provisions:
+            number = provision.number or "?"
+            title = f" — {provision.title}" if provision.title else ""
+            provision_breadcrumb = f"{breadcrumb} > {_inserts_label(meta.language, number, target)}{title}"
+            room = budget - count_tokens(provision_breadcrumb) - count_tokens(context)
+            ref = AmendmentRef(
+                target, amended.target_key if amended else "", amended.number if amended else "",
+                [number] if provision.number else [], amended.temporary if amended else False,
+            )
+            for sub, unit in _provision_units(provision.lines, max(room, 1)):
+                inserted = f"{number}({sub})" if sub else number
+                unit_breadcrumb = f"{breadcrumb} > {_inserts_label(meta.language, inserted, target)}{title}"
+                emit(section, subsection, f"{source_id}>{inserted}", unit_breadcrumb,
+                     f"{context}\n{unit}", [], ref, inserted)
 
     for section in sections:
         section_key = f"{meta.version_id}:{section.number}"
         header_tokens = count_tokens(_breadcrumb(meta, section, None))
+        pieces = _preamble_pieces(section) if section.number == "preamble" and hebrew else None
 
-        for piece in _pieces(section, budget, header_tokens):
+        for piece in pieces or _pieces(section, budget, header_tokens):
             breadcrumb = _breadcrumb(meta, section, piece.subsection)
             source_id = f"{section_key}({piece.subsection})" if piece.subsection else section_key
+            piece_text = join_spaced_section_numbers(piece.text) if hebrew else piece.text
+            if section.number == "preamble":
+                emit(section, piece.subsection, source_id, breadcrumb, piece_text, [], None)
+                continue
+            amended = amendments.extract_amendment(section.title, piece_text, toc)
             # Same rule parse_sections applies to Section.cross_refs: an amending section's
             # "סעיף 2" is section 2 of the law it amends, not of this one.
-            amending = section.number != "preamble" and (
-                (section.title or "").startswith("תיקון")
-                or amendments.extract_amendment(section.title, piece.text, toc) is not None
-            )
+            amending = (section.title or "").startswith("תיקון") or amended is not None
             refs = [] if amending else [
                 f"{meta.version_id}:{n}"
-                for n in extract_cross_references(piece.text, section.number)
+                for n in extract_cross_references(piece_text, section.number)
                 if n in known_sections
             ]
-            if count_tokens(piece.text) + count_tokens(breadcrumb) <= budget:
-                bodies = [piece.text]
-            else:
-                bodies = _pack(piece.text, max(budget - count_tokens(breadcrumb), 1))
-
-            for index, body in enumerate(bodies, start=1):
-                multipart = len(bodies) > 1
-                amended = amendments.extract_amendment(section.title, body, toc) if section.number != "preamble" else None
-                header = breadcrumb + (_part_suffix(meta.language, index, len(bodies)) if multipart else "")
-                text = f"{header}\n\n{body}"
-                stored_breadcrumb = breadcrumb
-                if meta.language == "he":
-                    text, stored_breadcrumb = normalize_hebrew_quotes(text), normalize_hebrew_quotes(breadcrumb)
-                chunks.append(
-                    LegalChunk(
-                        text=text,
-                        metadata=ChunkMetadata(
-                            chunk_id=f"{source_id}#p{index}" if multipart else source_id,
-                            source_id=source_id,
-                            section_key=section_key,
-                            law_id=meta.law_id,
-                            law_name=meta.law_name,
-                            chapter=section.chapter,
-                            part=section.subchapter or section.division,
-                            section_number=section.number,
-                            subsection_number=piece.subsection,
-                            breadcrumb=stored_breadcrumb,
-                            effective_date_start=meta.effective_date_start,
-                            effective_date_end=meta.effective_date_end,
-                            status=meta.status,
-                            source_type=meta.source_type,
-                            source_origin=meta.source_origin,
-                            ingestion_date=ingestion_date,
-                            language=meta.language,
-                            part_index=index,
-                            part_count=len(bodies),
-                            cross_references=refs,
-                            gazette=meta.gazette,
-                            law_key=key,
-                            amends=amendments.encode([amended]) if amended else [],
-                        ),
-                    )
-                )
+            insertion = find_insertion(piece_text) if amending else None
+            if insertion is None:
+                emit(section, piece.subsection, source_id, breadcrumb, piece_text, refs, amended)
+                continue
+            lead = list(itertools.takewhile(lambda line: not _NUMBERED_ITEM_RE.match(line), insertion.context))
+            while insertion is not None:
+                emit_insertion(section, piece.subsection, source_id, breadcrumb, insertion, amended)
+                if not insertion.trailing:
+                    break
+                # Instructions after the quoted block: their own insertion, or a plain chunk.
+                rest = "\n".join(lead + insertion.trailing)
+                insertion = find_insertion(rest)
+                if insertion is None:
+                    emit(section, piece.subsection, source_id, breadcrumb, rest, [],
+                         amendments.extract_amendment(section.title, rest, toc) or amended)
     return _dedupe(chunks)
 
 

@@ -58,7 +58,7 @@ class RetrievedLegalChunk:
     text: str
     metadata: ChunkMetadata
     distance: float | None
-    via: Literal["search", "section_lookup", "sibling_part", "cross_reference"]
+    via: Literal["search", "section_lookup", "question_part", "sibling_part", "cross_reference"]
     score: float | None = None  # reranker relevance, 0-1, when the reranker ran
 
 
@@ -72,6 +72,8 @@ class RetrievalResult:
     duplicate_chunk_ids: list[str] = field(default_factory=list)  # same body as a closer hit
     trimmed_chunk_ids: list[str] = field(default_factory=list)  # cut by a relevance margin or the token budget
     best_rerank_score: float | None = None  # how directly the best provision answers, 0-1
+    laws_in_play: list[str] = field(default_factory=list)  # several laws answer; the question names none
+    indexed_law_keys: set[str] = field(default_factory=set)  # every law the index holds (amendments.law_key)
 
     def by_source_id(self) -> dict[str, list[RetrievedLegalChunk]]:
         grouped: dict[str, list[RetrievedLegalChunk]] = {}
@@ -252,6 +254,8 @@ def _derived_indexes() -> dict:
             stamp=stamp,
             keyword=KeywordIndex([(chunk_id, text) for chunk_id, text, _ in rows]),
             sections=_section_index(rows),
+            law_keys={meta.get("law_key") for _, _, meta in rows if meta.get("law_key")},
+            law_names={meta["law_id"]: meta.get("law_name", "") for _, _, meta in rows},
         )
     return _derived_cache
 
@@ -434,14 +438,22 @@ def retrieve(query: str) -> RetrievalResult:
     trimmed.extend(c.chunk_id for c in picked if c not in kept)
 
     # Sections the question names come first: an exact identifier beats any similarity.
+    named_laws = _named_law_ids(query)
     if cfg.section_lookup_max:
         index = _derived_indexes()["sections"] if named_sections(query) else {}
         for number, sub in named_sections(query):
             rows = _nearest_first(_get_embedded(ids=index.get(number, [])), query_vector)
+            if named_laws:  # "סעיף 25(ב1) לחוק החוזים": that law's section 25 only
+                rows = [row for row in rows if row[2].get("law_id") in named_laws]
             if sub:  # "סעיף 62(ג)": a chunk naming that very subsection first
                 wanted = f"{number}({sub})"
                 rows.sort(key=lambda row: wanted not in join_spaced_section_numbers(row[1]))
-            for chunk_id, text, meta, distance in rows[: cfg.section_lookup_max]:
+            per_law: dict[str, int] = {}  # "סעיף 25" may exist in several laws: take each law's
+            for chunk_id, text, meta, distance in rows:
+                law = meta.get("law_id", "")
+                if per_law.get(law, 0) >= cfg.section_lookup_max:
+                    continue
+                per_law[law] = per_law.get(law, 0) + 1
                 admit(chunk_id, text, meta, distance, "section_lookup")
                 low_relevance = False  # the question's own section is in hand
 
@@ -486,4 +498,71 @@ def retrieve(query: str) -> RetrievalResult:
         # relevant hit cross-references), so report only what stayed out.
         trimmed_chunk_ids=[cid for cid in dict.fromkeys(trimmed) if cid not in chunks],
         best_rerank_score=best_score,
+        laws_in_play=[] if named_laws else _laws_in_play(list(chunks.values()), best_score, cfg),
+        indexed_law_keys=set(_derived_indexes()["law_keys"]),
     )
+
+
+def _named_law_ids(query: str) -> set[str]:
+    """Laws the question names ("לחוק החוזים"), matched on the first two words of
+    each indexed law's normalized name, prefixes allowed."""
+    from docslides.legal.amendments import law_key
+
+    text = " " + " ".join(re.sub(r"[^\w\s]", " ", law_key(query)).split()) + " "
+    named = set()
+    for law_id, name in _derived_indexes()["law_names"].items():
+        short = " ".join(law_key(name).split()[:2])
+        if len(short.split()) == 2 and any(f"{p}{short} " in text for p in (" ", " ל", " ב", " ה", " ש", " מ", " ו")):
+            named.add(law_id)
+    return named
+
+
+def _laws_in_play(chunks: list[RetrievedLegalChunk], best_score: float | None, cfg) -> list[str]:
+    """Names of the laws that strongly match a question that names no law: each
+    has a section the question names, or a hit scoring near the best one."""
+    strong: dict[str, str] = {}
+    for chunk in chunks:
+        if chunk.via == "section_lookup" or (
+            chunk.via == "search" and chunk.score is not None and best_score is not None
+            and chunk.score >= max(cfg.ambiguity_min_score, best_score - cfg.ambiguity_margin)
+        ):
+            strong.setdefault(chunk.metadata.law_id, chunk.metadata.law_name)
+    return list(strong.values()) if len(strong) >= 2 else []
+
+
+_CLAUSE_SPLIT_RE = re.compile(r",?\s+ו(?=(?:האם|מה|מהם|מהן|מי|מתי|כיצד|איך|אילו|היכן|לכמה)\s)")
+
+
+def question_parts(query: str) -> list[str]:
+    """The clauses of a two-part question ("מתי ... , והאם ...?"), or [] for a
+    single question."""
+    parts = [p.strip(" ,?") for p in _CLAUSE_SPLIT_RE.split(query)]
+    parts = [p for p in parts if len(p.split()) >= 3]
+    return parts if len(parts) > 1 else []
+
+
+def retrieve_question(query: str) -> RetrievalResult:
+    """retrieve() for the whole question, plus -- for a multi-part question --
+    what each clause clearly needs (reranker score at or above min_rerank_score)
+    that the whole question's retrieval missed, within the same token budget."""
+    result = retrieve(query)
+    parts = question_parts(query)
+    if not parts:
+        return result
+    cfg = get_config().legal.retrieval
+    have = {c.chunk_id for c in result.chunks}
+    used = sum(count_tokens(c.text) for c in result.chunks)
+    for part in parts:
+        for chunk in retrieve(part).chunks:
+            if chunk.chunk_id in have or chunk.via not in ("search", "section_lookup"):
+                continue
+            if chunk.score is not None and chunk.score < cfg.min_rerank_score:
+                continue
+            tokens = count_tokens(chunk.text)
+            if cfg.max_evidence_tokens is not None and used + tokens > cfg.max_evidence_tokens:
+                continue
+            result.chunks.append(RetrievedLegalChunk(chunk.chunk_id, chunk.text, chunk.metadata, chunk.distance,
+                                                     "question_part", chunk.score))
+            have.add(chunk.chunk_id)
+            used += tokens
+    return result

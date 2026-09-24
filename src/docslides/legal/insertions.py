@@ -81,6 +81,28 @@ def _previous_number(number: str) -> str | None:
     return f"{match.group(1)}{int(match.group(2)) - 1}"
 
 
+_REPLACED_SUBSECTION_RE = re.compile(
+    r"סעיף\s+(?P<num>\d{1,4}[א-ת]{0,3}\d{0,3})\s*,?\s*(?:במקום|אחרי|לפני)\s+סעיף\s+קטן\s+\((?P<sub>[^)]{1,3})\)"
+)
+
+
+def _replaced_subsection(context: list[str], body: list[str]) -> Insertion | None:
+    """'בסעיף 25, במקום סעיף קטן (א) יבוא: "(א) (1) ... (2) ..."': the new
+    subsection is the inserted provision 25(א), and its paragraphs are what
+    get split out."""
+    match = _REPLACED_SUBSECTION_RE.search(" ".join(context))
+    if not match or not body:
+        return None
+    label = f"({match.group('sub')})"
+    first = body[0].lstrip("\"״").strip()
+    if not first.startswith(label):
+        return None
+    close = next((i for i in range(len(body)) if _CLOSE_RE.search(body[i])), len(body) - 1)
+    lines = [first[len(label):].strip(), *body[1 : close + 1]]
+    provision = InsertedProvision(f"{match.group('num')}{label}", None, [line for line in lines if line])
+    return Insertion(context=context, provisions=[provision], trailing=body[close + 1 :])
+
+
 def find_insertion(text: str) -> Insertion | None:
     """The provisions `text` (one amending section or subsection) inserts, or
     None when it inserts none -- replacing wording ('במקום "ה־40" יבוא
@@ -92,6 +114,9 @@ def find_insertion(text: str) -> Insertion | None:
         body = lines[start + 1 :]
         heads = [i for i, candidate in enumerate(body) if _head(candidate)]
         if not heads:
+            replaced = _replaced_subsection(lines[: start + 1], body)
+            if replaced:
+                return replaced
             continue
         close = next((i for i in range(heads[0], len(body)) if _CLOSE_RE.search(body[i])), len(body) - 1)
         insertion = Insertion(context=lines[: start + 1], trailing=body[close + 1 :])

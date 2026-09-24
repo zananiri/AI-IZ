@@ -199,8 +199,8 @@ async def answer_phase(questions: list[dict], run_dir: Path, use_dicta: bool) ->
 
 async def grade_phase(questions: list[dict], run_dir: Path) -> None:
     from docslides.legal.chunking import normalize_hebrew_quotes
-    from docslides.legal.evaluation import contradiction
-    from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams, aclose_all_clients, get_legal_orchestrator_client
+    from docslides.legal.evaluation import contradiction, get_judge_client
+    from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams, aclose_all_clients
     from docslides.llm.schemas import EvalJudgement
 
     gold = _load(GOLD)  # opened only here, never in the answer phase
@@ -209,7 +209,7 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
     gazettes = _gazette_map()
     answers = _load(run_dir / "answers.json")
     graded = _load(run_dir / "graded.json")
-    qwen = get_legal_orchestrator_client()
+    qwen = get_judge_client()
     try:
         for q in questions:
             a, g = answers.get(q["id"]), items[q["id"]]
@@ -251,6 +251,7 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
                 try:
                     check = await contradiction(qwen, shim, record["answer_text"])
                     record["contradiction_check"] = {"contradicts_gold": check.contradicts_gold, "conflict": check.conflict}
+                    record["needs_review"] = not check.contradicts_gold  # graded down, yet nothing contradicts
                 except Exception as exc:  # noqa: BLE001
                     record["contradiction_check"] = f"failed: {exc}"
             record["answer"] = POINTS.get(verdict, 0.0)
@@ -338,7 +339,8 @@ def main() -> int:
     if not (run_dir / "meta.json").exists():
         _save(run_dir / "meta.json", {
             "eval_set": "multi-law-24-he", "started": datetime.now().isoformat(timespec="seconds"),
-            "model (pipeline, judge)": legal.orchestrator.model,
+            "model (pipeline)": legal.orchestrator.model,
+            "judge": __import__("os").environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
             "DictaLM": "skipped (--no-dicta)" if args.no_dicta else "used",
             "retrieval": f"{legal.retrieval.embedding_model}, reranker={legal.retrieval.reranker_model}, "
                          f"keyword={legal.retrieval.keyword_search}, evidence budget={legal.retrieval.max_evidence_tokens}",

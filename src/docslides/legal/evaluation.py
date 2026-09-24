@@ -121,6 +121,21 @@ async def contradiction(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalC
     )
 
 
+def get_judge_client() -> QwenClient:
+    """The grading model: DOCSLIDES_LEGAL_JUDGE_MODEL (e.g. qwen3:14b, same server
+    as the orchestrator) when set, else the orchestrator model itself."""
+    import os
+
+    from docslides.config import get_config
+    from docslides.llm.client import get_legal_orchestrator_client
+
+    model = os.environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL")
+    if not model:
+        return get_legal_orchestrator_client()
+    orchestrator = get_config().legal.orchestrator
+    return QwenClient(orchestrator.model_copy(update={"model": model}))
+
+
 def needs_contradiction_check(q: EvalQuestion, verdict: str, facts: float | None, traps: list[str]) -> bool:
     """An 8B judge grades long, accurate answers down for extra detail. When an
     answer holds every key fact of an answerable question and trips no trap, a

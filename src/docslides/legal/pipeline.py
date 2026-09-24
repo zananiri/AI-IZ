@@ -48,8 +48,8 @@ from docslides.legal.retrieval import (
     RetrievalResult,
     RetrievedLegalChunk,
     amendment_index,
-    retrieve,
 )
+from docslides.legal.retrieval import retrieve_question as retrieve  # whole question + each clause
 from docslides.legal.validation import (
     check_draft_citations,
     clean_memorandum,
@@ -191,7 +191,9 @@ _THIN_COVERAGE_NOTE = (
 )
 
 
-def _question_block(query: str, normalized: str | None, thin_coverage: bool = False) -> str:
+def _question_block(
+    query: str, normalized: str | None, thin_coverage: bool = False, laws_in_play: list[str] | None = None
+) -> str:
     # ״ for the ASCII quote, as in the evidence: a model that copies 'יו"ר' from the question
     # into its JSON answer unescaped cuts the answer off there (legal/chunking.py).
     if _dominant_rtl_script(query) == "he":
@@ -202,6 +204,13 @@ def _question_block(query: str, normalized: str | None, thin_coverage: bool = Fa
         block += f"\n\nNormalized Hebrew form of the question (text form only, same meaning):\n{normalized}"
     if thin_coverage:  # the reranker found nothing that directly answers (legal/retrieval.py)
         block += f"\n\n{_THIN_COVERAGE_NOTE}"
+    if laws_in_play:  # provisions of several laws match and the question names none
+        block += (
+            "\n\nRetrieval note: provisions of several laws match this question -- "
+            + "; ".join(laws_in_play)
+            + ". Unless the question clearly refers to one of them, say that it is ambiguous and answer "
+            "separately for each law, citing each."
+        )
     return block
 
 
@@ -233,7 +242,7 @@ async def research_memorandum(
                 messages,
                 LLMCallSite("legal_research_memo"),
                 schema=schema,
-                sampling=SamplingParams(temperature=0.1, top_p=0.9, max_tokens=3072),
+                sampling=SamplingParams(temperature=0.0, max_tokens=3072),  # same evidence, same memo
             )
         except Exception as exc:  # noqa: BLE001 -- schema failure after retries counts as a failed attempt
             errors = [f"memorandum generation failed: {exc}"]
@@ -363,7 +372,7 @@ async def draft_answer(
             messages,
             LLMCallSite("legal_draft"),
             schema=LegalDraft,
-            sampling=SamplingParams(temperature=0.2, top_p=0.9, max_tokens=2048),
+            sampling=SamplingParams(temperature=0.0, max_tokens=2048),  # same memo, same draft
         )
         as_written = draft.model_dump_json()  # short-form tokens, for the revision turn
         draft.answer_draft = expand_citations(draft.answer_draft, evidence)
@@ -565,17 +574,19 @@ async def run_legal_turn(
     grouped = retrieval.by_source_id()
     evidence = {source_id: parts[0].metadata for source_id, parts in grouped.items()}
     amendment_notes = _amendment_notes(evidence)
-    evidence_text = prompts.format_evidence(grouped, amendment_notes)
+    evidence_text = prompts.format_evidence(grouped, amendment_notes, retrieval.indexed_law_keys)
     retrieved = [
         {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "text": c.text, "distance": c.distance, "via": c.via}
         for c in retrieval.chunks
     ]
-    question = _question_block(query, normalized, thin_coverage=retrieval.low_relevance)
+    question = _question_block(query, normalized, thin_coverage=retrieval.low_relevance,
+                               laws_in_play=retrieval.laws_in_play)
     entry["retrieval"] = {
         "query": retrieval_query,
         "bundle_verification": retrieval.bundle_verification,
         "best_distance": retrieval.best_distance,
         "best_rerank_score": retrieval.best_rerank_score,
+        "laws_in_play": retrieval.laws_in_play,
         "low_relevance": retrieval.low_relevance,
         "amendment_notes": {sid: [n.describe() for n in notes] for sid, notes in amendment_notes.items()},
         "rejected_chunk_ids": retrieval.rejected_chunk_ids,

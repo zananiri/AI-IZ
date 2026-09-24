@@ -41,6 +41,17 @@ _SECTION_REF_RE = re.compile(
 )
 _INSERTED_SECTION_RE = re.compile(r"(?m)^(\d{1,4}[א-ת]{1,3}\d{0,3})\.\s")
 _OTHER_LAW_AFTER_RE = re.compile(r"^\s*(?:ל|ב)?(?:חוק|פקודת|תקנות)\s")
+_APPLIES_RE = re.compile(r"(?P<name>(?:חוק|פקודת|תקנות)\s[^\n,:]{2,90}?)\s+(?:יחולו|יחול)\b[\s\S]{0,200}?בשינויים")
+_READ_AS_RE = re.compile(r"יקראו את\s+(?P<name>(?:חוק|פקודת|תקנות)\s[^\n,:(]{2,90}?)(?=\s*(?:,|\(|כך))")
+
+
+def _applied_with_changes(body: str) -> str | None:
+    """The law a provision applies with modifications ('יחולו ... בשינויים ...
+    יקראו', 'יקראו את חוק X כך'), or None."""
+    if "יקראו" not in body:
+        return None
+    match = _APPLIES_RE.search(body) or _READ_AS_RE.search(body)
+    return match.group("name").strip() if match else None
 
 
 def law_key(name: str) -> str:
@@ -60,8 +71,15 @@ class AmendmentRef:
     number: str  # amendment number ("79"), "" if not stated
     sections: list[str]  # target-law sections touched ("62", "24א")
     temporary: bool
+    # "amends": changes the other law's text. "reads_as": applies the other law within THIS
+    # law's proceedings with modifications ('הוראות חוק המעצרים יחולו ... בשינויים אלה: ...
+    # במקום "90 ימים" יקראו "150 ימים"') -- the other law itself is unchanged.
+    relation: str = "amends"
 
     def describe(self) -> str:
+        if self.relation == "reads_as":
+            scope = f" -- sections {', '.join(self.sections)}" if self.sections else ""
+            return f"{self.target} -- applied with modifications within this law only, not an amendment of it{scope}"
         parts = [self.target]
         if self.number:
             parts.append(f"מס' {self.number}")
@@ -125,7 +143,10 @@ def extract_amendment(title: str | None, text: str, toc: list[tuple[str, str, bo
     else:
         opening = _OPENING_LAW_RE.match(body)
         if not opening:
-            return None
+            applied = None if (title or "").startswith("תיקון") else _applied_with_changes(body)
+            if applied is None:
+                return None
+            return AmendmentRef(applied, law_key(applied), "", _target_sections(body), False, relation="reads_as")
         target, number, temporary = opening.group("name").strip(), "", False
         for name, num, temp in toc:
             if law_key(name) == law_key(target):
@@ -177,7 +198,8 @@ def build_index(metadatas: list[dict]) -> dict[str, list[tuple[AmendmentRef, dic
     index: dict[str, list[tuple[AmendmentRef, dict]]] = {}
     for meta in metadatas:
         for ref in decode(meta.get("amends") or "[]"):
-            index.setdefault(ref.target_key, []).append((ref, meta))
+            if ref.relation == "amends":  # applying a law with modifications doesn't change it
+                index.setdefault(ref.target_key, []).append((ref, meta))
     return index
 
 

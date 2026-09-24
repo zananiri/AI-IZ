@@ -42,7 +42,7 @@ from docslides.logging_setup import get_logger
 logger = get_logger(__name__)
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.;!?])\s+")
-_SHORT_INTRO_TOKENS = 40
+_SHORT_INTRO_TOKENS = 60  # an opening line this short is repeated as context in each subsection's chunk
 _GERSHAYIM = "״"  # U+05F4 HEBREW PUNCTUATION GERSHAYIM
 
 

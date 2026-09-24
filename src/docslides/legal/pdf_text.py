@@ -127,6 +127,9 @@ def _normalize_line(line: str) -> str:
     spaces inside brackets, a Hebrew-year hyphen split from its year
     ('התשי"א- , 1951' -> 'התשי"א-1951,'), a copy's doubled subsection marker,
     and spaces before punctuation."""
+    line = line.replace("\u00ad", "-")  # soft hyphen used as a dash in old scans ("תשי"ט\u00ad 1959")
+    line = re.sub(r"\)([א-ת0-9]{1,3})\(", r"(\1)", line)  # mirrored brackets: ")א(" -> "(א)"
+    line = re.sub(r"^(\d{1,4}[א-ת]{0,3})\s+\.(?=\s*\()", r"\1.", line)  # "8 .(א)" -> "8.(א)"
     line = _SECTION_NUMBER_RE.sub(r"\1. ", line)
     line = re.sub(r"\(\s+", "(", line)
     line = re.sub(r"\s+\)", ")", line)

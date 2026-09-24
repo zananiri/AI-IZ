@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from datetime import datetime
@@ -67,6 +68,8 @@ async def _grade(qwen, q: ev.EvalQuestion, answer: str) -> dict:
             graded["contradiction_check"] = f"failed: {exc}"
             return graded
         graded["contradiction_check"] = {"contradicts_gold": check.contradicts_gold, "conflict": check.conflict}
+        if check.contradicts_gold:
+            graded["needs_review"] = True  # every key fact present, yet judged wrong: a person should look
         if not check.contradicts_gold:
             # Every key fact present and nothing contradicts the gold answer: the judge's
             # verdict is kept for the record, the grade is correct.
@@ -88,7 +91,7 @@ async def run_before(questions, out: Path) -> dict:
             results[q.id] = {"answer_text": "", "error": str(exc), "classification": "error"}
             _save(out, results)
             continue
-        graded = await _grade(qwen, q, answer)
+        graded = await _grade(ev.get_judge_client(), q, answer)
         graded["classification"] = ev.classify_baseline(
             q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"]
         )
@@ -104,7 +107,6 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
 
     if retrieval.collection_count() == 0:
         raise SystemExit("The Legal index is empty -- run with --ingest, or scripts/ingest_legal_txt.py first.")
-    qwen = get_legal_orchestrator_client()
     results = _load(out)
     for q in questions:
         if q.id in results:
@@ -129,7 +131,7 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
         retrieved_texts = [c["text"] for c in turn.retrieved_chunks]
         cited_ids = {note["source_id"] for note in turn.footnotes}
         cited_texts = [c["text"] for c in turn.retrieved_chunks if c["source_id"] in cited_ids]
-        graded = await _grade(qwen, q, answer)
+        graded = await _grade(ev.get_judge_client(), q, answer)
         scores = ev.score_after(
             q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"], retrieved_texts, cited_texts
         )
@@ -150,18 +152,20 @@ async def run_after(questions, out: Path, use_dicta: bool, dicta_tier: str | Non
     return results
 
 
-async def rejudge(questions, run_dir: Path) -> None:
-    """Re-grades saved answers with the current judge prompt; the pipeline is not re-run."""
-    qwen = get_legal_orchestrator_client()
+async def rejudge(questions, run_dir: Path, after_only: bool = False) -> None:
+    """Re-grades saved answers with the current judge (ev.get_judge_client); the pipeline is not re-run."""
+    qwen = ev.get_judge_client()
     before, after = _load(run_dir / "before.json"), _load(run_dir / "after.json")
     ev.backfill_answer_texts(before, after)
     for q in questions:
-        for phase, results in (("BEFORE", before), ("AFTER", after)):
+        for phase, results in ((("AFTER", after),) if after_only else (("BEFORE", before), ("AFTER", after))):
             record = results.get(q.id)
             if not record or record.get("error"):
                 continue
             old = record.get("classification") or record.get("verdict")
             graded = await _grade(qwen, q, record.get("answer_text", ""))
+            record.pop("needs_review", None)
+            record.pop("judge_verdict", None)
             record.update(graded)
             if phase == "BEFORE":
                 record["classification"] = ev.classify_baseline(
@@ -194,6 +198,7 @@ async def main_async(args) -> int:
         "eval_set": meta_set["name"],
         "started": datetime.now().isoformat(timespec="seconds"),
         "model (before RAG, pipeline, judge)": legal.orchestrator.model,
+        "judge": os.environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
         "DictaLM in after-RAG run": "skipped (--no-dicta)" if args.no_dicta else f"{tier_key}: {tier_cfg.llm.model}",
         "retrieval": f"{legal.retrieval.embedding_model}, top_k={legal.retrieval.top_k}, "
                      f"keyword={legal.retrieval.keyword_search}, reranker={legal.retrieval.reranker_model}, "
@@ -203,7 +208,7 @@ async def main_async(args) -> int:
 
     if args.rejudge:
         try:
-            await rejudge(questions, run_dir)
+            await rejudge(questions, run_dir, args.after_only)
         finally:
             await aclose_all_clients()
         args.phase = "report"
@@ -254,6 +259,7 @@ def main() -> int:
     parser.add_argument("--dicta-tier", default=None)
     parser.add_argument("--rejudge", action="store_true",
                         help="re-grade the run's saved answers with the current judge prompt, then re-report")
+    parser.add_argument("--after-only", action="store_true", help="with --rejudge: leave before-RAG grades alone")
     return asyncio.run(main_async(parser.parse_args()))
 
 

@@ -109,6 +109,10 @@ class LegalRetrievalConfig(BaseModel):
     rerank_margin: float | None = 0.6  # keep hits scoring within this of the best one...
     rerank_floor: float = 0.1  # ...and at least this (the best hit always stays)
     min_rerank_score: float = 0.35  # best score under this = thin coverage (flag + prompt note)
+    # Several laws "in play" (the model is told to answer per law or flag the ambiguity) when a
+    # question names no law and hits from 2+ laws score at least this, within this of the best.
+    ambiguity_min_score: float = 0.5
+    ambiguity_margin: float = 0.3
 
 
 class LegalIngestionConfig(BaseModel):

@@ -12,7 +12,6 @@ index** (`data/legal_corpus_vectordb`, one collection per category). Code:
 | Knesset OData V4 `knesset.gov.il/OdataV4/ParliamentInfo` (+ PDFs on `fs.knesset.gov.il`) | law and regulation registry | Knesset open data (see knesset.gov.il) |
 | Hebrew Wikisource Open Law Book, via the **official Wikimedia dump** (`dumps.wikimedia.org/hewikisource`) | consolidated text of laws and regulations | CC BY-SA 4.0 — attribution in every record |
 | Hugging Face `LevMuchnik/SupremeCourtOfIsrael` (2022 snapshot) | Supreme Court rulings | OpenRAIL (use restrictions apply; read the dataset card) |
-| ISCD `iscd.huji.ac.il/data` | case metadata files, as-is | per the ISCD site |
 
 The dump was chosen over the `gkour/israeli_law` Hugging Face dataset: that dataset was last
 updated on 7 Jan 2026, while the dump is refreshed monthly (20260901 at the time of writing).
@@ -27,10 +26,39 @@ Set your contact address in `config/config.yaml` (`legal_data.contact_email`) or
 `DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL` environment variable. It goes in the User-Agent, and the
 fetchers refuse to send requests without it.
 
+## Build it all on Kaggle and install it here (laws + regulations)
+
+`notebooks/kaggle_legal_corpus_build.ipynb` does everything in one run on Kaggle:
+1. fetches the Knesset registry, the laws and the regulations;
+2. chunks and vectorizes them on a GPU;
+3. leaves two zips in the version's **Output** tab: `legal_corpus_vectordb.zip` (the finished database) and
+   `legal_corpus_jsonl.zip` (the records, reports and manifests).
+
+Its first cell lists the Kaggle settings and the secrets it needs (`GITHUB_TOKEN`, `LEGAL_DATA_CONTACT_EMAIL`).
+Set `CHROMADB_VERSION` there to the version on your computer, so the files open here.
+
+Then, on your computer:
+
+```bash
+python scripts/legal_data/install_corpus.py path/to/legal_corpus_vectordb.zip          # --replace over an older install
+python scripts/legal_data/vectorize.py --probe "מה דינו של חוזה שנכרת בטעות?" --category laws   # optional test query
+```
+
+The installer unpacks into `data/legal_corpus_vectordb/` (`laws/`, `procedural_rules/`) and checks every
+collection's chunk count against `_build_info.json`. It also warns if your chromadb version differs from the
+one that built the store. This store is separate from the Legal tab's own index, which doesn't search it yet.
+
+Every script prints a progress line every few seconds, and a final "done" line. Each line shows the count
+and total, the percentage, the rate, the ETA and the elapsed time:
+
+```
+[12:04:31] laws: reading hewikisource-20260901-pages-articles.xml.bz2: 212.4/684.0 MB (31.1%) · 18.2 MB/s · ETA 26s · elapsed 12s · pages 51,204 · records 1,337
+```
+
 ## Run order
 
 ```bash
-python scripts/legal_data/fetch_metadata.py           # 1. Knesset registry tables (+ ISCD files)
+python scripts/legal_data/fetch_metadata.py           # 1. Knesset registry tables
 python scripts/legal_data/fetch_laws.py               # 2. laws (downloads the Wikisource dump)
 python scripts/legal_data/fetch_procedural_rules.py   # 3. regulations (reuses the dump) + registry PDFs
 python scripts/legal_data/fetch_supreme_court.py      # 4. rulings (1.5 GB parquet)
@@ -68,7 +96,7 @@ legal_txt/
   laws/              laws.jsonl, unmatched_registry_laws.json, raw/wikisource/<dump>.xml.bz2, raw/pdf/
   procedural_rules/  procedural_rules.jsonl, coverage_report.json, raw/pdf/<SecondaryLawId>/<DocumentId>.pdf
   supreme_court/     supreme_court-00001.jsonl ... (50,000 per shard), filter_report.json, raw/cases_all.parquet
-  metadata/          knesset/<Table>.jsonl + _state.json, iscd/
+  metadata/          knesset/<Table>.jsonl + _state.json
   _manifests/        <run>_<script>.json + .log (sources, licenses, robots decisions, files + hashes, counts),
                      _downloads.json (download ledger)
   _sample/           the same layout, for --sample runs
@@ -156,6 +184,4 @@ On Kaggle (`notebooks/kaggle_legal_corpus_vectorize.ipynb`):
   `fetch_laws.py --wikisource-pdfs` downloads the fs.knesset.gov.il PDFs the pages cite. Links to
   other sites (e.g. olaw.org.il) are recorded, never fetched.
 - `KNS_Law` doesn't exist in OData V4 and is reported as unavailable.
-- `iscd.huji.ac.il` reset connections during planning. If it keeps doing so, download the metadata
-  files by hand and run `fetch_metadata.py --only iscd --import-dir <folder>`.
 - A regulation's status is usually unknown: OData doesn't record its validity.

@@ -33,6 +33,7 @@ from docslides.legal_data.hebrew import repair_text
 from docslides.legal_data.http import FetchError
 from docslides.legal_data.law_names import NameIndex, has_prefix, normalize_name
 from docslides.legal_data.pdf_quality import extract_pdf_with_quality
+from docslides.legal_data.progress import Progress
 from docslides.legal_data.records import CorpusRecord, JsonlWriter, Quality, now_iso, read_jsonl
 
 LAW_LEVELS = ("basic_law", "law", "ordinance")
@@ -162,13 +163,16 @@ def download_pdfs(ctx: RunContext, jobs: list[PdfJob], label: str) -> dict[int, 
     if ctx.dry_run:
         estimate_pdfs(ctx, jobs, label)
         return by_owner
-    ctx.log(f"{label}: {len(jobs)} PDF(s) to check")
-    for n, job in enumerate(jobs, 1):
+    progress = Progress(f"{label} PDFs", total=len(jobs), unit="files", log=ctx.log)
+    outcomes: Counter = Counter()
+    for job in jobs:
         try:
             result = ctx.client.download(job.url, job.dest, ctx.ledger)
         except FetchError as exc:
             ctx.manifest.warn(f"{label} PDF {job.url}: {exc}")
             ctx.manifest.count(f"{label}_pdfs_failed")
+            outcomes["failed"] += 1
+            progress.update(1, **outcomes)
             continue
         ctx.manifest.file(job.url, result.path, result.bytes, result.sha256, result.status)
         ctx.manifest.count(f"{label}_pdfs_{result.status}")
@@ -176,8 +180,9 @@ def download_pdfs(ctx: RunContext, jobs: list[PdfJob], label: str) -> dict[int, 
             "url": job.url, "path": str(result.path.relative_to(ctx.main_root)).replace("\\", "/"),
             "sha256": result.sha256, "group_type": job.group_type,
         })
-        if n % 100 == 0:
-            ctx.log(f"{label}: {n}/{len(jobs)} PDFs")
+        outcomes[result.status] += 1
+        progress.update(1, **outcomes)
+    progress.done(**outcomes)
     return by_owner
 
 
@@ -342,18 +347,24 @@ def run_legislation(ctx: RunContext, category: str) -> None:
         ctx.log(f"sample: streaming the start of {dump.name} (at most {_SAMPLE_MAX_BYTES // 2**20} MB)")
         chunks = _capped(ctx.client.stream(dump.url), _SAMPLE_MAX_BYTES)
     else:
-        result = ctx.client.download(dump.url, dump_path, ctx.ledger, expected_sha1=dump.sha1)
+        result = ctx.client.download(dump.url, dump_path, ctx.ledger, expected_sha1=dump.sha1,
+                                     progress_label=f"download {dump.name}")
         manifest.file(dump.url, result.path, result.bytes, result.sha256, result.status)
         ctx.log(f"dump {result.status}: {dump_path}")
         chunks = wikisource.file_chunks(dump_path)
+    total = _SAMPLE_MAX_BYTES if ctx.sample else dump_path.stat().st_size
+    progress = Progress(f"{category}: reading {dump.name}", total=total, unit="bytes", log=ctx.log)
+    reader = _counted(chunks, progress)
 
     writer = JsonlWriter(ctx.root / category, category)
     counts: Counter = Counter()
     joined: set[int] = set()
     wikisource_pdf_urls: list[tuple[int, str]] = []
     try:
-        for page in wikisource.iter_pages(chunks):
+        for page in wikisource.iter_pages(reader):
             counts["dump_pages"] += 1
+            progress.extra.update(pages=counts["dump_pages"], law_book_pages=counts["open_law_book_pages"],
+                                  records=writer.count)
             if not wikisource.is_law_book_page(page):
                 continue
             counts["open_law_book_pages"] += 1
@@ -384,7 +395,9 @@ def run_legislation(ctx: RunContext, category: str) -> None:
         writer.close(commit=False)
         raise
     finally:
+        reader.close()
         chunks.close()  # a sample run stops mid-dump: release the HTTP stream now
+    progress.done(pages=counts["dump_pages"], law_book_pages=counts["open_law_book_pages"], records=writer.count)
     paths = writer.close()
     for key, value in counts.items():
         manifest.count(key, value)
@@ -410,6 +423,12 @@ def _lookup_registry_law(ctx: RunContext, registry: Registry, law_id: int) -> No
     for row in ctx.client.get_json(odata.url("KNS_IsraelLaw", {"$filter": f"Id eq {int(law_id)}"})).get("value", []):
         registry.laws[row["Id"]] = row
         registry.law_names.add(row.get("Name"), row["Id"])
+
+
+def _counted(chunks, progress: Progress):
+    for chunk in chunks:
+        progress.update(len(chunk))
+        yield chunk
 
 
 def _capped(chunks, limit: int):

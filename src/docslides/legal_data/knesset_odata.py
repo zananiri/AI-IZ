@@ -56,8 +56,10 @@ class KnessetOData:
         return {"$filter": f"LastUpdatedDate ge {odata_datetime(since)}"} if since else {}
 
     def count(self, table: str, since: str | None = None) -> int:
-        response = self.http.get(self.url(f"{table}/$count", self._filter(since)))
-        return int(response.text.strip().lstrip("﻿"))
+        """Rows in a table (since a watermark). The service has no /$count path (404): ask for
+        $count=true on a one-row page instead."""
+        data = self.http.get_json(self.url(table, {**self._filter(since), "$count": "true", "$top": 1}))
+        return int(data.get("@odata.count", len(data.get("value", []))))
 
     def rows(self, table: str, since: str | None = None, top: int | None = None) -> Iterator[dict]:
         params = self._filter(since)

@@ -217,6 +217,12 @@ def iter_parquet(path: Path, batch_size: int = 256) -> Iterator[dict]:
         yield from batch.to_pylist()
 
 
+def parquet_rows(path: Path) -> int:
+    import pyarrow.parquet as pq
+
+    return pq.ParquetFile(path).metadata.num_rows
+
+
 def hub_file_info(http: PoliteClient, repo: str, revision: str, filename: str) -> dict:
     """{size, sha256, commit} of a dataset file, from the Hub API."""
     data = http.get_json(f"https://huggingface.co/api/datasets/{repo}/revision/{quote(revision, safe='')}?blobs=true")

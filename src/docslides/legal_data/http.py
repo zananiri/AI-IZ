@@ -39,6 +39,7 @@ from urllib.robotparser import RobotFileParser
 import httpx
 
 from docslides.config import LegalDataConfig
+from docslides.legal_data.progress import Progress
 
 USER_AGENT_NAME = "AI-IZ-legal-corpus/1.0"
 _EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
@@ -307,9 +308,11 @@ class PoliteClient:
         *,
         expected_sha256: str | None = None,
         expected_sha1: str | None = None,
+        progress_label: str | None = None,
     ) -> DownloadResult:
         """Resumable, hash-verified download. An existing file whose hash matches the expected one
-        (or, without one, the ledger's) is skipped without any request."""
+        (or, without one, the ledger's) is skipped without any request. With `progress_label`, a
+        progress line (MB, %, speed, ETA) is logged every few seconds."""
         if dest.exists():
             known = ledger.get(url)
             if expected_sha1 and _file_sha1(dest) == expected_sha1:
@@ -330,7 +333,8 @@ class PoliteClient:
             elif response.status_code == 416 and offset:
                 response.close()
                 part.unlink()
-                return self.download(url, dest, ledger, expected_sha256=expected_sha256, expected_sha1=expected_sha1)
+                return self.download(url, dest, ledger, expected_sha256=expected_sha256, expected_sha1=expected_sha1,
+                                     progress_label=progress_label)
             elif response.status_code not in (200, 206):
                 raise FetchError(f"{url}: HTTP {response.status_code}")
             _refuse_block_page_stream(response, url)
@@ -339,11 +343,20 @@ class PoliteClient:
                     for block in iter(lambda: existing.read(1 << 20), b""):
                         sha256.update(block)
                         sha1.update(block)
+            length = response.headers.get("content-length")
+            progress = Progress(progress_label, total=offset + int(length) if length and length.isdigit() else None,
+                                unit="bytes", log=self._log) if progress_label else None
+            if progress:
+                progress.set(offset)
             with open(part, "ab" if offset else "wb") as out:
                 for block in response.iter_bytes(1 << 20):
                     out.write(block)
                     sha256.update(block)
                     sha1.update(block)
+                    if progress:
+                        progress.update(len(block))
+            if progress:
+                progress.done()
             etag, modified = response.headers.get("etag"), response.headers.get("last-modified")
         finally:
             response.close()

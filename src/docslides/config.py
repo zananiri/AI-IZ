@@ -172,7 +172,6 @@ class LegalDataSourcesConfig(BaseModel):
     supreme_court_repo: str = "LevMuchnik/SupremeCourtOfIsrael"
     supreme_court_revision: str = "main"
     supreme_court_file: str = "cases_all.parquet"
-    iscd_data_page: str = "https://iscd.huji.ac.il/data"
 
 
 class LegalDataPrivacyConfig(BaseModel):

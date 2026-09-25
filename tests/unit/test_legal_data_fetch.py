@@ -96,13 +96,13 @@ def test_403_stops_without_a_retry():
 
 def test_an_access_denied_page_stops_but_a_long_page_mentioning_captcha_does_not():
     block = '<html><head><title>Request Rejected</title></head><body>support id 123</body></html>'
-    long_page = "<html><head><title>ISCD data</title></head><body>" + "x" * 30_000 + " captcha form</body></html>"
+    long_page = "<html><head><title>Data files</title></head><body>" + "x" * 30_000 + " captcha form</body></html>"
     pages = {"/blocked": block, "/fine": long_page}
     client, _ = make_client(lambda r: no_robots(
         r, lambda req: httpx.Response(200, text=pages[req.url.path], headers={"content-type": "text/html"})))
     with pytest.raises(AccessDenied):
         client.get("https://a.test/blocked")
-    assert "ISCD data" in client.get("https://a.test/fine").text
+    assert "Data files" in client.get("https://a.test/fine").text
 
 
 def test_5xx_backs_off_then_gives_up():
@@ -404,3 +404,18 @@ def test_ingest_legal_txt_skips_the_corpus_folders(tmp_path, monkeypatch):
         (tmp_path / sub).mkdir(parents=True, exist_ok=True)
         (tmp_path / sub / "doc.txt").write_text("חוק לדוגמה", encoding="utf-8")
     assert folder_ingest.run(dry_run=True) == []
+
+
+def test_progress_lines_show_percent_rate_and_eta_at_most_every_few_seconds():
+    from docslides.legal_data.progress import Progress
+
+    lines, now = [], [0.0]
+    progress = Progress("rows", total=100, unit="rows", log=lines.append, every=5, clock=lambda: now[0])
+    now[0] = 1
+    progress.update(10)  # under 5 s since the start: silent
+    now[0] = 10
+    progress.update(40, stored=50)
+    progress.done()
+    assert len(lines) == 2
+    assert "50/100 rows (50.0%)" in lines[0] and "5.0 rows/s" in lines[0] and "ETA 10s" in lines[0]
+    assert "stored 50" in lines[0] and lines[1].endswith("done")

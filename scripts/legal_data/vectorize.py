@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from docslides.config import get_config
 from docslides.legal_data.corpus_chunking import CorpusChunk, chunk_record
 from docslides.legal_data.hebrew import normalize_for_embedding
+from docslides.legal_data.progress import Progress
 from docslides.legal_data.records import read_jsonl, record_hash
 
 CATEGORIES = ("laws", "procedural_rules", "supreme_court")
@@ -105,13 +106,13 @@ def index_category(category: str, args, corpus_cfg, model_name: str, embedder_fa
     embedder = None
     pending: list[tuple[str, str, list[CorpusChunk], list[str]]] = []  # record id, hash, chunks, old chunk ids
     seen: set[str] = set()
-    started = time.monotonic()
 
     def flush() -> None:
         nonlocal embedder
         chunks = [c for _, _, record_chunks, _ in pending for c in record_chunks]
         if chunks:
             embedder = embedder or embedder_factory()
+            log(f"{category}: embedding {len(chunks):,} chunks ({stats['chunks_indexed']:,} done so far)")
             vectors = embedder.encode([c.embed_text for c in chunks])
             stale = [cid for _, _, _, old in pending for cid in old]
             if stale:
@@ -121,10 +122,15 @@ def index_category(category: str, args, corpus_cfg, model_name: str, embedder_fa
             state.put(category, record_id, rhash, record_chunks)
         state.commit()
         stats["chunks_indexed"] += len(chunks)
-        rate = stats["chunks_indexed"] / max(time.monotonic() - started, 1e-6)
-        log(f"{category}: {stats['records_indexed']} records / {stats['chunks_indexed']} chunks indexed ({rate:.1f} chunks/s)")
+        progress.extra.update(chunks_indexed=stats["chunks_indexed"])
         pending.clear()
 
+    total = sum(1 for path in files for line in open(path, encoding="utf-8") if line.strip())
+    if args.shard:
+        total = total // args.shard[1] + 1  # about 1/n of the records fall in a shard
+    if args.sample:
+        total = min(total, args.sample)
+    progress = Progress(f"{category}: records", total=total, unit="records", log=log)
     try:
         for path in files:
             for record in read_jsonl(path):
@@ -133,6 +139,7 @@ def index_category(category: str, args, corpus_cfg, model_name: str, embedder_fa
                     continue
                 seen.add(record_id)
                 stats["records"] += 1
+                progress.update(1, chunked=stats["chunks"], unchanged=stats["records_unchanged"])
                 rhash = record_hash(record)
                 previous = state.get(category, record_id)
                 if previous and previous.record_hash == rhash and not args.rebuild:
@@ -162,6 +169,7 @@ def index_category(category: str, args, corpus_cfg, model_name: str, embedder_fa
                     stats["records_pruned"] += 1
                 state.commit()
             stats["collection_count"] = collection.count()
+        progress.done(chunks=stats["chunks"], chunks_indexed=stats["chunks_indexed"], unchanged=stats["records_unchanged"])
     finally:
         if embedder is not None:
             embedder.close()
@@ -243,6 +251,27 @@ def merge(args, corpus_cfg) -> None:
         log(f"{category}: {target.count()} chunks after merging {source_dir}")
 
 
+def write_build_info(args, corpus_cfg, model_name: str, results: dict) -> None:
+    """<vectordb>/_build_info.json: what install_corpus.py checks on the machine the store is copied to --
+    the Chroma version that wrote it (a different major version may not open it), the embedding model
+    queries must use, and each category's chunk count."""
+    import chromadb
+    import sentence_transformers
+
+    path = Path(args.vectordb) / "_build_info.json"
+    info = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"categories": {}}
+    info.update(built_at=time.strftime("%Y-%m-%dT%H:%M:%S"), chromadb_version=chromadb.__version__,
+                sentence_transformers_version=sentence_transformers.__version__, embedding_model=model_name,
+                collection_prefix=corpus_cfg.collection_prefix, chunk_tokens=args.chunk_tokens,
+                overlap_tokens=args.overlap_tokens)
+    for category, stats in results.items():
+        if "collection_count" in stats:
+            info["categories"][category] = {"collection": f"{corpus_cfg.collection_prefix}_{category}",
+                                            "chunks": stats["collection_count"], "records": stats.get("records", 0)}
+    path.write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
+    log(f"build info: {path}")
+
+
 def parse_devices(args) -> list[str]:
     if args.devices:
         return [d.strip() for d in args.devices.split(",") if d.strip()]
@@ -303,6 +332,8 @@ def main() -> int:
             lambda: Embedder(model_name, parse_devices(args), args.batch_size),
         )
         log(f"{category}: {results[category]}")
+    if not args.dry_run:
+        write_build_info(args, corpus_cfg, model_name, results)
     summary = Path(args.vectordb) / f"_vectorize_{time.strftime('%Y%m%dT%H%M%S')}{'_dry_run' if args.dry_run else ''}.json"
     summary.parent.mkdir(parents=True, exist_ok=True)
     summary.write_text(json.dumps({"args": {k: v for k, v in vars(args).items()}, "results": results},

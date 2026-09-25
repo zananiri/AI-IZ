@@ -138,7 +138,6 @@ legal_data:
     supreme_court_repo: "LevMuchnik/SupremeCourtOfIsrael"
     supreme_court_revision: "main"
     supreme_court_file: "cases_all.parquet"
-    iscd_data_page: "https://iscd.huji.ac.il/data"
   # Must end up in procedural_rules; each label's title prefixes are matched after name normalization.
   required_regulations:
     civil_procedure_2018: ['תקנות סדר הדין האזרחי, התשע"ט-2018']

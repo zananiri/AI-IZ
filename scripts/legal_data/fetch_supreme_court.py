@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from docslides.legal_data import cli
 from docslides.legal_data import supreme_court as sc
+from docslides.legal_data.progress import Progress
 from docslides.legal_data.records import JsonlWriter
 
 SHARD_SIZE = 50_000
@@ -50,21 +51,26 @@ def body(ctx: cli.RunContext) -> None:
     if ctx.sample:
         rows = sc.sample_rows(ctx.client, repo, ctx.sample)
         ctx.log(f"sample: {len(rows)} rows from the datasets-server rows API")
+        total_rows = len(rows)
     else:
         url = sc.resolve_url(repo, revision, filename)
-        result = ctx.client.download(url, parquet, ctx.ledger, expected_sha256=info["sha256"])
+        result = ctx.client.download(url, parquet, ctx.ledger, expected_sha256=info["sha256"],
+                                     progress_label=f"download {filename}")
         ctx.manifest.file(url, result.path, result.bytes, result.sha256, result.status)
         ctx.log(f"{filename} {result.status}")
         rows = sc.iter_parquet(parquet)
+        total_rows = sc.parquet_rows(parquet)
 
     anonymizer = sc.Anonymizer(ctx.cfg.privacy.public_body_patterns) if ctx.args.anonymize else None
     writer = JsonlWriter(ctx.root / "supreme_court", "supreme_court", shard_size=SHARD_SIZE)
     report = {"input_rows": 0, "by_type": Counter(), "keep_buckets": Counter(), "excluded_first_rule": Counter(),
               "excluded_any_rule": Counter(), "written": Counter(), "encoding": Counter(),
               "case_types": Counter(), "departments": Counter(), "anonymization_replacements": 0}
+    progress = Progress("supreme_court rows", total=total_rows, unit="rows", log=ctx.log)
     try:
         for row in rows:
             report["input_rows"] += 1
+            progress.update(1, written=writer.count, excluded_privacy=sum(report["excluded_first_rule"].values()))
             report["by_type"][str(row.get("Type"))] += 1
             report["case_types"][str(row.get("meta_inyan_nm"))] += 1
             report["departments"][str(row.get("meta_mador_nm"))] += 1
@@ -83,11 +89,10 @@ def body(ctx: cli.RunContext) -> None:
             report["written"][level] += 1
             report["encoding"][record.quality.encoding] += 1
             writer.write(record)
-            if report["input_rows"] % 20_000 == 0:
-                ctx.log(f"{report['input_rows']} rows read, {writer.count} written")
     except BaseException:
         writer.close(commit=False)
         raise
+    progress.done(written=writer.count)
     paths = writer.close()
     report = {k: dict(v.most_common()) if isinstance(v, Counter) else v for k, v in report.items()}
     report["removed_by_keep_rule"] = sum(n for b, n in report["keep_buckets"].items() if b not in ("judgment", "decision_non_technical"))

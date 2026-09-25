@@ -1,10 +1,21 @@
 """Corpus chunking and index state without a model or vector store: law chunks carry the law name,
 section numbers and filterable metadata; judgment chunks repeat the case header; overlap works
-(and is off by default in the shared section chunker); the incremental state tracks hashes."""
+(and is off by default in the shared section chunker); the incremental state tracks hashes.
+Also vectorize.py's guards, with fakes for the model, torch and Chroma: fp16 NaN vectors re-encoded in
+fp32, a missing GPU refused up front, an empty collection after indexing an error."""
+
+import importlib.util
+import json
+import sys
+import types
+from argparse import Namespace
+from pathlib import Path
+
+import pytest
 
 from docslides.cleaning.tokens import count_tokens
 from docslides.legal import chunking
-from docslides.legal_data import wikisource
+from docslides.legal_data import corpus_index, wikisource
 from docslides.legal_data.corpus_chunking import CorpusChunk, chunk_record, pack_paragraphs
 from docslides.legal_data.corpus_index import CorpusState
 from docslides.legal_data.records import CorpusRecord
@@ -88,3 +99,80 @@ def test_corpus_state_tracks_hashes_chunks_and_the_lexical_copy(tmp_path):
     state.delete("laws", "r1")
     assert state.get("laws", "r1") is None
     state.close()
+
+
+def _vectorize():
+    path = Path(__file__).resolve().parents[2] / "scripts" / "legal_data" / "vectorize.py"
+    spec = importlib.util.spec_from_file_location("vectorize_script", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_nan_vectors_from_fp16_are_re_encoded_in_fp32(monkeypatch):
+    np = pytest.importorskip("numpy")
+    from docslides.rag import embedding
+
+    class Model:
+        def __init__(self, bad: bool) -> None:
+            self.bad, self.calls = bad, []
+
+        def encode(self, texts, **kwargs):
+            self.calls.append(list(texts))
+            vectors = np.ones((len(texts), 4), dtype=np.float16 if self.bad else np.float32)
+            if self.bad:
+                vectors[1] = np.nan
+            return vectors
+
+    half, full = Model(bad=True), Model(bad=False)
+    monkeypatch.setattr(embedding, "get_embedder",
+                        lambda name, device=None, full_precision=False: full if full_precision else half)
+    vectors = _vectorize().Embedder("m", ["cuda"], 8).encode(["a", "b", "c"])
+    assert np.isfinite(vectors).all() and vectors.dtype == np.float32
+    assert full.calls == [["b"]]  # only the NaN row is redone
+
+
+def test_a_missing_gpu_is_refused_before_any_work(monkeypatch):
+    cuda = types.SimpleNamespace(is_available=lambda: True, device_count=lambda: 1)
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=cuda))
+    vectorize = _vectorize()
+    vectorize.check_devices(["cuda"])
+    vectorize.check_devices(["cpu"])
+    with pytest.raises(SystemExit, match="Accelerator"):
+        vectorize.check_devices(["cuda:0", "cuda:1"])
+    cuda.is_available = lambda: False
+    with pytest.raises(SystemExit, match="0 CUDA"):
+        vectorize.check_devices(["cuda"])
+
+
+def test_records_read_into_an_empty_collection_is_an_error(tmp_path, monkeypatch):
+    np = pytest.importorskip("numpy")
+    parsed = wikisource.parse_law_page(WIKITEXT, "חוק החוזים")
+    record = _record(id="wikisource:1", category="laws", title=parsed.full_title, authority_level="law",
+                     status="in_force", text=parsed.text, sections=parsed.sections)
+    (tmp_path / "in" / "laws").mkdir(parents=True)
+    (tmp_path / "in" / "laws" / "laws.jsonl").write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    class Collection:  # upserts that silently store nothing
+        def __init__(self, *args) -> None:
+            pass
+
+        def upsert(self, chunks, vectors) -> None:
+            pass
+
+        def count(self) -> int:
+            return 0
+
+    class Embedder:
+        def encode(self, texts):
+            return np.ones((len(texts), 4), dtype=np.float32)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(corpus_index, "CorpusCollection", Collection)
+    args = Namespace(input=str(tmp_path / "in"), vectordb=str(tmp_path / "db"), dry_run=False, shard=None, sample=None,
+                     rebuild=False, prune=False, chunk_tokens=500, overlap_tokens=64)
+    cfg = types.SimpleNamespace(collection_prefix="t", fold_final_letters_for_embedding=False)
+    with pytest.raises(RuntimeError, match="collection is empty"):
+        _vectorize().index_category("laws", args, cfg, "m", Embedder)

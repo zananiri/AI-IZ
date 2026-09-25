@@ -219,7 +219,12 @@ async def answer_phase(questions: list[dict], run_dir: Path) -> None:
 
 async def grade_phase(questions: list[dict], run_dir: Path) -> None:
     from docslides.legal.chunking import normalize_hebrew_quotes
-    from docslides.legal.evaluation import JUDGE_MAX_TOKENS, contradiction, get_judge_client, with_citations
+    from docslides.legal.evaluation import (
+        JUDGE_MAX_TOKENS,
+        contradiction,
+        get_judge_client,
+        with_citations,
+    )
     from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams, aclose_all_clients
     from docslides.llm.schemas import EvalJudgement
 

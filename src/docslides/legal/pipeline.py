@@ -579,7 +579,8 @@ async def draft_answer(
         ChatMessage("system", prompts.draft_prompt(reply_language)),
         ChatMessage(
             "user",
-            f"{_task_input(evidence_text, question, notes)}\n\nValidated research memorandum:\n{_memo_for_prompt(memo)}",
+            f"{_task_input(evidence_text, question, notes)}\n\n"
+            f"Validated research memorandum:\n{_memo_for_prompt(memo)}",
         ),
     ]
     previous: tuple[LegalDraft, list[CitationCheck], list[str]] | None = None
@@ -624,7 +625,8 @@ async def draft_answer(
                 "user",
                 "The draft failed verification. Revise it: fix each problem below, and if no source the memorandum "
                 "lists actually states a sentence's proposition, remove that proposition rather than cite loosely. "
-                "Do not add claims the memorandum doesn't establish.\n- " + "\n- ".join(_hebrew_safe(p) for p in problems),
+                "Do not add claims the memorandum doesn't establish.\n- "
+                + "\n- ".join(_hebrew_safe(p) for p in problems),
             ),
         ]
     raise AssertionError("unreachable")

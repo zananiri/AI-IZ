@@ -225,7 +225,8 @@ class QwenClient:
                 "num_ctx": self._llm_cfg.max_model_len,
             },
         }
-        payload["options"].update({k: v for k, v in (("top_k", sampling.top_k), ("seed", sampling.seed)) if v is not None})
+        extra = (("top_k", sampling.top_k), ("seed", sampling.seed))
+        payload["options"].update({k: v for k, v in extra if v is not None})
         if guided_json_schema is not None:
             payload["format"] = guided_json_schema
         return payload

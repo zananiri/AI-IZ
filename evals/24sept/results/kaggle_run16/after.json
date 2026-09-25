@@ -1,0 +1,372 @@
+{
+ "A1": {
+  "answer_text": "הסכום שמעליו התקשרות של הוועדה המרכזית בלי מכרז טעונה אישור של ועדת הפטור הוא 2.5 מיליון שקלים חדשים.",
+  "seconds": 64,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 5 (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:5"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states the threshold of 2.5 million shekels above which the Central Election Committee's engagement without a tender requires approval from the Exemption Committee. It does not introduce any incorrect information or contradict the gold answer.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "A2": {
+  "answer_text": "למחוק את המידע הסטטיסטי על מפונים שנמסר לוועדה המרכזית יש למחוק אותו בסמוך ליום פרסום תוצאות הבחירות ולא יאוחר מ־14 ימים מאותו מועד.",
+  "seconds": 30,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 6(4) › 116יז10(ד) (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(ד)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(ג)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states the time frame for deleting statistical information about candidates provided to the Central Committee, matching the gold answer exactly. It also cites the correct section, even though it uses a different citation format (the amending law's section). The wording is slightly rephrased but does not contradict or omit any essential facts.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "A3": {
+  "answer_text": "יו״ר הוועדה המרכזית חייב לקבוע את מקומות הקלפיות הייעודיות למפונים לא יאוחר מהיום ה־30 שלפני יום הבחירות.",
+  "seconds": 32,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 6(4) › 116יז10(ה) (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(ה)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(ד)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז12(א)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז12(ב)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(א)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז11"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states the deadline (30 days before the election) and attributes it to the correct provision. It does not contradict the gold answer and provides all essential facts.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "A4": {
+  "answer_text": "השעורים בבחוק מיסוי תשלומים בתקופת בחירות, התשנ״ו-1996, שונה בהתאם לתיקון שהוגדר בחוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ״ו-2026, ובפרט בסעיף 10, לפיו במקום ״25%״ יבוא ״18%״.",
+  "seconds": 37,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 10 (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:10"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states that the rate was changed from 25% to 18% in section 10 of the relevant law, which aligns with the gold answer. It also provides the full name of the law and its year, which is additional accurate context and does not contradict the gold answer.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "A5": {
+  "answer_text": "בשעיף 62(ג) לחוק הבחירות לכנסת [נוסח משולב], התשכ״ט-1969, הוחלפו המספרים 40 ו-35 במספרים 43 ו-39, לפי תיקון שנעשה בחוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ״ו-2026.",
+  "seconds": 36,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 7(4) (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:7(4)",
+   "law-0e456e329a@2026-07-16:7(6)",
+   "law-0e456e329a@2026-07-16:7(5)>62ב",
+   "law-0e456e329a@2026-07-16:7(3)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states that in section 62(6) of the Law of Elections for the Knesset (Combined Version), the numbers 40 and 35 were replaced with 43 and 39, respectively, according to the amendment made by the Law of Elections for the Twentieth Knesset (Special Provisions and Legislative Amendments), 2026. It also correctly cites section 7(4) of that amending law, which is consistent with the gold answer.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "A6": {
+  "answer_text": "החוק התקבל בכנסת ביום ב' באב התשפ״ו (16 ביולי 2026).",
+  "seconds": 20,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 preamble(קבלת החוק) (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:preamble(קבלת החוק)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states the date the law was accepted by the Knesset, matching the gold answer exactly. It uses the same Hebrew and Gregorian dates, and the provision cited is relevant and verified.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "B1": {
+  "answer_text": "מ\"פונה\" הוא אדם שעזב את מקום מגוריו עקב המצב הביטחוני, מאז יום כ\"ב בתשרי התשפ\"ד (7 באוקטובר 2023) וטרם חזר להתגורר בו.",
+  "seconds": 32,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 6(4) › 116יז10(א) (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(א)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז12(ג)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly identifies a 'מפונה' as someone who left their place of residence due to the security situation since October 7, 2023, and has not yet returned. The date is given in both Hebrew and Gregorian formats, which is acceptable and does not contradict the gold answer. The answer does not introduce any incorrect or unsupported specifics.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "B2": {
+  "answer_text": "נchezות עמוקה מוגדרת כתוכן חזותי או קולי הכולל דמות, מקום, אירוע, מסמך או חפץ אחר אשר עשויים להיחזות ככאלה שתועדו במקור, אולם נוצרו באמצעי 디지털, או נערכו באמצעי כאמור באופן ששינה אותם שינוי מהותי. המפרסם תעמולת בחירות הנchezות עמוקה מחויב ליצרף לה גילוי המציין באופן ברור ובולט כי התוכן שבה לא תועד במקור.",
+  "seconds": 139,
+  "escalation_reasons": [
+   "Words in another script remain in the answer: נchezות, 디지털, הנchezות"
+  ],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 12 › 2א2 (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:12>2א2"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly defines 'נחזות עמוקה' as content that appears to be original but was created or altered digitally. It also correctly states the obligation of the publisher to include a clear disclosure that the content was not originally recorded. The wording differs slightly but conveys the same meaning as the gold answer. The cited provision matches the one in the gold answer.",
+  "fact_coverage": 0.6666666666666666,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "B3": {
+  "answer_text": "הוראת השעה בעניין נחזות עמוקה תקפה לתקופה שתחילתה שבוע מיום פרסומו של חוק זה ועד תום שנה מיום הבחירות לכנסת העשרים ושש.",
+  "seconds": 29,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 12 › 2א2 (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:12>2א2"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states the duration of the temporary regulation regarding deepfake (נחזות עמוקה) as starting one week after the law's publication and ending on the conclusion of the 26th Knesset elections. It does not contradict the gold answer and accurately reflects the information provided.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "B4": {
+  "answer_text": "",
+  "error": "SchemaValidationFailed: LLM JSON output failed schema validation: Unterminated string starting at: line 2 column 19 (char 20)",
+  "verdict": "error",
+  "score": 0.0,
+  "passed": false,
+  "retrieval": null,
+  "citation": null
+ },
+ "B5": {
+  "answer_text": "לא ניתן היה לאמת את טיוטת התשובה מול המקורות שבמאגר, ולכן היא לא נמסרה. השאלה סומנה לבדיקה של עורך דין מוסמך.",
+  "seconds": 160,
+  "escalation_reasons": [
+   "The draft's citations failed verification, so no answer was given: the draft contains no [[CITE]] tokens although the memorandum has supporting authority",
+   "הממצאים במקורות אינם מוכרים את הטענה שהסמכויות של יו",
+   "Unresolved conflict between authorities: אין סתירה בין הוראות סעיף 132א(ד) ל-132א(ה), אלא הוראות אלו משלימות זו את זו: סעיף 132א(ד) מוסדר את הסמכויות של יו״ר הוועדה המרכזית, בעוד ש-132א(ה) מحدد את החריגים לניהול הבחירות."
+  ],
+  "cited": [],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:6(6)>132א(ד)",
+   "law-0e456e329a@2026-07-16:6(6)>132א(ה)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "abstained",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer states that it was not possible to verify the draft response against the sources in the database, and therefore it was not provided. The question was marked for review by a licensed attorney. This is a refusal to answer, and thus falls under 'abstained' as it does not provide a direct answer to the question.",
+  "fact_coverage": 0.5,
+  "trap_hits": [],
+  "score": 0.3333333333333333,
+  "retrieval": 1.0,
+  "answer": 0.0,
+  "citation": 0.0
+ },
+ "B6": {
+  "answer_text": "מפונה רשאי להצביע בבחירות בקלפי ייעודית למפונים או בכל קלפי שנקבעה כקלפי להצבעת אנשים המוגבלים בניידות לפי הוראות סעיף 68א. כדי להצביע, מפונה חייב להזדהה בפני מזכיר ועדת הקלפי כאמור בסעיף 74(א) ו–(ב), ולאחר שחתם על טופס שבו הוא מצהיר כי הוא מפונה, ישים את מעטפת ההצבעה לתוך מעטפה חיצונית, וועדת הקלפי תציין על פני המעטפה החיצונית את שם הבוחר, את מספר זהותו במרשם האוכלוסין ופרטים נוספים שנקבעו בתקנות, והוא יטיל את המעטפה לعينי ועדת הקלפי לתוך הקלפי. יושב ראש הוועדה המרכזית רשאי לקבוע הוראות המסדירות את ההצבעה בקלפיות ייעודיות למפונים, ובכלל זה הוראות בדבר סדרי הפעלתן ועבודתן של הקלפיות, סדרי ההצבעה בהן ושעות הצבעה בקלפיות הייעודיות בכלל או בקלפי מסוימת. הוועדה המרכזית תפרסם הודעה בדבר מקומות הקלפיות הייעודיות למפונים, וסדרי ההצבעה ושעות ההצבעה בהן ב אתר האינטרנט של הוועדה המרכזית בכל דרך נוספת אחרת שתיראה ליושב ראש הוועדה יעילה ונגישה לקבוצות שונות באוכלוסייה.",
+  "seconds": 97,
+  "escalation_reasons": [
+   "Words in another script remain in the answer: לعينי"
+  ],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 6(4) › 116יז10(ב) (verified)",
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 6(4) › 116יז12(ג) (verified)",
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 6(4) › 116יז12(א) (verified)",
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 6(4) › 116יז12(ב) (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:6(4)>116יז12(ג)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(ב)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(א)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז11",
+   "law-0e456e329a@2026-07-16:6(4)>116יז12(א)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז12(ב)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "partially_correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer provides a detailed description of the voting process for people with disabilities, including the requirement to identify oneself before the committee secretary, sign a declaration form, and place the ballot in an outer envelope. It also mentions the committee's responsibility to record information on the envelope and the role of the central committee in regulating the process. However, it goes beyond the gold answer by adding information about the central committee's authority and the publication of information on the central committee's website, which are not mentioned in the gold answer. While these additions are not incorrect, they are not essential to the specific question about how a person with disabilities indicates their vote in a designated ballot box.",
+  "fact_coverage": 0.6666666666666666,
+  "trap_hits": [],
+  "score": 0.8333333333333334,
+  "retrieval": 1.0,
+  "answer": 0.5,
+  "citation": 1.0
+ },
+ "B7": {
+  "answer_text": "ההגדרה של \"רשות ציבורית\" בסעיף 4(א) כוללת את הכנסת, הממשלה ומשרדי הממשלה, מבקר המדינה, רשות מקומית, ותאגיד שהוקם בחוק. \n\nההגדרה של \"גורם ציבורי\" בסעיף 116יז10(א) כוללת את הממשלה ומשרדי הממשלה, רשות מקומית, ותאגיד שהוקם בחוק.",
+  "seconds": 165,
+  "escalation_reasons": [
+   "Removed 3 statement(s) whose citations failed verification"
+  ],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 4(א) (verified)",
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 6(4) › 116יז10(א) (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:4(א)",
+   "law-0e456e329a@2026-07-16:4(ב)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(א)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(ג)",
+   "law-0e456e329a@2026-07-16:4(ג)",
+   "law-0e456e329a@2026-07-16:4(ה)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly identifies the inclusion of the Knesset and the State Comptroller in 'רשות ציבורית' and their exclusion from 'גורם ציבורי'. However, it does not explicitly state the key difference mentioned in the gold answer, which is that 'רשות ציבורית' includes the Knesset and the State Comptroller while 'גורם ציבורי' does not. The answer also omits the explicit exclusion of the Knesset and State Comptroller from 'גורם ציבורי', making it partially correct.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "contradiction_check": {
+   "contradicts_gold": false,
+   "conflict": "none"
+  },
+  "judge_verdict": "partially_correct",
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "B8": {
+  "answer_text": "יו״ר הכנסת יכול למנוע העסקה של עובד כנסת בוועדת בחירות רק אם קיים קושי ממשי בהיעדרותו מעבודתו, ובמקרה של היעדרות מעבודה, ולא הגיעו יושב ראש הכנסת והמנהל הכללי של הוועדה המרכזית להסכמה.  סמכותיו של יו״ר הכנסת לפי סעיף 4(ד) אינה ניתנת לאצילה.",
+  "seconds": 48,
+  "escalation_reasons": [],
+  "cited": [
+   "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026 4(ד) (verified)"
+  ],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:4(ד)",
+   "law-0e456e329a@2026-07-16:4(א)",
+   "law-0e456e329a@2026-07-16:4(ג)",
+   "law-0e456e329a@2026-07-16:4(ה)",
+   "law-0e456e329a@2026-07-16:4(ב)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states the conditions under which the Speaker of the Knesset can prevent the employment of a Knesset employee in an election committee (a real difficulty in their absence from work, and no agreement between the Speaker and the Director General of the Central Election Committee). It also correctly states that the authority cannot be delegated, as per section 4(4). The wording is slightly different but conveys the same meaning as the gold answer.",
+  "fact_coverage": 1.0,
+  "trap_hits": [],
+  "score": 1.0,
+  "retrieval": 1.0,
+  "answer": 1.0,
+  "citation": 1.0
+ },
+ "C1": {
+  "answer_text": "לא ניתן היה להפיק מזכר מחקר מאומת לשאלה זו מתוך המקורות שבמאגר, ולכן לא נוסחה טיוטת תשובה. השאלה סומנה לבדיקה של עורך דין מוסמך.",
+  "seconds": 15,
+  "escalation_reasons": [
+   "The research memorandum failed validation after revision: governing_law is empty and unresolved_questions doesn't explain why"
+  ],
+  "cited": [],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:preamble(קבלת החוק)",
+   "law-0e456e329a@2026-07-16:6(4)>116יז10(ד)"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "abstained",
+  "fabricated_specifics": false,
+  "judge_explanation": "התשובה מסרבת לענות ומדגישה שאין מידע זמין במקורות, מה שמתאים לתקנה 'abstained'. היא לא טוענת עובדות ספציפיות שמתנגדות עם תשובה הכסף, ולכן 'fabricated_specifics' היא שקרית.",
+  "fact_coverage": null,
+  "trap_hits": [],
+  "score": 1.0,
+  "passed": true,
+  "retrieval": null,
+  "answer": null,
+  "citation": null
+ },
+ "C2": {
+  "answer_text": "לא ניתן היה להפיק מזכר מחקר מאומת לשאלה זו מתוך המקורות שבמאגר, ולכן לא נוסחה טיוטת תשובה. השאלה סומנה לבדיקה של עורך דין מוסמך.",
+  "seconds": 16,
+  "escalation_reasons": [
+   "The research memorandum failed validation after revision: governing_law is empty and unresolved_questions doesn't explain why",
+   "Retrieved sources have low relevance or thin coverage for this question"
+  ],
+  "cited": [],
+  "retrieved": [
+   "law-0e456e329a@2026-07-16:12>2א2"
+  ],
+  "audit_path": "data/single/audit/2026-09-24.jsonl",
+  "verdict": "abstained",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer states that it was not possible to extract information from an authenticated research memo and that the question was marked for review by a licensed attorney. This indicates that the responder did not have sufficient information to answer the question, which aligns with the 'abstained' category.",
+  "fact_coverage": null,
+  "trap_hits": [],
+  "score": 1.0,
+  "passed": true,
+  "retrieval": null,
+  "answer": null,
+  "citation": null
+ }
+}

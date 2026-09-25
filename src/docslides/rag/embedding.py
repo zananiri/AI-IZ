@@ -12,17 +12,19 @@ from functools import lru_cache
 
 
 @lru_cache(maxsize=4)
-def _get_embedder(model_name: str, device: str | None = None):
+def _get_embedder(model_name: str, device: str | None = None, full_precision: bool = False):
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(model_name, device=device)
-    if device and device.startswith("cuda"):
+    if device and device.startswith("cuda") and not full_precision:
         model.half()  # bulk corpus indexing on GPU (scripts/legal_data/vectorize.py): fp16 halves time and memory
     return model
 
 
-def get_embedder(model_name: str, device: str | None = None):
-    return _get_embedder(model_name, device)
+def get_embedder(model_name: str, device: str | None = None, full_precision: bool = False):
+    """`full_precision` keeps fp32 on a GPU too: vectorize.py re-encodes, with it, the rare texts whose
+    fp16 vectors come out with NaN/Inf (Chroma rejects a whole batch holding one)."""
+    return _get_embedder(model_name, device, full_precision)
 
 
 def embed_texts(

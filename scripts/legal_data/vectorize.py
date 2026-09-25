@@ -52,12 +52,30 @@ def log(message: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
 
 
+def check_devices(devices: list[str]) -> None:
+    """Fails at once, not at the first batch, when a CUDA device is asked for and there is none
+    (e.g. a Kaggle notebook whose Accelerator is still None)."""
+    wanted = [d for d in devices if d.startswith("cuda")]
+    if not wanted:
+        return
+    import torch
+
+    available = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    for device in wanted:
+        index = int(device.split(":")[1]) if ":" in device else 0
+        if index >= available:
+            raise SystemExit(f"{device} requested but {available} CUDA device(s) available "
+                             "(on Kaggle: Settings -> Accelerator -> GPU T4 x2)")
+
+
 class Embedder:
     def __init__(self, model_name: str, devices: list[str], batch_size: int) -> None:
         from docslides.rag.embedding import get_embedder
 
+        self.model_name = model_name
+        self.device = devices[0] if devices else None
         self.batch_size = batch_size
-        self.model = get_embedder(model_name, devices[0] if devices else None)
+        self.model = get_embedder(model_name, self.device)
         self.pool = None
         if len(devices) > 1:
             try:
@@ -67,6 +85,25 @@ class Embedder:
                 log(f"multi-device pool failed ({exc}); using {devices[0]} only")
 
     def encode(self, texts: list[str]):
+        import numpy as np
+
+        vectors = np.asarray(self._encode(texts))
+        bad = np.flatnonzero(~np.isfinite(vectors).all(axis=1))
+        if bad.size:
+            # fp16 can overflow on a rare text; Chroma rejects the whole batch if one vector has NaN/Inf.
+            from docslides.rag.embedding import get_embedder
+
+            log(f"{bad.size} of {len(texts)} vectors had NaN/Inf; re-encoding them in fp32")
+            full = get_embedder(self.model_name, self.device, full_precision=True)
+            redone = full.encode([texts[i] for i in bad], batch_size=self.batch_size, normalize_embeddings=True,
+                                 convert_to_numpy=True)
+            vectors = vectors.astype(np.float32)
+            vectors[bad] = redone
+            if not np.isfinite(vectors).all():
+                raise RuntimeError(f"NaN/Inf vectors even in fp32 for chunks at batch positions {bad.tolist()[:10]}")
+        return vectors
+
+    def _encode(self, texts: list[str]):
         if self.pool is not None:
             try:
                 return self.model.encode(texts, pool=self.pool, batch_size=self.batch_size, normalize_embeddings=True)
@@ -169,6 +206,8 @@ def index_category(category: str, args, corpus_cfg, model_name: str, embedder_fa
                     stats["records_pruned"] += 1
                 state.commit()
             stats["collection_count"] = collection.count()
+            if stats["records"] and not stats["collection_count"]:
+                raise RuntimeError(f"{category}: {stats['records']} records read but the collection is empty")
         progress.done(chunks=stats["chunks"], chunks_indexed=stats["chunks_indexed"], unchanged=stats["records_unchanged"])
     finally:
         if embedder is not None:
@@ -323,6 +362,8 @@ def main() -> int:
         merge(args, corpus_cfg)
         return 0
 
+    if not args.dry_run:
+        check_devices(parse_devices(args))
     log(f"input {Path(args.input).resolve()} -> {Path(args.vectordb).resolve()} ({model_name})"
         + (" [dry run]" if args.dry_run else ""))
     results = {}

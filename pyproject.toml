@@ -82,6 +82,12 @@ legal = [
     "chromadb>=0.5",
     "sentence-transformers>=3.0",
 ]
+# Bulk legal corpus: fetchers + vectorize.py in scripts/legal_data/ (src/docslides/legal_data/).
+# Use together with `legal` (chromadb, sentence-transformers). Also: requirements-legal-data.txt.
+legal-data = [
+    "pyarrow>=15",
+    "mwparserfromhell>=0.6.6",
+]
 
 [project.scripts]
 docslides-api = "docslides.api.main:run"

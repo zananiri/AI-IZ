@@ -97,6 +97,142 @@ legal:
     analysis_pass: true
     analysis_max_tokens: 4096
   audit_dir: "./data/legal/audit"
+  # Bulk corpus built from legal_txt/ JSONL by scripts/legal_data/vectorize.py: its own Chroma
+  # store (one collection per category), separate from the signed index above.
+  corpus:
+    vectordb_dir: "./data/legal_corpus_vectordb"
+    collection_prefix: "israeli_law_corpus"
+    chunk_max_tokens: 500
+    chunk_overlap_tokens: 64
+    embed_batch_size: 64
+    fold_final_letters_for_embedding: false
+
+# Corpus acquisition: scripts/legal_data/fetch_*.py (see scripts/legal_data/README.md). Only the
+# hosts below are contacted, robots.txt is honoured, at most one request per second per host.
+legal_data:
+  contact_email: ""              # REQUIRED -- goes in the User-Agent (or DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL)
+  output_dir: "./legal_txt"
+  min_interval_s: 1.0
+  max_retries: 6
+  backoff_base_s: 2.0
+  backoff_max_s: 300.0
+  timeout_s: 120.0
+  sources:
+    knesset_odata: "https://knesset.gov.il/OdataV4/ParliamentInfo"
+    knesset_tables:
+      - KNS_IsraelLaw
+      - KNS_IsraelLawName
+      - KNS_IsraelLawClassificiation   # sic -- the service's own spelling
+      - KNS_LawBinding
+      - KNS_Law                        # not in OData V4: reported, skipped
+      - KNS_DocumentLaw                # V4 name: KNS_DocumentIsraelLaw (alias below)
+      - KNS_SecondaryLaw
+      - KNS_SecLawAuthorizingLaw
+      - KNS_DocumentSecondaryLaw
+    knesset_table_aliases:
+      KNS_DocumentLaw: KNS_DocumentIsraelLaw
+    knesset_pdf_host: "fs.knesset.gov.il"
+    wikisource_dumps: "https://dumps.wikimedia.org/hewikisource"
+    wikisource_dump_date: "latest"   # newest completed dump; pin e.g. "20260901" to reproduce a run
+    wikisource_wiki: "https://he.wikisource.org/wiki/"
+    supreme_court_repo: "LevMuchnik/SupremeCourtOfIsrael"
+    supreme_court_revision: "main"
+    supreme_court_file: "cases_all.parquet"
+    iscd_data_page: "https://iscd.huji.ac.il/data"
+  # Must end up in procedural_rules; each label's title prefixes are matched after name normalization.
+  required_regulations:
+    civil_procedure_2018: ['תקנות סדר הדין האזרחי, התשע"ט-2018']
+    criminal_procedure: ['תקנות סדר הדין הפלילי']
+    court_fees: ['תקנות בתי המשפט (אגרות)']
+  # KNS_DocumentSecondaryLaw group types whose PDFs are a regulation's own text (sample runs list the
+  # values present). Only these are text-extracted for regulations Wikisource lacks.
+  secondary_text_group_types: []
+  judgment_types: ['פסק-דין']
+  # Supreme Court exclusions (strict). Regexes; ״ and ׳ are folded to " and ' before matching.
+  privacy:
+    publication_restriction_patterns:
+      - 'אסור(?:ה|ים|ות)? (?:ב|ל)פרסום'
+      - 'איסור (?:על )?(?:ה)?פרסום'
+      - '(?<![א-ת])חסוי(?:ה|ים|ות)?(?![א-ת])'
+      - 'בדלתיים סגורות'
+      - 'הותר(?:ה)? לפרסום'
+      - 'פרסום שמ(?:ו|ה|ם|ן) (?:אסור|נאסר)'
+    family_case_prefixes: ['בע"מ', 'עמ"ש', 'תמ"ש']   # case-number / case-type prefixes
+    family_subject_values: []                         # meta_mador_nm values -- confirm from a sample
+    anonymized_party_patterns:
+      - '(?<![א-ת])[ובלהמש]?פלונ(?:י|ית|ים|יות)(?![א-ת])'
+      - '(?<![א-ת])[ובלהמש]?אלמונ(?:י|ית|ים|יות)(?![א-ת])'
+    # Matched as whole words (Hebrew prefixes allowed) in the case name, case type and the first
+    # topic_scan_chars characters of the text.
+    topic_keywords:
+      - 'אימוץ'
+      - 'אמוץ'
+      - 'מאומצ(?:ת|ים|ות)?'
+      - 'קטין'
+      - 'קטינ(?:ה|ים|ות)'
+      - 'חוק הנוער'
+      - 'עבירו?ת מין'
+      - 'אינוס'
+      - 'מעשה מגונה'
+      - 'מעשים מגונים'
+      - 'בעילה אסורה'
+      - 'מעשה סדום'
+      - 'הטרדה מינית'
+      - 'גילוי עריות'
+      - 'משמורת'
+      - 'מזונות'
+      - 'גירושין'
+      - 'גרושין'
+      - 'ענייני משפחה'
+      - 'בית הדין הרבני'
+      - 'הסדרי ראיה'
+      - 'הסדרי ראייה'
+      - 'חטיפת ילדים'
+      - 'פונדקאות'
+    topic_scan_chars: 5000
+    # Party names matching these are kept by --anonymize: the State, public bodies and organizations.
+    # Every other party (a natural person) becomes [צד N].
+    public_body_patterns:
+      - 'מדינת ישראל'
+      - 'היועצ?ת? המשפטי(?:ת)? לממשלה'
+      - 'פרקליט'
+      - '(?<![א-ת])שר(?:ת)?(?![א-ת])'
+      - 'משרד'
+      - 'רשות'
+      - 'רשם'
+      - 'עירי(?:י)?ת'
+      - 'מועצ(?:ה|ת)'
+      - 'ו(?:ו)?עד(?:ה|ת)'
+      - 'בית (?:ה)?משפט'
+      - 'בית (?:ה)?דין'
+      - 'כנסת'
+      - 'ממשלת'
+      - 'צבא|צה"ל|מפקד|קצין'
+      - 'משטר(?:ה|ת)'
+      - 'שירות'
+      - 'ביטוח'
+      - 'מ(?:י)?נהל'
+      - 'נציב'
+      - 'הממונה'
+      - 'בנק'
+      - 'בע"מ'
+      - 'חבר(?:ה|ת)'
+      - 'עמות(?:ה|ת)'
+      - 'אגוד(?:ה|ת)'
+      - 'הסתדרות'
+      - 'קופ(?:ה|ת)'
+      - 'איגוד'
+      - 'לשכ(?:ה|ת)'
+      - 'תנוע(?:ה|ת)'
+      - 'מפלג(?:ה|ת)'
+      - 'קרן'
+      - 'אוניברסיט'
+      - 'מכלל(?:ה|ת)'
+      - 'בית (?:ה)?חולים'
+      - 'המרכז'
+      - 'תאגיד'
+      - 'שותפות'
+      - 'קיבוץ|מושב'
 
 canon:
   # Canon GPT tab: a genuine RAG pipeline (src/docslides/canon/) over the

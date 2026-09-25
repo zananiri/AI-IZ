@@ -13,3 +13,12 @@ stanza_cache/
 .env.local
 *.pptx
 !tests/fixtures/*.pptx
+
+# Bulk legal corpus (scripts/legal_data/): downloaded and generated data, never committed.
+# The curated law PDFs directly in legal_txt/ stay tracked.
+legal_txt/laws/
+legal_txt/procedural_rules/
+legal_txt/supreme_court/
+legal_txt/metadata/
+legal_txt/_manifests/
+legal_txt/_sample/

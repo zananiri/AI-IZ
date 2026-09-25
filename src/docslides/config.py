@@ -129,6 +129,21 @@ class LegalPipelineConfig(BaseModel):
     analysis_max_tokens: int = 4096
 
 
+class LegalCorpusConfig(BaseModel):
+    """The bulk corpus (legal_txt/ JSONL, vectorized by scripts/legal_data/vectorize.py): its own
+    Chroma store, one collection per category (<collection_prefix>_<category>), separate from the
+    signed, reviewed index the Legal tab answers from. Same embedding model as retrieval."""
+
+    vectordb_dir: str = "./data/legal_corpus_vectordb"
+    collection_prefix: str = "israeli_law_corpus"
+    chunk_max_tokens: int = 500
+    chunk_overlap_tokens: int = 64
+    embed_batch_size: int = 64
+    # Folding ך ם ן ף ץ into their regular forms makes spellings bge-m3 never saw: off for the
+    # embedded text by default. The lexical copy (for a keyword index) is always folded.
+    fold_final_letters_for_embedding: bool = False
+
+
 class LegalConfig(BaseModel):
     """Legal tab: grounded RAG over Israeli law (see src/docslides/legal/).
     `orchestrator` (Qwen) does research, drafting and every verification
@@ -139,7 +154,58 @@ class LegalConfig(BaseModel):
     retrieval: LegalRetrievalConfig = Field(default_factory=LegalRetrievalConfig)
     ingestion: LegalIngestionConfig = Field(default_factory=LegalIngestionConfig)
     pipeline: LegalPipelineConfig = Field(default_factory=LegalPipelineConfig)
+    corpus: LegalCorpusConfig = Field(default_factory=LegalCorpusConfig)
     audit_dir: str = "./data/legal/audit"
+
+
+class LegalDataSourcesConfig(BaseModel):
+    """The only hosts the corpus fetchers (scripts/legal_data/) may contact."""
+
+    knesset_odata: str = "https://knesset.gov.il/OdataV4/ParliamentInfo"
+    knesset_tables: list[str] = Field(default_factory=list)
+    # Requested name -> the table that holds it in OData V4 (KNS_DocumentLaw is KNS_DocumentIsraelLaw).
+    knesset_table_aliases: dict[str, str] = Field(default_factory=dict)
+    knesset_pdf_host: str = "fs.knesset.gov.il"
+    wikisource_dumps: str = "https://dumps.wikimedia.org/hewikisource"
+    wikisource_dump_date: str = "latest"  # "latest" = newest completed dump, or e.g. "20260901"
+    wikisource_wiki: str = "https://he.wikisource.org/wiki/"
+    supreme_court_repo: str = "LevMuchnik/SupremeCourtOfIsrael"
+    supreme_court_revision: str = "main"
+    supreme_court_file: str = "cases_all.parquet"
+    iscd_data_page: str = "https://iscd.huji.ac.il/data"
+
+
+class LegalDataPrivacyConfig(BaseModel):
+    """Supreme Court exclusions (legal_data/supreme_court.py). Regexes over Hebrew text with
+    ״/׳ already folded to ASCII quotes. Empty lists make fetch_supreme_court.py refuse to run."""
+
+    publication_restriction_patterns: list[str] = Field(default_factory=list)
+    family_case_prefixes: list[str] = Field(default_factory=list)
+    family_subject_values: list[str] = Field(default_factory=list)
+    anonymized_party_patterns: list[str] = Field(default_factory=list)
+    topic_keywords: list[str] = Field(default_factory=list)
+    topic_scan_chars: int = 5000
+    public_body_patterns: list[str] = Field(default_factory=list)
+
+
+class LegalDataConfig(BaseModel):
+    """Corpus acquisition (scripts/legal_data/fetch_*.py) -- see scripts/legal_data/README.md."""
+
+    contact_email: str = ""  # goes in the User-Agent; the fetchers refuse to run without it
+    output_dir: str = "./legal_txt"
+    min_interval_s: float = 1.0  # per host
+    max_retries: int = 6
+    backoff_base_s: float = 2.0
+    backoff_max_s: float = 300.0
+    timeout_s: float = 120.0
+    sources: LegalDataSourcesConfig = Field(default_factory=LegalDataSourcesConfig)
+    # label -> title prefixes (compared after law_names.normalize_name) that must be in procedural_rules.
+    required_regulations: dict[str, list[str]] = Field(default_factory=dict)
+    # KNS_DocumentSecondaryLaw.GroupTypeDesc values whose PDFs hold a regulation's own text; only
+    # those are text-extracted for regulations Wikisource lacks. Empty = none (confirm from a sample).
+    secondary_text_group_types: list[str] = Field(default_factory=list)
+    judgment_types: list[str] = Field(default_factory=lambda: ["פסק-דין"])
+    privacy: LegalDataPrivacyConfig = Field(default_factory=LegalDataPrivacyConfig)
 
 
 class CanonConfig(BaseModel):
@@ -266,6 +332,7 @@ class VLLMLaunchConfig(BaseModel):
 class AppConfig(BaseModel):
     llm: LLMConfig
     legal: LegalConfig
+    legal_data: LegalDataConfig = Field(default_factory=LegalDataConfig)
     canon: CanonConfig
     vllm_launch: VLLMLaunchConfig = Field(default_factory=VLLMLaunchConfig)
     paths: PathsConfig
@@ -328,6 +395,10 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
         canon = raw.get("canon", {})
         canon = {**canon, "generation": {**canon.get("generation", {}), **canon_overrides}}
         raw = {**raw, "canon": canon}
+
+    if os.environ.get("DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL"):
+        legal_data = {**(raw.get("legal_data") or {}), "contact_email": os.environ["DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL"]}
+        raw = {**raw, "legal_data": legal_data}
 
     if "DOCSLIDES_LLM_TRACE_DIR" in os.environ:  # "" disables the trace file
         trace_dir = os.environ["DOCSLIDES_LLM_TRACE_DIR"] or None

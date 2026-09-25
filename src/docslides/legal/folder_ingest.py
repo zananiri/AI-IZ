@@ -49,6 +49,9 @@ from docslides.legal.sources import (
 )
 
 _STATE_FILE = "_legal_txt_state.json"
+# The bulk corpus (scripts/legal_data/) lives in these subfolders: thousands of downloaded files that
+# are vectorized into their own store, never signed into this curated index.
+CORPUS_SUBDIRS = frozenset({"laws", "procedural_rules", "supreme_court", "metadata", "_manifests", "_sample"})
 _TITLE_RE = re.compile(r"^(?:חוק|פקודת|פקודה|תקנות|צו)\s")
 _YEAR_RE = re.compile(r"(?:[-–]\s*|\b)((?:19|20)\d\d)\b")
 _HEBREW_MONTHS = [
@@ -219,7 +222,10 @@ def run(dry_run: bool = False, prune: bool = False) -> list[FileResult]:
     state = _load_state()
     results: list[FileResult] = []
 
-    for path in sorted(p for p in folder.rglob("*") if is_source_file(p)):
+    def in_corpus_subdir(path: Path) -> bool:
+        return path.relative_to(folder).parts[0] in CORPUS_SUBDIRS
+
+    for path in sorted(p for p in folder.rglob("*") if is_source_file(p) and not in_corpus_subdir(p)):
         try:
             results.append(_process(path, state, dry_run))
         except Exception as exc:  # noqa: BLE001 -- one bad file mustn't block the rest

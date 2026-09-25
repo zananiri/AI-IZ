@@ -110,7 +110,9 @@ def _units(text: str) -> list[str]:
     return units
 
 
-def _pack(text: str, budget: int) -> list[str]:
+def _pack(text: str, budget: int, overlap: int = 0) -> list[str]:
+    """Sentence units packed into parts of at most `budget` tokens. With `overlap`, each
+    part after the first starts with the previous part's last units, up to that many tokens."""
     parts: list[str] = []
     current: list[str] = []
     current_tokens = 0
@@ -118,7 +120,15 @@ def _pack(text: str, budget: int) -> list[str]:
         unit_tokens = count_tokens(unit)
         if current and current_tokens + unit_tokens > budget:
             parts.append("\n".join(current))
-            current, current_tokens = [], 0
+            carried: list[str] = []
+            carried_tokens = 0
+            for previous in reversed(current):
+                tokens = count_tokens(previous)
+                if carried_tokens + tokens > overlap or carried_tokens + tokens + unit_tokens > budget:
+                    break
+                carried.insert(0, previous)
+                carried_tokens += tokens
+            current, current_tokens = carried, carried_tokens
         current.append(unit)
         current_tokens += unit_tokens
     if current:
@@ -230,8 +240,12 @@ def _provision_units(lines: list[str], room: int) -> list[tuple[str | None, str]
     return units
 
 
-def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: str) -> list[LegalChunk]:
-    budget = get_config().legal.ingestion.chunk_max_tokens
+def chunk_sections(
+    sections: list[Section], meta: SourceMeta, ingestion_date: str, budget: int | None = None, overlap_tokens: int = 0
+) -> list[LegalChunk]:
+    """`budget` defaults to legal.ingestion.chunk_max_tokens; `overlap_tokens` repeats the end of
+    one part of a split provision at the start of the next (the corpus index uses it)."""
+    budget = budget or get_config().legal.ingestion.chunk_max_tokens
     known_sections = {s.number for s in sections}
     toc = amendments.parse_toc(next((s.text for s in sections if s.number == "preamble"), ""))
     key = amendments.law_key(meta.law_name)
@@ -245,7 +259,7 @@ def chunk_sections(sections: list[Section], meta: SourceMeta, ingestion_date: st
         if count_tokens(body) + count_tokens(breadcrumb) <= budget:
             bodies = [body]
         else:
-            bodies = _pack(body, max(budget - count_tokens(breadcrumb), 1))
+            bodies = _pack(body, max(budget - count_tokens(breadcrumb), 1), overlap_tokens)
         for index, part in enumerate(bodies, start=1):
             multipart = len(bodies) > 1
             ref = amended

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from docslides.legal.citations import parse_citations
+from docslides.legal.citations import parse_citations, sentence_before
 from docslides.legal.models import ChunkMetadata
 from docslides.llm.schemas import (
     ContraryAuthority,
@@ -231,6 +231,18 @@ def validate_memorandum(memo: ResearchMemorandum, evidence: dict[str, ChunkMetad
     return errors
 
 
+_MIN_SENTENCE_WORDS = 2
+
+
+def states_nothing(sentence: str) -> bool:
+    """A citation's sentence that can't carry a claim: a bare connective ("ובנוסף,") or a
+    lead-in ending in a colon ("שונו מספרים בהתאם לחוקים הבאים:"). A small model handed a
+    claim it finds awkward to write (quoted numbers) cites these instead, and the
+    entailment check, reading the claim, passed them."""
+    sentence = sentence.strip()
+    return len(re.findall(r"\w+", sentence)) < _MIN_SENTENCE_WORDS or sentence.endswith(":")
+
+
 def check_draft_citations(
     draft: str, memo: ResearchMemorandum, evidence: dict[str, ChunkMetadata]
 ) -> dict[int, list[str]]:
@@ -240,6 +252,7 @@ def check_draft_citations(
     contrary = {(a.claim_id, a.source_id) for a in memo.contrary_authority}
 
     problems: dict[int, list[str]] = {}
+    sentence = ""
     for index, citation in enumerate(parse_citations(draft)):
         issues: list[str] = []
         if citation.claim_id not in claim_ids:
@@ -257,6 +270,13 @@ def check_draft_citations(
                 issues.append("Pass A doesn't list this source as contrary authority for this claim")
         else:
             issues.append(f"relation must be 'supports' or 'contrary', got '{citation.relation}'")
+        # A token right after another token shares that token's sentence.
+        sentence = sentence_before(draft, citation.start) or sentence
+        if states_nothing(sentence):
+            issues.append(
+                f"the sentence this citation is attached to ('{sentence}') doesn't state the claim: write the "
+                "claim's content -- its rule, number or date -- in the sentence itself"
+            )
         if issues:
             problems[index] = issues
     return problems

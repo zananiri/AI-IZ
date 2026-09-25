@@ -1,0 +1,10 @@
+[indexed] 25_lsr_10622519.pdf -- חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ"ו-2026 (7 chunks)
+    guessed metadata: law_name, source_type, source_origin, gazette -- check 25_lsr_10622519.pdf.meta.json
+[indexed] 25_lsr_12235101.pdf -- חוק ההתייעלות הכלכלית (תיקוני חקיקה להשגת יעדי התקציב לשנת התקציב 2026), התשפ"ו-2026 (91 chunks)
+    guessed metadata: law_name, source_type, source_origin, gazette -- check 25_lsr_12235101.pdf.meta.json
+[indexed] 25_lsr_13004914.pdf -- חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ"ו-2026 (56 chunks)
+    guessed metadata: law_name, source_type, source_origin, gazette -- check 25_lsr_13004914.pdf.meta.json
+[indexed] 25_lsr_14147458.pdf -- חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ"ו-2026 (53 chunks)
+    guessed metadata: law_name, effective_date_start, source_type, source_origin, gazette -- check 25_lsr_14147458.pdf.meta.json
+[indexed] 6_lsr_311009.pdf -- חוק הבחירות לכנסת, התשי"ט-1959 (79 chunks)
+    guessed metadata: effective_date_start, source_type, source_origin -- check 6_lsr_311009.pdf.meta.json

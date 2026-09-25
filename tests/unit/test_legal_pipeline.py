@@ -55,6 +55,8 @@ class FakeClient:
         self.calls.append((call_site.name, messages))
         queue = self.text_responses.get(call_site.name)
         if not queue:
+            if call_site.name == "legal_analysis":  # Pass 0 is optional: no notes unless scripted
+                return ""
             raise AssertionError(f"unexpected text call to {call_site.name}")
         return queue.pop(0)
 
@@ -433,3 +435,100 @@ def test_a_named_section_missing_from_the_index_is_said_up_front(wire, monkeypat
     assert "does not hold the text of section 25(ב1)" in memo_prompt
     assert result.output["answer_draft"].startswith("נוסח סעיף 25(ב1) אינו נמצא במאגר")
     assert any("not in the index: 25(ב1)" in r for r in result.escalation_reasons)
+
+
+# --- Pass 0 notes, JSON-safe quotes, a draft that can't be generated or ran away, a section in several laws ---
+
+
+def test_analysis_notes_reach_the_memo_and_the_draft(wire):
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": f"הצד הטועה רשאי לבטל את החוזה. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}],
+        },
+        text_responses={"legal_analysis": ['Direct answer: yes -- "רשאי לבטל" (14(א)).']},
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    assert qwen.names()[:2] == ["legal_analysis", "legal_research_memo"]
+    for name in ("legal_research_memo", "legal_draft"):
+        prompt = next(messages for n, messages in qwen.calls if n == name)[1].content
+        assert "Analysis notes" in prompt and "״רשאי לבטל״" in prompt  # its quotes can't end a JSON string
+    assert result.analysis_notes.startswith("Direct answer: yes")
+    assert _audit(result)["analysis_notes"] == result.analysis_notes
+
+
+def test_the_drafter_sees_the_memo_with_json_safe_quotes(wire):
+    claim = 'במקום "7 ימים" יקראו "30 ימים".'
+    quoted = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "text": claim}]}
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [quoted],
+            "legal_draft": [{"answer_draft": f"הצד הטועה רשאי לבטל את החוזה. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}],
+        },
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    draft_prompt = next(messages for n, messages in qwen.calls if n == "legal_draft")[1].content
+    assert "״30 ימים״" in draft_prompt and '\\"30' not in draft_prompt
+    assert result.output["research_memorandum"]["governing_law"][0]["text"] == claim  # stored as written
+
+
+def test_a_draft_that_cannot_be_generated_escalates_instead_of_failing_the_turn(wire):
+    qwen = FakeClient(
+        "qwen",
+        json_responses={"legal_language_id": [{"language": "en"}], "legal_research_memo": [GOOD_MEMO]},
+    )  # no legal_draft response: every draft call fails
+    wire(qwen)
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    assert result.display_answer.startswith("The drafted answer could not be verified")
+    assert any("No well-formed draft" in r for r in result.escalation_reasons)
+    assert _audit(result)["draft_attempts"][0]["draft"] is None
+
+
+def test_a_draft_cut_off_in_a_loop_keeps_each_sentence_once_up_to_its_last_citation():
+    short = f"[[CITE: claim_id=C1 | source_id={SOURCE} | relation=supports]]"
+    raw = '{"answer_draft": "ניתן לבטל את החוזה. ' + short + " ניתן לבטל את החוזה. " + short + " ניתן לב"
+    draft = pipeline._salvage_draft(raw)
+    assert draft.answer_draft == f"ניתן לבטל את החוזה. {short}"
+    assert draft.escalation_flag and "length limit" in draft.escalation_reason
+    assert pipeline._salvage_draft('{"answer_draft": "nothing cited yet') is None
+    assert pipeline._salvage_draft("not json at all") is None
+
+
+def test_a_named_section_several_laws_have_is_flagged_up_front(wire, monkeypatch):
+    memo = {**TWO_CLAIM_MEMO, "governing_law": [TWO_CLAIM_MEMO["governing_law"][0],
+                                                {**TWO_CLAIM_MEMO["governing_law"][1], "source_ids": [SOURCE2]}]}
+    cite2 = CITE_C2.replace(SOURCE, SOURCE2).replace(LAW, LAW2).replace('section="14"', 'section="25"')
+    both = f"בחוק החוזים ניתן לבטל חוזה שנכרת בטעות. {CITE} בחוק העמדה לדין הדיון מתקיים בהיוועדות. {cite2}"
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [memo],
+            "legal_draft": [{"answer_draft": both, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}] * 2,
+        },
+    )
+    wire(qwen)
+    monkeypatch.setattr(pipeline, "retrieve", lambda q: _two_law_retrieval(
+        laws_in_play=[LAW, LAW2], ambiguous_sections={"25": [LAW, LAW2]}))
+
+    result = _run("מה קובע סעיף 25?")
+
+    memo_prompt = next(messages for n, messages in qwen.calls if n == "legal_research_memo")[1].content
+    assert "section 25, which the question names, exists in several laws" in memo_prompt
+    opening = result.output["answer_draft"].split("\n\n")[0]
+    assert opening.startswith("השאלה אינה חד־משמעית: סעיף 25 מופיע ביותר מחוק אחד")
+    assert opening.endswith("להלן מה שקובע כל אחד מהם.")
+    assert result.output["answer_draft"].endswith(cite2)
+    assert not any("leaves out" in r for r in result.escalation_reasons)

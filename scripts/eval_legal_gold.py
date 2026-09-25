@@ -83,7 +83,8 @@ Words that are garbled or in another language count only where they make an esse
 is then missing.
 fabricated_specifics: true if the answer asserts a specific number, date, amount or rule the gold answer does not
 support. The laws and sections it cites are not specifics. Judge meaning, not wording. The texts may be in Hebrew.
-Explain briefly."""
+First explain briefly (at most three sentences), comparing the answer's essential facts with the gold answer's;
+then give the verdict."""
 
 
 def _log(message: str) -> None:
@@ -171,6 +172,7 @@ def _gold_gazettes(gold: dict) -> dict[str, str]:
 async def answer_phase(questions: list[dict], run_dir: Path) -> None:
     from docslides.legal import retrieval
     from docslides.legal.citations import strip_citations
+    from docslides.legal.evaluation import reasoning_record
     from docslides.legal.pipeline import run_legal_turn
     from docslides.llm.client import aclose_all_clients
 
@@ -207,6 +209,7 @@ async def answer_phase(questions: list[dict], run_dir: Path) -> None:
                 "escalation_reasons": turn.escalation_reasons,
                 "seconds": round(time.monotonic() - started),
                 "audit_path": turn.audit_path,
+                **reasoning_record(turn),
             }
             _save(out, answers)
             _log(f"ANSWER {q['id']}: done in {answers[q['id']]['seconds']}s")
@@ -216,7 +219,7 @@ async def answer_phase(questions: list[dict], run_dir: Path) -> None:
 
 async def grade_phase(questions: list[dict], run_dir: Path) -> None:
     from docslides.legal.chunking import normalize_hebrew_quotes
-    from docslides.legal.evaluation import contradiction, get_judge_client, with_citations
+    from docslides.legal.evaluation import JUDGE_MAX_TOKENS, contradiction, get_judge_client, with_citations
     from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams, aclose_all_clients
     from docslides.llm.schemas import EvalJudgement
 
@@ -242,7 +245,8 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
             record.update(retrieval=retrieval_share, retrieved_hits=retrieved_hits, citation=citation_share,
                           cited_hits=cited_hits, cited_laws=cited_laws, expected_laws=g["expected_law_ids"],
                           answer_text=a.get("answer_text", ""), cited=a.get("cited", []),
-                          escalation_reasons=a.get("escalation_reasons", []), seconds=a.get("seconds"))
+                          escalation_reasons=a.get("escalation_reasons", []), seconds=a.get("seconds"),
+                          analysis_notes=a.get("analysis_notes", ""))  # reasoning: answers.json
             if a.get("error"):
                 record.update(verdict="error", error=a["error"], answer=0.0,
                               retrieval=None, citation=None, score=0.0)
@@ -259,7 +263,7 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
             try:
                 judgement = await qwen.complete_json(
                     [ChatMessage("system", system), ChatMessage("user", user)], LLMCallSite("legal_eval_judge"),
-                    schema=EvalJudgement, sampling=SamplingParams(temperature=0.0, max_tokens=512),
+                    schema=EvalJudgement, sampling=SamplingParams(temperature=0.0, max_tokens=JUDGE_MAX_TOKENS),
                 )
                 verdict, explanation, fabricated = judgement.verdict, judgement.explanation, judgement.fabricated_specifics
             except Exception as exc:  # noqa: BLE001

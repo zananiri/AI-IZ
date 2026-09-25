@@ -1,0 +1,35 @@
+{
+ "before": {
+  "answered": 16,
+  "abstained": 1,
+  "correct_without_context": 0,
+  "partial_without_context": 1,
+  "hallucinations": 14,
+  "score": 12.5
+ },
+ "after": {
+  "answered": 16,
+  "by_group": {
+   "A": {
+    "questions": 6,
+    "score": 100.0,
+    "retrieval": 100.0,
+    "answer": 100.0,
+    "citation": 100.0
+   },
+   "B": {
+    "questions": 8,
+    "score": 95.83333333333334,
+    "retrieval": 100.0,
+    "answer": 87.5,
+    "citation": 100.0
+   },
+   "C": {
+    "questions": 2,
+    "score": 100.0
+   }
+  },
+  "hallucinations": 0,
+  "score": 97.91666666666666
+ }
+}

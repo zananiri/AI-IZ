@@ -41,11 +41,17 @@ legal:
     api_key: "not-needed"
     request_timeout_s: 600
     # Must not exceed the served --max-model-len (docker-compose.yml:
-    # QWEN_MAX_MODEL_LEN, default 8192). At 8192, retrieval.top_k and the
-    # memo/draft output budgets are sized to fit; raise both together (e.g.
-    # 16384) before enabling thinking for legal_research_memo.
+    # QWEN_MAX_MODEL_LEN, default 8192). Under Ollama it is the num_ctx sent
+    # with every request. Output budgets are capped to fit it (llm/client.py),
+    # so at 8192 the thinking analysis pass gets ~3k tokens; 16384 gives it
+    # the full pipeline.analysis_max_tokens (the Kaggle notebook sets 16384).
     max_model_len: 8192
     guided_decoding_backend: "xgrammar"
+    # Thinking stays off for every JSON call (memo, draft, verification): the
+    # analysis pass does the reasoning in free text, and its reasoning is
+    # logged -- see pipeline.analysis_pass and logging.llm_trace_dir.
+    thinking_defaults:
+      legal_analysis: true
     default_sampling:
       temperature: 0.2
       top_p: 0.9
@@ -85,6 +91,11 @@ legal:
     max_memo_revisions: 2
     max_draft_revisions: 1
     entailment_concurrency: 4
+    # Pass 0 (legal/pipeline.analyze_question): Qwen reads the evidence against
+    # the question with thinking ON and writes notes that the memorandum and
+    # the draft both start from. Budget = thinking + notes.
+    analysis_pass: true
+    analysis_max_tokens: 4096
   audit_dir: "./data/legal/audit"
 
 canon:
@@ -215,3 +226,9 @@ tone_control:
 logging:
   level: "INFO"
   json: true
+  # One JSON line per LLM call: call site, the model's reasoning ("thinking"),
+  # its output, stop reason, token counts, and (llm_trace_prompts) the full
+  # prompt. Holds questions and evidence verbatim. null disables the file;
+  # override with DOCSLIDES_LLM_TRACE_DIR. Render with scripts/llm_trace_report.py.
+  llm_trace_dir: "./data/llm_trace"
+  llm_trace_prompts: true

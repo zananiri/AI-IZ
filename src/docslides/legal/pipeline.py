@@ -1,12 +1,15 @@
 """Legal tab pipeline: grounded RAG over Israeli law.
 
-    language routing -> retrieval -> Pass A research memorandum -> validation gate
+    language routing -> retrieval -> Pass 0 analysis notes (thinking on)
+    -> Pass A research memorandum -> validation gate
     -> Pass B draft -> citation verification (structural + entailment)
     -> unverified sentences removed -> wrong-script words repaired
     -> final citation check -> numeric grounding check -> audit log
 
 One model (the orchestrator, Qwen) does all of it: research, drafting and
-verification. The reply is always in the question's language.
+verification. The reply is always in the question's language. Every model call
+-- with its reasoning -- is recorded in the audit entry (llm_calls) and the LLM
+trace (llm/trace.py).
 
 Nothing flagged is resolved silently. A memorandum that fails the gate is
 revised, and if it still fails no draft is written: the turn escalates.
@@ -21,9 +24,11 @@ the index doesn't hold, the answer says so up front.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
@@ -52,6 +57,7 @@ from docslides.legal.validation import (
     record_contrary_search_notes,
     validate_memorandum,
 )
+from docslides.llm import trace
 from docslides.llm.client import (
     ChatMessage,
     LLMCallSite,
@@ -97,13 +103,64 @@ _UNVERIFIED_NOTICE = {
 }
 
 
-def _ambiguity_notice(reply_language: str, laws_in_play: list[str], uncovered: list[str]) -> str:
+def _ambiguity_notice(
+    reply_language: str, laws_in_play: list[str], uncovered: list[str], sections: dict[str, list[str]] | None = None
+) -> str:
+    """Said up front: the question matches several laws -- because a section it names is in
+    several of them (`sections`), or on its wording -- and which laws the answer leaves out."""
+    sections = sections or {}
+    laws = list(dict.fromkeys(law for names in sections.values() for law in names)) or laws_in_play
     if reply_language == "he":
+        if sections:
+            which = (f"סעיף {next(iter(sections))} מופיע" if len(sections) == 1
+                     else "הסעיפים " + ", ".join(sections) + " מופיעים")
+            head = (f"השאלה אינה חד־משמעית: {which} ביותר מחוק אחד שבמאגר ({'; '.join(laws)}), "
+                    "והשאלה אינה מציינת לאיזה מהם היא מתייחסת.")
+        else:
+            head = f"השאלה אינה חד־משמעית: הוראות מכמה חוקים שבמאגר מתאימות לה ({'; '.join(laws)})."
+        if not uncovered:
+            return f"{head} להלן מה שקובע כל אחד מהם."
         missing = f"ב{uncovered[0]}" if len(uncovered) == 1 else "בחוקים הבאים: " + "; ".join(uncovered)
-        return (f"השאלה אינה חד־משמעית: הוראות מכמה חוקים שבמאגר מתאימות לה ({'; '.join(laws_in_play)}). "
-                f"התשובה שלהלן אינה עוסקת {missing}.")
-    return (f"This question is ambiguous: provisions of several indexed laws match it ({'; '.join(laws_in_play)}). "
-            f"The answer below does not cover: {'; '.join(uncovered)}.")
+        return f"{head} התשובה שלהלן אינה עוסקת {missing}."
+    if sections:
+        which = f"section {next(iter(sections))} appears" if len(sections) == 1 else \
+            "sections " + ", ".join(sections) + " appear"
+        head = (f"This question is ambiguous: {which} in more than one indexed law ({'; '.join(laws)}), "
+                "and the question doesn't say which it means.")
+    else:
+        head = f"This question is ambiguous: provisions of several indexed laws match it ({'; '.join(laws)})."
+    if not uncovered:
+        return f"{head} What each of them provides follows."
+    return f"{head} The answer below does not cover: {'; '.join(uncovered)}."
+
+
+# The draft already opens by saying the question is ambiguous.
+_FLAGS_AMBIGUITY_RE = re.compile(r"(?:אינ[הו]|לא)\s+חד[־-]?\s?משמעי|ambigu", re.IGNORECASE)
+
+
+def _hebrew_safe(text: str) -> str:
+    """`text` with ״ for ASCII quotes if it has Hebrew in it -- for anything handed back to
+    the model that it might copy into a JSON string (legal/chunking.normalize_hebrew_quotes).
+    A memo claim 'במקום "ה־40" יקראו "ה־43"' left the drafter citing empty lead-ins rather
+    than write the numbers; a verifier's explanation quoting 'יו"ר' in a revision request
+    cut the redraft off at 'יו'."""
+    return normalize_hebrew_quotes(text) if re.search("[֐-׿]", text) else text
+
+
+def _hebrew_safe_values(value):
+    if isinstance(value, str):
+        return _hebrew_safe(value)
+    if isinstance(value, list):
+        return [_hebrew_safe_values(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _hebrew_safe_values(v) for k, v in value.items()}
+    return value
+
+
+def _memo_for_prompt(memo: ResearchMemorandum) -> str:
+    """The memorandum as the drafter sees it -- every Hebrew string with ״ for ASCII quotes.
+    The stored memorandum keeps what the model wrote."""
+    return json.dumps(_hebrew_safe_values(memo.model_dump()), ensure_ascii=False, indent=1)
 
 
 def _missing_sections_notice(reply_language: str, sections: list[str]) -> str:
@@ -140,6 +197,8 @@ class LegalTurnResult:
     audit_path: str
     notes: list[str] = field(default_factory=list)
     retrieved_chunks: list[dict] = field(default_factory=list)  # chunk_id, source_id, text, distance, via
+    analysis_notes: str = ""  # Pass 0's notes
+    llm_calls: list[dict] = field(default_factory=list)  # every model call, with its reasoning (llm/trace.py)
 
 
 # --- language ------------------------------------------------------------------
@@ -181,7 +240,7 @@ async def detect_reply_language(qwen: QwenClient, query: str) -> str:
     return detect_language(query) or "en"
 
 
-# --- Pass A ------------------------------------------------------------------------
+# --- the question as the model sees it ----------------------------------------------
 
 
 _THIN_COVERAGE_NOTE = (
@@ -196,6 +255,7 @@ def _question_block(
     thin_coverage: bool = False,
     laws_in_play: list[str] | None = None,
     missing_sections: list[str] | None = None,
+    ambiguous_sections: dict[str, list[str]] | None = None,
 ) -> str:
     # ״ for the ASCII quote, as in the evidence: a model that copies 'יו"ר' from the question
     # into its JSON answer unescaped cuts the answer off there (legal/chunking.py).
@@ -210,6 +270,13 @@ def _question_block(
             + "; ".join(laws_in_play)
             + ". Unless the question clearly refers to one of them, say that it is ambiguous and answer "
             "separately for each law, citing each."
+        )
+    for section, laws in (ambiguous_sections or {}).items():  # "סעיף 25" -- which law's?
+        block += (
+            f"\n\nRetrieval note: section {section}, which the question names, exists in several laws -- "
+            + "; ".join(laws)
+            + f". The question doesn't say which law it means: it is ambiguous. Say so first, then state what "
+            f"section {section} of EACH of these laws provides, one paragraph per law, naming the law and citing it."
         )
     if missing_sections:  # named by the question, but the index doesn't hold their text
         block += (
@@ -247,7 +314,47 @@ def _uncovered_laws(laws_in_play: list[str], source_ids, evidence: dict[str, Chu
 
 def _for_model(error: str) -> str:
     """A gate error in the words of the memo the model writes (GroundedMemorandum)."""
-    return error.replace("has no supporting_authority", "lists no source_ids")
+    return _hebrew_safe(error.replace("has no supporting_authority", "lists no source_ids"))
+
+
+def _task_input(evidence_text: str, question: str, notes: str = "") -> str:
+    text = f"<evidence_set>\n{evidence_text}\n</evidence_set>\n\n{question}"
+    return f"{text}\n\n{prompts.analysis_block(notes)}" if notes else text
+
+
+# --- Pass 0 ---------------------------------------------------------------------------
+
+
+async def analyze_question(qwen: QwenClient, evidence_text: str, question: str) -> str:
+    """Pass 0: with thinking on, the model reads the evidence against the question and
+    writes notes -- what is asked, the decisive words, a direct answer (or NOT STATED /
+    DELEGATED / AMBIGUOUS / NOT IN INDEX), the exceptions, the pitfalls -- that the
+    memorandum and the draft both start from.
+
+    Every other call returns grammar-constrained JSON with thinking off, so this is
+    where the model reasons before it commits: the misreadings seen in evals -- the
+    replaced number instead of the replacing one, a deeming provision read backwards,
+    an answer built from a provision on a related topic -- happen before any JSON is
+    written. Its reasoning goes to the trace. Returns "" when the pass is off or
+    yields nothing; the turn then runs without notes."""
+    cfg = get_config().legal.pipeline
+    if not cfg.analysis_pass:
+        return ""
+    try:
+        notes = await qwen.complete_text(
+            [ChatMessage("system", prompts.ANALYSIS_PROMPT), ChatMessage("user", _task_input(evidence_text, question))],
+            LLMCallSite("legal_analysis"),
+            # Qwen3's recommended thinking-mode sampling: greedy decoding makes it loop.
+            sampling=SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=cfg.analysis_max_tokens,
+                                    seed=0),
+        )
+    except Exception as exc:  # noqa: BLE001 -- the notes help; the turn doesn't depend on them
+        logger.warning("legal_analysis_failed", error=str(exc))
+        return ""
+    return _hebrew_safe(notes.strip())
+
+
+# --- Pass A ----------------------------------------------------------------------------
 
 
 async def research_memorandum(
@@ -258,6 +365,7 @@ async def research_memorandum(
     evidence_texts: dict[str, str],
     attempts_log: list,
     laws_in_play: list[str] | None = None,
+    notes: str = "",
 ) -> tuple[ResearchMemorandum | None, list[str]]:
     """Returns (memorandum, gate errors still unresolved). When several laws are in
     play, a memorandum without a claim from each is revised too -- but that alone
@@ -266,7 +374,7 @@ async def research_memorandum(
     schema = grounded_memorandum_schema(list(evidence))
     messages = [
         ChatMessage("system", prompts.RESEARCH_MEMO_PROMPT),
-        ChatMessage("user", f"<evidence_set>\n{evidence_text}\n</evidence_set>\n\n{question}"),
+        ChatMessage("user", _task_input(evidence_text, question, notes)),
     ]
     errors: list[str] = ["no memorandum produced"]
     memo: ResearchMemorandum | None = None
@@ -327,7 +435,7 @@ async def research_memorandum(
 async def _entailment(
     qwen: QwenClient, check: CitationCheck, claim_text: str, parts: list[RetrievedLegalChunk], sem: asyncio.Semaphore
 ) -> None:
-    source_text = "\n".join(p.text for p in parts)
+    source_text = _hebrew_safe("\n".join(p.text for p in parts))  # it quotes the source in its explanation
     async with sem:
         try:
             result = await qwen.complete_json(
@@ -335,14 +443,14 @@ async def _entailment(
                     ChatMessage("system", prompts.ENTAILMENT_PROMPT),
                     ChatMessage(
                         "user",
-                        f"Claim ({check.claim_id}): {claim_text}\n\nDraft sentence: {check.sentence}\n\n"
+                        f"Claim ({check.claim_id}): {_hebrew_safe(claim_text)}\n\nDraft sentence: {check.sentence}\n\n"
                         f"Asserted relation: {check.relation}\n\n<evidence source_id=\"{check.source_id}\">\n"
                         f"{source_text}\n</evidence>",
                     ),
                 ],
                 LLMCallSite("legal_citation_verification"),
                 schema=EntailmentVerdict,
-                sampling=SamplingParams(temperature=0.0, max_tokens=512),
+                sampling=SamplingParams(temperature=0.0, max_tokens=768),  # the explanation comes first
             )
             check.verdict, check.explanation = result.verdict, result.explanation
         except Exception as exc:  # noqa: BLE001 -- an unverifiable citation is a failed citation
@@ -387,6 +495,68 @@ def _citation_failures(checks: list[CitationCheck]) -> list[str]:
     return failures
 
 
+class DraftUnavailable(Exception):
+    """No draft could be generated at all (every attempt malformed, nothing salvageable)."""
+
+
+_DRAFT_OPENING_RE = re.compile(r'^\s*\{\s*"answer_draft"\s*:\s*"')
+_JSON_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f"}
+
+
+def _unterminated_json_string(body: str) -> str:
+    """The value of a JSON string cut off before its closing quote."""
+    out, i = [], 0
+    while i < len(body):
+        ch = body[i]
+        if ch == '"':
+            break
+        if ch != "\\":
+            out.append(ch)
+            i += 1
+            continue
+        if i + 1 >= len(body):
+            break
+        escaped = body[i + 1]
+        if escaped == "u":
+            digits = body[i + 2 : i + 6]
+            if len(digits) < 4 or not re.fullmatch(r"[0-9a-fA-F]{4}", digits):
+                break
+            out.append(chr(int(digits, 16)))
+            i += 6
+            continue
+        out.append(_JSON_ESCAPES.get(escaped, escaped))
+        i += 2
+    return "".join(out)
+
+
+def _salvage_draft(raw: str) -> LegalDraft | None:
+    """A draft cut off at max_tokens -- typically a loop repeating its sentences until the
+    limit -- kept up to its last complete citation token, each repeated sentence once.
+    What survives goes through the same verification as any draft, and the turn escalates."""
+    match = _DRAFT_OPENING_RE.match(raw)
+    if not match:
+        return None
+    text = _unterminated_json_string(raw[match.end() :])
+    end = text.rfind("]]")
+    if end == -1:
+        return None
+    kept, seen = [], set()
+    for piece in re.split(r"(?<=\]\])", text[: end + 2]):  # each piece ends with a citation token
+        key = " ".join(strip_citations(piece).split())
+        if key and key in seen:
+            continue
+        seen.add(key)
+        kept.append(piece)
+    text = "".join(kept).strip()
+    if not parse_citations(text):
+        return None
+    return LegalDraft(
+        answer_draft=text,
+        escalation_flag=True,
+        escalation_reason="The draft ran past its length limit; it was kept up to its last complete citation",
+    )
+
+
 async def draft_answer(
     qwen: QwenClient,
     reply_language: str,
@@ -397,27 +567,36 @@ async def draft_answer(
     evidence: dict[str, ChunkMetadata],
     attempts_log: list,
     laws_in_play: list[str] | None = None,
+    notes: str = "",
 ) -> tuple[LegalDraft, list[CitationCheck], list[str]]:
     """Returns (draft, its citation checks, citation failures still unresolved after
     the last revision). A draft that leaves out a law in play the memorandum
-    covers is revised too."""
+    covers is revised too. A revision that can't be generated leaves the previous
+    draft standing; if not even the first can be, raises DraftUnavailable."""
     max_revisions = get_config().legal.pipeline.max_draft_revisions
     memo_laws = {evidence[a.source_id].law_name for a in memo.supporting_authority if a.source_id in evidence}
     messages = [
         ChatMessage("system", prompts.draft_prompt(reply_language)),
         ChatMessage(
             "user",
-            f"<evidence_set>\n{evidence_text}\n</evidence_set>\n\n{question}\n\n"
-            f"Validated research memorandum:\n{memo.model_dump_json(indent=1)}",
+            f"{_task_input(evidence_text, question, notes)}\n\nValidated research memorandum:\n{_memo_for_prompt(memo)}",
         ),
     ]
+    previous: tuple[LegalDraft, list[CitationCheck], list[str]] | None = None
     for attempt in range(1 + max_revisions):
-        draft = await qwen.complete_json(
-            messages,
-            LLMCallSite("legal_draft"),
-            schema=LegalDraft,
-            sampling=SamplingParams(temperature=0.0, max_tokens=2048),  # same memo, same draft
-        )
+        try:
+            draft = await qwen.complete_json(
+                messages,
+                LLMCallSite("legal_draft"),
+                schema=LegalDraft,
+                sampling=SamplingParams(temperature=0.0, max_tokens=2048),  # same memo, same draft
+                salvage=_salvage_draft,
+            )
+        except Exception as exc:  # noqa: BLE001 -- malformed after every retry and not salvageable
+            attempts_log.append({"attempt": attempt + 1, "draft": None, "error": f"{type(exc).__name__}: {exc}"})
+            if previous is not None:
+                return previous
+            raise DraftUnavailable(f"{type(exc).__name__}: {exc}") from exc
         as_written = draft.model_dump_json()  # short-form tokens, for the revision turn
         draft.answer_draft = expand_citations(draft.answer_draft, evidence)
         checks = await verify_citations(qwen, draft.answer_draft, memo, retrieval, evidence)
@@ -431,6 +610,7 @@ async def draft_answer(
                              "citation_checks": [asdict(c) for c in checks], "uncovered_laws": uncovered})
         if (not failures and not uncovered) or attempt == max_revisions:
             return draft, checks, failures
+        previous = (draft, checks, failures)
         problems = failures + [
             f"the question is ambiguous -- provisions of several laws match it ({'; '.join(laws_in_play or [])}) -- "
             f"and the memorandum has claims for {law}, but the draft doesn't cite it: say that the question is "
@@ -444,7 +624,7 @@ async def draft_answer(
                 "user",
                 "The draft failed verification. Revise it: fix each problem below, and if no source the memorandum "
                 "lists actually states a sentence's proposition, remove that proposition rather than cite loosely. "
-                "Do not add claims the memorandum doesn't establish.\n- " + "\n- ".join(problems),
+                "Do not add claims the memorandum doesn't establish.\n- " + "\n- ".join(_hebrew_safe(p) for p in problems),
             ),
         ]
     raise AssertionError("unreachable")
@@ -600,11 +780,25 @@ async def _no_answer(
         "coverage_gaps": coverage_gaps,
     }
     entry.update(output=output)
-    path = audit.write_entry(entry)
-    return LegalTurnResult(output, notice, [], reply_language, reasons, str(path), retrieved_chunks=retrieved)
+    path = _write_audit(entry)
+    return LegalTurnResult(output, notice, [], reply_language, reasons, str(path), retrieved_chunks=retrieved,
+                           analysis_notes=entry.get("analysis_notes", ""))
+
+
+def _write_audit(entry: dict) -> Path:
+    """The audit entry, closed by every model call the turn made -- reasoning included."""
+    entry["llm_calls"] = trace.current_calls() or []
+    return audit.write_entry(entry)
 
 
 async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnResult:
+    with trace.collect(job_id) as calls:
+        result = await _legal_turn(query, job_id, status)
+    result.llm_calls = calls
+    return result
+
+
+async def _legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnResult:
     qwen = get_legal_orchestrator_client()
     entry: dict = {"job_id": job_id, "query": query, "orchestrator_model": qwen.model}
 
@@ -623,13 +817,15 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
         for c in retrieval.chunks
     ]
     question = _question_block(query, thin_coverage=retrieval.low_relevance, laws_in_play=retrieval.laws_in_play,
-                               missing_sections=retrieval.missing_sections)
+                               missing_sections=retrieval.missing_sections,
+                               ambiguous_sections=retrieval.ambiguous_sections)
     entry["retrieval"] = {
         "query": query,
         "bundle_verification": retrieval.bundle_verification,
         "best_distance": retrieval.best_distance,
         "best_rerank_score": retrieval.best_rerank_score,
         "laws_in_play": retrieval.laws_in_play,
+        "ambiguous_sections": retrieval.ambiguous_sections,
         "missing_sections": retrieval.missing_sections,
         "low_relevance": retrieval.low_relevance,
         "amendment_notes": {sid: [n.describe() for n in notes] for sid, notes in amendment_notes.items()},
@@ -643,11 +839,18 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
         ],
     }
 
+    analysis_notes = ""
+    if grouped:
+        await status(f"Pass 0: reading {len(grouped)} source(s) against the question (thinking)")
+        analysis_notes = await analyze_question(qwen, evidence_text, question)
+        entry["analysis_notes"] = analysis_notes
+
     await status(f"Pass A: research memorandum over {len(grouped)} source(s)")
     memo_attempts: list = []
     evidence_texts = {source_id: "\n".join(p.text for p in parts) for source_id, parts in grouped.items()}
     memo, gate_errors = await research_memorandum(
-        qwen, evidence_text, question, evidence, evidence_texts, memo_attempts, retrieval.laws_in_play
+        qwen, evidence_text, question, evidence, evidence_texts, memo_attempts, retrieval.laws_in_play,
+        analysis_notes,
     )
     entry["memorandum_attempts"] = memo_attempts
 
@@ -658,11 +861,16 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
 
     await status("Pass B: drafting the answer and verifying every citation")
     draft_attempts: list = []
-    draft, checks, draft_failures = await draft_answer(
-        qwen, reply_language, evidence_text, question, memo, retrieval, evidence, draft_attempts,
-        retrieval.laws_in_play,
-    )
     entry["draft_attempts"] = draft_attempts
+    try:
+        draft, checks, draft_failures = await draft_answer(
+            qwen, reply_language, evidence_text, question, memo, retrieval, evidence, draft_attempts,
+            retrieval.laws_in_play, analysis_notes,
+        )
+    except DraftUnavailable as exc:
+        reasons = [f"No well-formed draft could be generated: {exc}"]
+        reasons += _escalation_reasons(None, memo, retrieval, evidence, [])
+        return await _no_answer(qwen, entry, reply_language, _UNVERIFIED_NOTICE, reasons, memo, retrieved)
     notes: list[str] = []
     final_text = draft.answer_draft
 
@@ -738,7 +946,8 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
         notes.append("Some words are not in the answer's language: " + ", ".join(script_log["remaining"]))
 
     # Said up front, whatever the draft says: sections the question names that the index lacks,
-    # and laws in play the answer leaves out.
+    # laws in play the answer leaves out, and a named section several laws have (unless the
+    # draft already opens by saying the question is ambiguous).
     preface: list[str] = []
     if retrieval.missing_sections:
         reasons.append("The question names section(s) whose text is not in the index: "
@@ -747,7 +956,10 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
     uncovered = _uncovered_laws(retrieval.laws_in_play, [c.source_id for c in parse_citations(final_text)], evidence)
     if uncovered:
         reasons.append("Several laws match the question and the answer leaves out: " + "; ".join(uncovered))
-        preface.append(_ambiguity_notice(reply_language, retrieval.laws_in_play, uncovered))
+    opening = strip_citations(final_text)[:300]
+    if uncovered or (retrieval.ambiguous_sections and not _FLAGS_AMBIGUITY_RE.search(opening)):
+        preface.append(_ambiguity_notice(reply_language, retrieval.laws_in_play, uncovered,
+                                         retrieval.ambiguous_sections))
     if preface:
         final_text = "\n\n".join([*preface, final_text])
 
@@ -762,6 +974,6 @@ async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurn
         "coverage_gaps": draft.coverage_gaps,
     }
     entry.update(output=output, footnotes=footnotes)
-    path = audit.write_entry(entry)
+    path = _write_audit(entry)
     return LegalTurnResult(output, display, footnotes, reply_language, reasons, str(path), notes,
-                           retrieved_chunks=retrieved)
+                           retrieved_chunks=retrieved, analysis_notes=analysis_notes)

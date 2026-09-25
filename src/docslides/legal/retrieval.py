@@ -75,6 +75,8 @@ class RetrievalResult:
     laws_in_play: list[str] = field(default_factory=list)  # several laws answer; the question names none
     indexed_law_keys: set[str] = field(default_factory=set)  # every law the index holds (amendments.law_key)
     missing_sections: list[str] = field(default_factory=list)  # named by the question, text not in the index
+    # A section the question names ("סעיף 25") that several laws in play have: section -> those laws.
+    ambiguous_sections: dict[str, list[str]] = field(default_factory=dict)
 
     def by_source_id(self) -> dict[str, list[RetrievedLegalChunk]]:
         grouped: dict[str, list[RetrievedLegalChunk]] = {}
@@ -444,6 +446,7 @@ def retrieve(query: str) -> RetrievalResult:
         admit(chunk_id, text, meta, distance, "section_lookup")
     named_laws = _named_law_ids(query)
     missing: list[str] = []
+    looked_up: dict[str, dict[str, str]] = {}  # named section -> {law_id: law name} admitted for it
     if cfg.section_lookup_max:
         index = _derived_indexes()["sections"] if named_sections(query) else {}
         for number, sub in named_sections(query):
@@ -463,6 +466,9 @@ def retrieve(query: str) -> RetrievalResult:
                 per_law[law] = per_law.get(law, 0) + 1
                 admit(chunk_id, text, meta, distance, "section_lookup")
                 low_relevance = False  # the question's own section is in hand
+                if chunk_id in chunks:
+                    label = f"{number}({sub})" if sub else number
+                    looked_up.setdefault(label, {})[law] = meta.get("law_name", "")
 
     for candidate in kept:
         admit(candidate.chunk_id, candidate.text, candidate.meta, candidate.distance, "search", candidate.score)
@@ -504,6 +510,12 @@ def retrieve(query: str) -> RetrievalResult:
         for chunk_id, text, meta, distance in rows:
             admit(chunk_id, text, meta, distance, "cross_reference")
 
+    laws_in_play = [] if named_laws else _laws_in_play(list(chunks.values()), best_score, cfg)
+    ambiguous_sections = {
+        label: in_play
+        for label, laws in looked_up.items()
+        if len(in_play := [name for name in laws.values() if name in laws_in_play]) >= 2
+    }
     return RetrievalResult(
         chunks=list(chunks.values()),
         low_relevance=low_relevance,
@@ -515,9 +527,10 @@ def retrieve(query: str) -> RetrievalResult:
         # relevant hit cross-references), so report only what stayed out.
         trimmed_chunk_ids=[cid for cid in dict.fromkeys(trimmed) if cid not in chunks],
         best_rerank_score=best_score,
-        laws_in_play=[] if named_laws else _laws_in_play(list(chunks.values()), best_score, cfg),
+        laws_in_play=laws_in_play,
         indexed_law_keys=set(_derived_indexes()["law_keys"]),
         missing_sections=missing,
+        ambiguous_sections=ambiguous_sections,
     )
 
 

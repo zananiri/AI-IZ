@@ -1,0 +1,1013 @@
+{
+ "q01": {
+  "id": "q01",
+  "type": "answerable",
+  "question": "היכן מקום מושבו של בית המשפט הצבאי בהליכים לפי החוק?",
+  "gold_answer": "בירושלים.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 4"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 4"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "מקום מושבו של בית המשפט הצבאי בהליכים לפי החוק הוא בירושלים.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:4",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "4",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 34,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states that the seat of the military court is in Jerusalem, as confirmed by the gold answer. No fabricated specifics are present.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q02": {
+  "id": "q02",
+  "type": "answerable",
+  "question": "לכמה זמן מתמנה שופט בערכאה הראשונה ובערכאת הערעור?",
+  "gold_answer": "שבע שנים בערכאה הראשונה ועשר שנים בערכאת הערעור. שופט שהחל בדיון רשאי לסיים אותו בתוך שישה חודשים מתום התקופה.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 6(א)",
+   "oct7-prosecution-2026 6(ב)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 6(א)",
+   "oct7-prosecution-2026 6(ב)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "מינוי שופט בערכאה הראשונה הוא לתקופה של שבע שנים, ובערכאת הערעור - עשר שנים.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:6",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "6",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 26,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states the seven-year term for the first instance court and the ten-year term for the appellate court, matching the gold answer. It does not add any fabricated specifics or contradict the gold answer.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q03": {
+  "id": "q03",
+  "type": "answerable",
+  "question": "על עבירות שבוצעו באילו תאריכים חל החוק?",
+  "gold_answer": "עבירות שבוצעו בין 7 באוקטובר 2023 ל־10 באוקטובר 2023, לרבות עבירה שבוצעה לאחר התקופה נגד מי שנחטף באותם ימים לרצועת עזה, לרבות חללים.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 3(א)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 3(א)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "החוק חל על עבירות שבוצעו בין יום כ\"ב בתשרי התשפ\"ד (7 באוקטובר 2023) ובין יום כ\"ה בתשרי התשפ\"ד (10 באוקטובר 2023).",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-11:3",
+    "law": "",
+    "section": "",
+    "verified": false
+   }
+  ],
+  "escalation_reasons": [
+   "1 citation(s) could not be verified against their sources",
+   "Numbers in the answer not found in the cited sources: 7, 2023, 10"
+  ],
+  "seconds": 23,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states the dates (7–10 October 2023) in both the Hebrew and Gregorian calendars, matching the gold answer. It does not add or contradict any information.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q04": {
+  "id": "q04",
+  "type": "answerable",
+  "question": "לתקופות של כמה ימים ניתן להאריך מעצר עד תום ההליכים?",
+  "gold_answer": "לתקופות של עד 30 ימים כל פעם, וניתן לחזור ולצוות כך מזמן לזמן, במקום 7 ימים כל פעם ועד 30 ימים בסך הכול.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 26(1)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 26(1)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "לתקופות של 90 ימים ניתן להאריך מעצר עד תום ההליכים.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:26",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "26",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 18,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer states 90 days, but the gold answer specifies up to 30 days at a time, with a total of 30 days. The answer contradicts the gold answer by providing an incorrect number.",
+  "fabricated_specifics": true,
+  "contradiction_check": {
+   "contradicts_gold": true,
+   "conflict": "the answer states 90 days, whereas the gold answer states up to 30 days each time, with a total of 30 days."
+  },
+  "needs_review": false,
+  "answer": 0.0,
+  "score": 0.6666666666666666
+ },
+ "q05": {
+  "id": "q05",
+  "type": "answerable",
+  "question": "באילו מועדים מדווח שר הביטחון לכנסת, ועד מתי?",
+  "gold_answer": "בכתב, לוועדת החוקה, חוק ומשפט, ב־1 בינואר, ב־1 באפריל, ב־1 ביולי וב־1 באוקטובר בכל שנה, עד תחילת ההליך הראשון לפי החוק.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 38"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 38"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "שר הביטחון מ報導 לוועדת החוקה, חוק ומשפט של הכנסת, ב־1 בינואר, באפריל, ביולי וב октяבר בכל שנה, עד לתחילתו של ההליך הראשון לפי חוק זה.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:38",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "38",
+    "verified": false
+   }
+  ],
+  "escalation_reasons": [
+   "1 citation(s) could not be verified against their sources"
+  ],
+  "seconds": 26,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states the dates (1 January, April, July, and October) and the recipient (the Committee for Law, Constitution, and Justice of the Knesset), as well as the condition that reporting occurs until the start of the first process under the law. The wording is slightly different but does not contradict the gold answer.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q06": {
+  "id": "q06",
+  "type": "answerable",
+  "question": "תוך כמה זמן יועבר לעצור פרוטוקול דיון שהתקיים בהיוועדות חזותית?",
+  "gold_answer": "בלא שיהוי, באמצעות שירות בתי הסוהר, ולא יאוחר מ־24 שעות ממועד הדיון.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 25(א)(7)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 25(א)(7)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "פרוטוקול הדיון והחלטות בית המשפט יועברו לשירות בתי הסוהר, בלא יהיוי, לשם העברתם לעצור או לאסיר בהקדם האפשרי ולא יאוחר מ־24 שעות ממועד הדיון בעניינו.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:25(א)",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "25(א)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 24,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states that the protocol and court decisions are transferred to the prison service without delay, to be delivered to the detainee or prisoner as soon as possible, but no later than 24 hours after the hearing. This matches the gold answer, which also mentions the 24-hour timeframe and the transfer to the prison service without delay.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q07": {
+  "id": "q07",
+  "type": "answerable",
+  "question": "כיצד מכריע מותב שבו נחלקו דעות השופטים?",
+  "gold_answer": "דעת הרוב, על אף תקנה 31 לתקנות ההגנה.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 16(ד)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 16(ד)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "מותב שבו נחלקו דעות השופטים מכריע על ידי דעת הרוב.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:16",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "16",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 19,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states that a bench where judges have differing opinions is decided by the majority opinion, which aligns with the gold answer. It does not introduce any fabricated specifics or contradict the gold answer.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q08": {
+  "id": "q08",
+  "type": "answerable",
+  "question": "אילו חלקים של המשפט ישודרו באתר אינטרנט?",
+  "gold_answer": "תחילת המשפט, דברי הפתיחה, והדיונים שבהם מוקראים הכרעת הדין וגזר הדין, בכפוף לאיסורי פרסום. לגבי ערעור, ערכאת הערעור תחליט אם לשדר.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 12(ג)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 12(ג)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "המשפט, דברי פתיחה והדיונים שבהם יוקראו הכרעת הדין וגזר הדין לפי חוק סדר הדין הפלילי ישודרו באתר אינטרנט.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:12(ג)",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "12(ג)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 20,
+  "verdict": "partially_correct",
+  "judge_explanation": "The answer correctly mentions that the beginning of the trial, opening statements, and the hearings where the judgment and sentence are read are to be broadcast online. However, it adds the phrase 'according to the Criminal Procedure Law,' which is not mentioned in the gold answer. While this may be factually accurate, it introduces a specific legal reference not present in the gold answer, making it partially correct rather than fully correct.",
+  "fabricated_specifics": false,
+  "contradiction_check": {
+   "contradicts_gold": false,
+   "conflict": "none"
+  },
+  "needs_review": true,
+  "answer": 0.5,
+  "score": 0.8333333333333334
+ },
+ "q09": {
+  "id": "q09",
+  "type": "answerable",
+  "question": "מה קורה אם נאשם שנגזר עליו עונש מוות לא הגיש ערעור?",
+  "gold_answer": "רואים כאילו הוגש ערעור מטעמו.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 11"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 11"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "אם נאשם שנגזר עליו עונש מוות לא הגיש ערעור, רואים כאילו הוגש עליו ערעור מטעמו.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:11",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "11",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 19,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states that if a defendant sentenced to death does not file an appeal, it is treated as if an appeal was filed on their behalf. This aligns with the gold answer and accurately reflects the legal principle in Israeli law.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q10": {
+  "id": "q10",
+  "type": "answerable",
+  "question": "אילו דיונים חייבים להתקיים בנוכחות הנאשם באולם, והאם יש חריגים?",
+  "gold_answer": "חמישה דיונים: תשובה לכתב האישום, עדות הנאשם בבירור האשמה, הכרעת הדין, עדות או הודעה בשלב הראיות לעונש, וגזר הדין. חריגים: לבקשת הנאשם באמצעות סניגורו, דיונים (1) ו־(4) יכולים להתקיים בהיוועדות חזותית; בסיכון ביטחוני מוגבר, לבקשת התביעה ובמקרים חריגים, דיונים (1), (3) ו־(5) יכולים להתקיים בהיוועדות חזותית, ובלבד שאין פגיעה בהגינות ההליך.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 23(ב)",
+   "oct7-prosecution-2026 23(ג)",
+   "oct7-prosecution-2026 23(ד)"
+  ],
+  "citation": 0.3333333333333333,
+  "cited_hits": [
+   "oct7-prosecution-2026 23(ב)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "דיונים חייבים להתקיים בנוכחות הנאשם באולם לפי חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026, ובפרט:\n\n\n\n\n\n\n\n\nדיון שבו משיב הנאשם לכתב האישום לפי סעיף 152 לחוק סדר הדין הפלילי;\nדיון שנשמעת בו עדות הנאשם בשלב בירור האשמה;\nדיון שנשמעת בו הכרעת דין לפי סעיף 182 לחוק סדר הדין הפלילי;\nדיון שנשמעת בו עדות הנאשם בשלב הראיות לקביעת העונש, או נמסרת הודעתו לפי סעיף 189 לחוק סדר הדין הפלילי;\nדיון שנשמע בו גזר דין לפי סעיף 193 לחוק סדר הדין הפלילי;\nדיון בבית המשפט הצבאי, שהוא אחד מהדיונים המנויים בסעיף קטן (ב) יתקיים בנוכחות הנאשם בבית המשפט;\n\nהדרישה להתקיים בנוכחות הנאשם באולם תלויה על סוג הדיון, ובעדיפות מסוימת, יש חריגים לדרישה זו, בהתאם להוראות חוק זה:\n\n\n\n\nבמהלך תקופה שבה נתון נאשם בהליך המתקיים לפי חוק זה במעצר, לא יתקיימו שני דיוני מעצר ברצף שלא בנוכחותו באולם בית המשפט, אלא אם כן ביקש הנאשם באמצעות סניגורו להשתתף בדיון בדרך של היוועדות חזותית;\nלא התייצב נאשם לדיון ולא השתתף בדיון בדרך של היוועדות חזותית בהתאם להוראות פרק ז', ומצא בית המשפט הצבאי כי לא הייתה סיבה מוצדקת לאי־התייצבותו או אי־השתתפותו, או כי על אף קיומה של סיבה מוצדקת יש צורך של ממש בקידום ההליך בלא דיחוי, רשאי בית המשפט הצבאי להורות על קיום דיון אף בלא נוכחותו או השתתפותו בהיוועדות חזותית.\n\nהענות על שאלות נוספות על החריגים לדרישה להתקיים בנוכחות הנאשם באולם תלוות על ניתוח מפורט של הظروف הספציפיות של הדיון, לפי הוראות חוק זה.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:23(ב)",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "23(ב)",
+    "verified": true
+   },
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:23(א)",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "23(א)",
+    "verified": true
+   },
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:24",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "24",
+    "verified": false
+   },
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:19",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "19",
+    "verified": false
+   }
+  ],
+  "escalation_reasons": [
+   "2 citation(s) could not be verified against their sources"
+  ],
+  "seconds": 180,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer incorrectly references 'חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ״ו-2026', which is not a real law in Israeli criminal procedure. This is a fabricated law and not supported by the gold answer. Additionally, the answer introduces new, specific legal provisions that are not mentioned in the gold answer, making it factually incorrect in relation to the actual law.",
+  "fabricated_specifics": true,
+  "contradiction_check": {
+   "contradicts_gold": false,
+   "conflict": "none"
+  },
+  "needs_review": true,
+  "answer": 0.0,
+  "score": 0.4444444444444444
+ },
+ "q11": {
+  "id": "q11",
+  "type": "answerable",
+  "question": "האם נאשם שאינו מיוצג יקבל סניגור מהסניגוריה הציבורית?",
+  "gold_answer": "לא. בית המשפט ימנה לו סניגור, אבל לא מטעם הסניגוריה הציבורית.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 15(ב)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 15(ב)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "נאשם שאינו מיוצג לא יקבל סניגור מהסניגוריה הציבורית.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:15",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "15",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 17,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states that an unrepresented defendant will not receive a lawyer from the Public Defender's Office. This aligns with the gold answer, which clarifies that while the court will appoint a lawyer, it will not be from the Public Defender's Office. The answer does not add or contradict any information.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q12": {
+  "id": "q12",
+  "type": "answerable",
+  "question": "כיצד יפורש חוזה עסקי שלא נקבעו בו הוראות לעניין אופן הפרשנות, ומהם החריגים?",
+  "gold_answer": "לפי לשונו בלבד, אלא אם מהלשון בלבד נובעת תוצאה שאינה מתקבלת על הדעת, או שעולה ממנה סתירה בין הוראות שונות בחוזה.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "contracts-amend3-2026 1 › 25(א)(2)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "contracts-amend3-2026 1 › 25(א)(2)"
+  ],
+  "cited_laws": [
+   "contracts-amend3-2026"
+  ],
+  "expected_laws": [
+   "contracts-amend3-2026"
+  ],
+  "answer_text": "הugo של חוזה empresי שלא נקבעו בו הוראות לעניין אופן הפרשנות יפורש בהתאם ללשונו בלבד, אלא אם כן מתקיים אחד מאלה: (א) מלשון החוזה בלבד נובעת תוצאה שאינה מתקבלת על הדעת; (ב) מלשון החוזה בלבד עולה סתירה בין הוראות שונות בו. \n\nבמקרה שבו הצדדים הסכימו על אופן פרשנות החוזה, יפורש החוזה בהתאם לסוגיה שהסכימו. אם לא הסכימו, יפורש החוזה בהתאם ליתר הוראות חוק זה. \n\nהugo של חוזה שיש לפרשו בהתאם ללשונו בלבד, בין לפי פסקה (1) ובין לפי פסקה (2), שהתקיימו בו הוראות פסקה (2)(א) או (ב), יפורש בהתאם ליתר הוראות חוק זה ובכלל זה פסקה (4).",
+  "cited": [
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(2)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(2)",
+    "verified": true
+   },
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(1)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(1)",
+    "verified": true
+   },
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(3)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(3)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 52,
+  "verdict": "partially_correct",
+  "judge_explanation": "The answer correctly states that a business contract is interpreted according to its wording, and mentions the exceptions (unreasonable result and contradiction between clauses). However, it adds information not present in the gold answer, such as the scenario where the parties agreed on an interpretation method, and references other sections of the law (e.g., 'paragraph (4)') which are not mentioned in the gold answer. These additions are not incorrect, but they go beyond the scope of the gold answer, making the answer only partially correct.",
+  "fabricated_specifics": false,
+  "contradiction_check": {
+   "contradicts_gold": false,
+   "conflict": "none"
+  },
+  "needs_review": true,
+  "answer": 0.5,
+  "score": 0.8333333333333334
+ },
+ "q13": {
+  "id": "q13",
+  "type": "answerable",
+  "question": "צדדים שלא היו מיוצגים על ידי עורך דין בעריכת החוזה והסכימו על אופן הפרשנות: האם ההסכמה תקפה?",
+  "gold_answer": "לא. רואים אותם כצדדים שלא הסכימו על אופן הפרשנות.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "contracts-amend3-2026 1 › 25(א)(5)(א)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "contracts-amend3-2026 1 › 25(א)(5)(א)"
+  ],
+  "cited_laws": [
+   "contracts-amend3-2026"
+  ],
+  "expected_laws": [
+   "contracts-amend3-2026"
+  ],
+  "answer_text": "ההסכמה על אופן הפרשנות של החוזה תקפה גם אם צדדים לא היו מיוצגים על ידי עורך דין, בתנאי שההסכמה נקבעה בין הצדדים.\n\nלמרות זאת, צדדים שלא היו מיוצגים על ידי עורך דין יראו כצדדים שלא הסכימו על אופן הפרשנות לפי פסקה (1) של סעיף קטן (א) של סעיף 25, ולכן ההסכמה של צדדים שלא היו מיוצגים על ידי עורך דין לא תקפה, לפי סעיף קטן (א) של סעיף 25.\n\nההסכמה תקפה רק אם צדדים היו מיוצגים על ידי עורך דין, או אם ההסכמה נקבעה באופן שמתאים לדרישות החוק. אם צדדים לא היו מיוצגים על ידי עורך דין, ההסכמה לא תקפה, לפי סעיף קטן (א) של סעיף 25.",
+  "cited": [
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(1)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(1)",
+    "verified": true
+   },
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(5)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(5)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 51,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer incorrectly states that an agreement on the interpretation of the contract is valid if the parties were not represented by a lawyer, provided the agreement was made between the parties. This contradicts the gold answer, which clearly states that such an agreement is not valid and that the parties are considered to have not agreed on the interpretation. The answer also fabricates specific legal references (e.g., 'סעיף קטן (א) של סעיף 25') that are not mentioned in the gold answer, which is not supported by the provided information.",
+  "fabricated_specifics": true,
+  "contradiction_check": {
+   "contradicts_gold": true,
+   "conflict": "The answer states that the agreement is valid if the parties agreed on the interpretation of the contract, even if they were not represented by a lawyer, but then contradicts itself by saying that such an agreement is not valid according to section 25(a)(1). It also contradicts the gold answer, which clearly states that such an agreement is not valid and that the parties are considered as not having agreed on the interpretation."
+  },
+  "needs_review": false,
+  "answer": 0.0,
+  "score": 0.6666666666666666
+ },
+ "q14": {
+  "id": "q14",
+  "type": "answerable",
+  "question": "על אילו חוזים חל הנוסח החדש של סעיף 25(א)?",
+  "gold_answer": "על חוזה שנכרת אחרי תחילת החוק. חידוש חוזה נחשב לכריתתו.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "contracts-amend3-2026 2"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "contracts-amend3-2026 2"
+  ],
+  "cited_laws": [
+   "contracts-amend3-2026"
+  ],
+  "expected_laws": [
+   "contracts-amend3-2026"
+  ],
+  "answer_text": "הנוסח החדש של סעיף 25(א) לחוק החוזים (חלק כללי) חל על חוזה שנכרת אחרי תחילתו של חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ״ו-2026; לעניין זה יראו חידוש חוזה ככריתתו.",
+  "cited": [
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:2",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "2",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 32,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states that the new wording of section 25(a) applies to a contract concluded after the commencement of the Contracts Law (General Part) (Amendment No. 3), 2026, and that a renewal of a contract is deemed its conclusion. This aligns with the gold answer, which states that the new wording applies to a contract concluded after the commencement of the law and that a renewal is deemed a conclusion. The answer provides additional legal precision by naming the specific law and amendment, which is consistent with the gold answer and does not contradict it.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q15": {
+  "id": "q15",
+  "type": "multi_law",
+  "question": "מהי \"היוועדות חזותית\"?",
+  "gold_answer": "\"תקשורת בין כמה מוקדים המאפשרת העברת תמונה וקול בזמן אמת\". ההגדרה זהה מילה במילה בחוק הבחירות (24א(ט)) ובחוק העמדה לדין (סעיף 2).",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "elections-26-2026 6(2) › 24א(ט)",
+   "oct7-prosecution-2026 2"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "elections-26-2026 6(2) › 24א(ט)",
+   "oct7-prosecution-2026 2"
+  ],
+  "cited_laws": [
+   "elections-26-2026",
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "elections-26-2026",
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "היוועדות חזותית - תקשורת בין כמה מוקדים המאפשרת העברת תמונה וקול בזמן אמת.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:2",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "2",
+    "verified": true
+   },
+   {
+    "source_id": "law-0e456e329a@2026-07-16:6(2)>24א(ט)",
+    "law": "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026",
+    "section": "6(2) › 24א(ט)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 33,
+  "verdict": "partially_correct",
+  "judge_explanation": "The answer correctly defines 'היוועדות חזותית' as 'תקשורת בין כמה מוקדים המאפשרת העברת תמונה וקול בזמן אמת', which matches the gold answer. However, it fails to attribute this definition to the specific laws mentioned in the gold answer: חוק הבחירות (24א(ט)) ובחוק העמדה לדין (סעיף 2). Since the question type is 'multi_law' and requires attribution to each law named, the answer is only partially correct.",
+  "fabricated_specifics": false,
+  "contradiction_check": {
+   "contradicts_gold": false,
+   "conflict": "none"
+  },
+  "needs_review": true,
+  "answer": 0.5,
+  "score": 0.8333333333333334
+ },
+ "q16": {
+  "id": "q16",
+  "type": "ambiguous",
+  "question": "מה קובע סעיף 25?",
+  "gold_answer": "לא חד־משמעי. בחוק החוזים, סעיף 25(א) עוסק בפרשנות חוזה (כנוסחו בתיקון). בחוק העמדה לדין, סעיף 25 עוסק באופן קיום דיון בהיוועדות חזותית.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "contracts-amend3-2026 1 › 25(א)",
+   "oct7-prosecution-2026 25"
+  ],
+  "citation": 0.5,
+  "cited_hits": [
+   "contracts-amend3-2026 1 › 25(א)"
+  ],
+  "cited_laws": [
+   "contracts-amend3-2026"
+  ],
+  "expected_laws": [
+   "contracts-amend3-2026",
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "סעיף 25 קובע את אופן הפרשנות של חוזה והראיות שיהיו קבילות לפירושו, לפי הסכמת הצדדים או לפי הוראות חוק זה.  בנוסף, סעיף 25 קובע כי חוזה שאינו חוזה עסקי, חוזה אחיד אף אם הוסכם בו אחרת, וכן חוזה עבודה או הסכם קיבוצי יפורשו לפי אומד דעתם של הצדדים, כפי שהוא משתמע מתוך החוזה ומcancellationToken העניין.  סעיף 25 קובע גם כי חוזה שיש לפרשו בהתאם ללשונו בלבד, בין לפי פסקה (1) ובין לפי פסקה (2), שהתקיימו בו הוראות פסקה (2)(א) או (ב), יפורש בהתאם ליתר הוראות חוק זה ובכלל זה פסקה (4).  סעיף 25 קובע גם כי צדדים שאינם מיוצגים על ידי עורך דין לעניין עריכת החוזה יראו כצדדים שלא הסכימו על אופן הפרשנות לפי פסקה (1).",
+  "cited": [
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(1)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(1)",
+    "verified": false
+   },
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(4)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(4)",
+    "verified": true
+   },
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(3)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(3)",
+    "verified": true
+   },
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(5)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(5)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [
+   "1 citation(s) could not be verified against their sources"
+  ],
+  "seconds": 131,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer assumes that there is a single section 25 in a single law, and provides detailed content that is not mentioned in the gold answer. The gold answer explicitly states that section 25 appears in two different laws (the Contracts Law and the Standing for Judgment Law), and the answer should have either asked which law was meant or addressed both laws. Instead, the answer fabricates specific legal content that is not supported by the gold answer, making it incorrect.",
+  "fabricated_specifics": true,
+  "answer": 0.0,
+  "score": 0.5
+ },
+ "q17": {
+  "id": "q17",
+  "type": "ambiguous",
+  "question": "אילו מספרים שונו בסעיף 62?",
+  "gold_answer": "לא חד־משמעי. בחוק הבחירות, סעיף 62(ג): \"ה־40\" הוחלף ב\"ה־43\" ו\"ה־35\" הוחלף ב\"ה־39\". בחוק העמדה לדין, סעיף 62(א) לחוק המעצרים נקרא כ־150 ימים במקום 90 בהליכים לפי החוק. זו החלה בשינויים, לא תיקון של חוק המעצרים.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "elections-26-2026 7(4) › 62(ג)",
+   "oct7-prosecution-2026 26(5)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "elections-26-2026 7(4) › 62(ג)",
+   "oct7-prosecution-2026 26(5)"
+  ],
+  "cited_laws": [
+   "elections-26-2026",
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "elections-26-2026",
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "בסעיף 62 שונו מספרים בהתאם לחוקים הבאים:  ו.\n\nבנוסף, לפי חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026, נוסיף סעיף 62ב, ובו ניתן למחוק מועמדים מרשימת המועמדים במקרים מסוימים, לפי הוראות סעיף 62א, לפי הוראות סעיף 7(5) > 62ב. \n\nהשינויים בחרו להתייחס לגרסה המעודכנת של החוק.  ו",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:26",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "26",
+    "verified": true
+   },
+   {
+    "source_id": "law-0e456e329a@2026-07-16:7(4)",
+    "law": "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026",
+    "section": "7(4)",
+    "verified": true
+   },
+   {
+    "source_id": "law-0e456e329a@2026-07-16:7(5)>62ב",
+    "law": "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026",
+    "section": "7(5) › 62ב",
+    "verified": false
+   }
+  ],
+  "escalation_reasons": [
+   "1 citation(s) could not be verified against their sources"
+  ],
+  "seconds": 115,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer incorrectly states that a new section 62b was added to the Elections Law in 2026, which is not mentioned in the gold answer and is not supported by it. This is a fabricated specific detail. Additionally, the answer does not properly address the ambiguity in the question, which is a key requirement for this type of question.",
+  "fabricated_specifics": true,
+  "answer": 0.0,
+  "score": 0.6666666666666666
+ },
+ "q18": {
+  "id": "q18",
+  "type": "not_in_law",
+  "question": "באיזו שיטה יבוצע גזר דין מוות לפי החוק?",
+  "gold_answer": "החוק אינו קובע שיטה. שר הביטחון, בהתייעצות עם שר המשפטים ובאישור ועדת החוקה, חוק ומשפט, יקבע הוראות בדבר המועד והאופן.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 40"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 40"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "השיטה לביצוע גזר דין מוות לפי החוק תינתן על ידי השר לביטחון, בהתייעצות עם שר המשפטים ובאישור ועדת החוקה, חוק ומשפט של הכנסת.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:40",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "40",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 20,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer incorrectly states that the 'method' (שיטה) of carrying out the death penalty is determined by the Minister of Defense, which is not supported by the law. The law does not specify a method; it only determines who decides the timing and manner (מועד והאופן), not the method (שיטה) itself. The answer fabricates specifics not present in the gold answer.",
+  "fabricated_specifics": true,
+  "answer": 0.0,
+  "score": 0.6666666666666666
+ },
+ "q19": {
+  "id": "q19",
+  "type": "unanswerable",
+  "question": "נגד כמה נאשמים הוגש כתב אישום לפי החוק?",
+  "gold_answer": "לא מופיע בחוק.",
+  "retrieval": null,
+  "retrieved_hits": [],
+  "citation": null,
+  "cited_hits": [],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [],
+  "answer_text": "בהתאם לחוק, הוגש כתב אישום נגד מספר נאשמים simultaneously.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:18",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "18",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 18,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer incorrectly states that the indictment was submitted against 'multiple defendants simultaneously,' which is not mentioned in the law. The gold answer correctly states that the information is not present in the law.",
+  "fabricated_specifics": true,
+  "answer": 0.0,
+  "score": 0.0
+ },
+ "q20": {
+  "id": "q20",
+  "type": "unanswerable",
+  "question": "מה קובע סעיף 25(ב1) לחוק החוזים?",
+  "gold_answer": "לא ניתן לענות. התיקון רק מפנה לסעיף 25(ב1) (הסכמה שנוגדת אותו בטלה), אבל נוסח הסעיף נמצא בחוק העיקרי, שאינו באינדקס.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "contracts-amend3-2026 1 › 25(א)(5)(ב)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "contracts-amend3-2026 1 › 25(א)(5)(ב)"
+  ],
+  "cited_laws": [
+   "contracts-amend3-2026"
+  ],
+  "expected_laws": [
+   "contracts-amend3-2026"
+  ],
+  "answer_text": "סעיף 25(ב1) לחוק החוזים (חלק כללי), התשל״ג-1973, מחייב שההסכמה של הצדדים על אופן הפרשנות החוזה לא תהיה תוקפת אם היא נוגדת להוראות סעיף קטן (ב1).",
+  "cited": [
+   {
+    "source_id": "law-b26b37a0d9@2026-01-05:1>25(א)(5)",
+    "law": "חוק החוזים (חלק כללי) (תיקון מס' 3), התשפ\"ו-2026",
+    "section": "1 › 25(א)(5)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 26,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer fabricates specific content for section 25(ב1) of the Contracts Law, claiming it requires that an agreement between the parties on the interpretation of the contract is not valid if it contradicts the provisions of subsection (ב1). However, the gold answer states that the indexed laws do not contain the text of section 25(ב1), and that the amendment only refers to it without providing its content. Therefore, the answer is incorrect because it invents specific legal content that is not supported by the indexed laws.",
+  "fabricated_specifics": true,
+  "answer": 0.0,
+  "score": 0.6666666666666666
+ },
+ "q21": {
+  "id": "q21",
+  "type": "answerable",
+  "question": "האם ניתן לקיים ישיבה בהיוועדות חזותית גם אם חלק מהחברים מתנגדים?",
+  "gold_answer": "כן, אם יושב ראש הוועדה הורה על כך ופחות מרבע מחברי הוועדה התנגדו. אם רבע או יותר התנגדו, ניתן לקיים אותה כך רק בהסכמת כל החברים, כלומר בפועל לא.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "elections-26-2026 6(2) › 24א(א)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "elections-26-2026 6(2) › 24א(א)"
+  ],
+  "cited_laws": [
+   "elections-26-2026"
+  ],
+  "expected_laws": [
+   "elections-26-2026"
+  ],
+  "answer_text": "כן, ניתן לקיים ישיבה בהיוועדות חזותית גם אם חלק מהחברים מתנגדים, בתנאי שיתקיימו הדרישות המפורטות בסעיף 24א(א) לחוק הבחירות לכנסת.",
+  "cited": [
+   {
+    "source_id": "law-0e456e329a@2026-07-16:6(2)>24א(א)",
+    "law": "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026",
+    "section": "6(2) › 24א(א)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 22,
+  "verdict": "partially_correct",
+  "judge_explanation": "The answer correctly states that a meeting can be held in a visual committee even if some members oppose it, which aligns with the gold answer. However, it does not mention the key condition from the gold answer: that the chairman must order it and that less than a quarter of the members must oppose it. The reference to section 24א(א) of the Knesset Elections Law is not incorrect, but it is not sufficient on its own to fully answer the question without explaining the specific conditions.",
+  "fabricated_specifics": false,
+  "contradiction_check": {
+   "contradicts_gold": false,
+   "conflict": "none"
+  },
+  "needs_review": true,
+  "answer": 0.5,
+  "score": 0.8333333333333334
+ },
+ "q22": {
+  "id": "q22",
+  "type": "answerable",
+  "question": "האם עד שהוא עצור יכול להעיד בהיוועדות חזותית?",
+  "gold_answer": "לא.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "oct7-prosecution-2026 23(ו)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "oct7-prosecution-2026 23(ו)"
+  ],
+  "cited_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "oct7-prosecution-2026"
+  ],
+  "answer_text": "לא י Ced עד שהוא עצור בהיוועדות חזותית. \n\nהנחייה זו מחייבת כי העצור לא ישתתף בהיוועדות חזותית כעד, לפי סעיף 23(ו) לחוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026. עם זאת, יש לשים לב כי סעיף 23(ד) מאפשר לمحكمة להורות על השתתפות העצור בהיוועדות חזותית במקרים חריגים, לאחר שנותנת לצדדים הזדמנות להשמיע את עמדתם, ובמקרה שבו אין סיכון ביטחוני מוגבר. בנוסף, סעיף 25(א) מפרט את האופן שבו יתקיים הדיון בהיוועדות חזותית, כולל היבטים כמו נוכחות של סניגור, שיחות חסויות, ותנאים לתרגם את הנאמר. עם זאת, כל אלו לא מוסיפים את האפשרות להשתתפות העצור כעד, אלא מחייבים את היעדר השתתפותו כעד.",
+  "cited": [
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:23(ו)",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "23(ו)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [
+   "Numbers in the answer not found in the cited sources: 25"
+  ],
+  "seconds": 30,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer incorrectly cites specific legal provisions (sections 23(ו), 23(ד), and 25(א)) from a law that does not exist in Israeli law as of now. These sections are fabricated and not supported by the gold answer, which simply states 'לא' (no) without citing any specific law. The gold answer does not mention any legal provisions, and the answer being graded introduces false legal details.",
+  "fabricated_specifics": true,
+  "contradiction_check": {
+   "contradicts_gold": false,
+   "conflict": "none"
+  },
+  "needs_review": true,
+  "answer": 0.0,
+  "score": 0.6666666666666666
+ },
+ "q23": {
+  "id": "q23",
+  "type": "answerable",
+  "question": "עד איזה יום לפני יום הבחירות ייקבעו מקומות הקלפיות הייעודיות למפונים?",
+  "gold_answer": "לא יאוחר מהיום ה־30 שלפני יום הבחירות, ויושב ראש הוועדה המרכזית רשאי לעדכן את הקביעה מזמן לזמן.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "elections-26-2026 6(4) › 116יז10(ה)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "elections-26-2026 6(4) › 116יז10(ה)"
+  ],
+  "cited_laws": [
+   "elections-26-2026"
+  ],
+  "expected_laws": [
+   "elections-26-2026"
+  ],
+  "answer_text": "לא יאוחר מהיום ה-30 שלפני יום הבחירות ייקבעו מקומות הקלפיות הייעודיות למפונים.",
+  "cited": [
+   {
+    "source_id": "law-0e456e329a@2026-07-16:6(4)>116יז10(ה)",
+    "law": "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026",
+    "section": "6(4) › 116יז10(ה)",
+    "verified": true
+   }
+  ],
+  "escalation_reasons": [],
+  "seconds": 43,
+  "verdict": "correct",
+  "judge_explanation": "The answer correctly states that the places for designated polling stations will be determined no later than the 30th day before the election, which matches the gold answer. It does not include any additional or conflicting information.",
+  "fabricated_specifics": false,
+  "answer": 1.0,
+  "score": 1.0
+ },
+ "q24": {
+  "id": "q24",
+  "type": "answerable",
+  "question": "משתתף טוען שקיום הדיון בהיוועדות חזותית פגע בזכותו. מה הוא יכול לעשות?",
+  "gold_answer": "לדרוש שהדבר יירשם בפרוטוקול.",
+  "retrieval": 1.0,
+  "retrieved_hits": [
+   "elections-26-2026 6(2) › 24א(ו)"
+  ],
+  "citation": 1.0,
+  "cited_hits": [
+   "elections-26-2026 6(2) › 24א(ו)"
+  ],
+  "cited_laws": [
+   "elections-26-2026",
+   "oct7-prosecution-2026"
+  ],
+  "expected_laws": [
+   "elections-26-2026"
+  ],
+  "answer_text": "משתתף שטענה שקיום הדיון בהיוועדות חזותית פגע בזוכותו רשאי לדרוש כי הדבר יירשם בפרוטוקול. \n\nבנוסף, אם הדיון התקיים בהקשר של דיון משפטי שבו נשקף סיכון ביטחוני מוגבר, רשאי בית המשפט לדחות את הדיון למועד אחר או להורות על השתתפות דרך היוועדות חזותית, אך רק אם אין בכך כדי לפגוע בהגינות ההליך. \n\nהמשתתף חייב להוכיח כי קיומה וניהול הדיון בהיוועדות חזותית פגע בזוכותו, ושהתנאים לפי סעיף זה לא התקיימו. \n\nבמקרה שבו הדיון התקיים בהקשר של דיון משפטי, על בית המשפט להעריך האם יש סיכון ביטחוני מוגבר, ולבחור בין הדחות הדיון או השתתפות דרך היוועדות חזותית, תוך שמירה על הגינות ההליך. \n\nהמשתתף יכול להגיש בקשה לבית המשפט או למנהל הדיון להוספת פרוטוקול או להתייעצות עם בית המשפט על התייעצות מוקדמת.",
+  "cited": [
+   {
+    "source_id": "law-0e456e329a@2026-07-16:6(2)>24א(ו)",
+    "law": "חוק הבחירות לכנסת העשרים ושש (הוראות מיוחדות ותיקוני חקיקה), התשפ\"ו-2026",
+    "section": "6(2) › 24א(ו)",
+    "verified": false
+   },
+   {
+    "source_id": "law-b67ec7dd22@2026-05-11:23(ד)",
+    "law": "חוק העמדה לדין בשל אירועי טבח 7 באוקטובר 2023 (טבח שמיני עצרת), התשפ\"ו-2026",
+    "section": "23(ד)",
+    "verified": false
+   }
+  ],
+  "escalation_reasons": [
+   "3 citation(s) could not be verified against their sources"
+  ],
+  "seconds": 105,
+  "verdict": "incorrect",
+  "judge_explanation": "The answer incorrectly adds specific legal provisions and procedures (e.g., 'במקרה שבו הדיון התקיים בהקשר של דיון משפטי...') that are not mentioned in the gold answer. The gold answer only mentions that the participant can demand that the matter be recorded in the protocol. The additional details in the answer are not supported by the gold answer and thus constitute fabricated specifics.",
+  "fabricated_specifics": true,
+  "contradiction_check": {
+   "contradicts_gold": false,
+   "conflict": "none"
+  },
+  "needs_review": true,
+  "answer": 0.0,
+  "score": 0.6666666666666666
+ }
+}

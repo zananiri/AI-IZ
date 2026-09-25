@@ -41,6 +41,18 @@ def _get_collection():
     return client.get_or_create_collection(_COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
 
 
+def reset_collection() -> None:
+    """Delete the whole canon collection (all codes) and recreate it empty."""
+    import chromadb
+
+    client = chromadb.PersistentClient(path=get_config().canon.vectordb_dir)
+    try:
+        client.delete_collection(_COLLECTION_NAME)
+    except Exception:  # noqa: BLE001 -- didn't exist yet
+        pass
+    _get_collection.cache_clear()
+
+
 def embed_texts(texts: list[str]) -> list[list[float]]:
     return rag_embedding.embed_texts(get_config().canon.embedding_model, texts)
 

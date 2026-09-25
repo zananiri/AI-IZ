@@ -30,9 +30,9 @@ _ANSWER_SYSTEM_PROMPT_TEMPLATE = (
     "question and a set of retrieved canon-law provisions, each already labeled with its code "
     "and canon number. Answer using ONLY the provided provisions -- if they don't actually cover "
     "the question, say so plainly rather than relying on outside knowledge. Write the answer in this "
-    "language (ISO 639-1 code): '{user_lang}'. CCEO provisions are in Latin -- translate their "
-    "substance into the answer language, but keep canon numbers exactly as given so they match the "
-    "citations panel."
+    "language (ISO 639-1 code): '{user_lang}'. CIC provisions are in Italian and CCEO provisions are "
+    "in Latin -- translate their substance into the answer language, but keep canon numbers exactly "
+    "as given so they match the citations panel."
 )
 
 

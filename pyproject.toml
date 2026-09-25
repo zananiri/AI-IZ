@@ -74,6 +74,7 @@ canon = [
     "chromadb>=0.5",
     "sentence-transformers>=3.0",
     "beautifulsoup4>=4.12",
+    "pymupdf>=1.24",  # CIC Book VI is published as a PDF
 ]
 # Legal tab: local RAG over reviewed Israeli legal sources (see
 # scripts/ingest_legal.py, src/docslides/legal/).

@@ -1,0 +1,299 @@
+{
+ "summary": {
+  "recall": 1.0,
+  "mrr": 0.9166666666666667,
+  "avg_evidence_tokens": 1169.125,
+  "avg_relevant_share": 0.5871341555198137,
+  "flagged_unanswerable": "1 of 2",
+  "flagged_answerable": "0 of 14"
+ },
+ "questions": [
+  {
+   "id": "A1",
+   "group": "A",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 1,
+   "evidence_tokens": 497,
+   "relevant_share": 1.0,
+   "low_relevance": false,
+   "best_rerank_score": 0.9974300265312195,
+   "sent": [
+    "5 [search]"
+   ],
+   "seconds": 31.3
+  },
+  {
+   "id": "A2",
+   "group": "A",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 2,
+   "evidence_tokens": 860,
+   "relevant_share": 0.42702702702702705,
+   "low_relevance": false,
+   "best_rerank_score": 0.40595731139183044,
+   "sent": [
+    "6(4)>116יז10(ד) [search]",
+    "6(4)>116יז10(ג) [search]"
+   ],
+   "seconds": 1.3
+  },
+  {
+   "id": "A3",
+   "group": "A",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 6,
+   "evidence_tokens": 2537,
+   "relevant_share": 0.1589648798521257,
+   "low_relevance": false,
+   "best_rerank_score": 0.988500714302063,
+   "sent": [
+    "6(4)>116יז10(ה) [search]",
+    "6(4)>116יז10(ד) [search]",
+    "6(4)>116יז12(א) [search]",
+    "6(4)>116יז12(ב) [search]",
+    "6(4)>116יז10(א) [search]",
+    "6(4)>116יז11 [search]"
+   ],
+   "seconds": 0.9
+  },
+  {
+   "id": "A4",
+   "group": "A",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 1,
+   "evidence_tokens": 233,
+   "relevant_share": 1.0,
+   "low_relevance": false,
+   "best_rerank_score": 0.8585289120674133,
+   "sent": [
+    "10 [search]"
+   ],
+   "seconds": 1.3
+  },
+  {
+   "id": "A5",
+   "group": "A",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 4,
+   "evidence_tokens": 1315,
+   "relevant_share": 0.1380697050938338,
+   "low_relevance": false,
+   "best_rerank_score": 0.9853391647338867,
+   "sent": [
+    "7(4) [section_lookup]",
+    "7(6) [section_lookup]",
+    "7(5)>62ב [search]",
+    "7(3) [search]"
+   ],
+   "seconds": 1.4
+  },
+  {
+   "id": "A6",
+   "group": "A",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 1,
+   "evidence_tokens": 240,
+   "relevant_share": 1.0,
+   "low_relevance": false,
+   "best_rerank_score": 0.984892725944519,
+   "sent": [
+    "preamble(קבלת החוק) [search]"
+   ],
+   "seconds": 0.9
+  },
+  {
+   "id": "B1",
+   "group": "B",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 2,
+   "evidence_tokens": 926,
+   "relevant_share": 0.4646302250803859,
+   "low_relevance": false,
+   "best_rerank_score": 0.9811620712280273,
+   "sent": [
+    "6(4)>116יז10(א) [section_lookup]",
+    "6(4)>116יז12(ג) [search]"
+   ],
+   "seconds": 1.0
+  },
+  {
+   "id": "B2",
+   "group": "B",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 1,
+   "evidence_tokens": 544,
+   "relevant_share": 1.0,
+   "low_relevance": false,
+   "best_rerank_score": 0.9968403577804565,
+   "sent": [
+    "12>2א2 [search]"
+   ],
+   "seconds": 1.2
+  },
+  {
+   "id": "B3",
+   "group": "B",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 1,
+   "evidence_tokens": 544,
+   "relevant_share": 1.0,
+   "low_relevance": false,
+   "best_rerank_score": 0.9108108282089233,
+   "sent": [
+    "12>2א2 [search]"
+   ],
+   "seconds": 1.3
+  },
+  {
+   "id": "B4",
+   "group": "B",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 6,
+   "evidence_tokens": 2536,
+   "relevant_share": 0.13059250302297462,
+   "low_relevance": false,
+   "best_rerank_score": 0.9963192939758301,
+   "sent": [
+    "6(2)>24א(ב) [search]",
+    "8(3) [search]",
+    "6(2)>24א(א) [search]",
+    "6(2)>24א(ג) [search]",
+    "6(2)>24א(ח) [search]",
+    "6(2)>24א(ד) [search]"
+   ],
+   "seconds": 1.3
+  },
+  {
+   "id": "B5",
+   "group": "B",
+   "answerable": true,
+   "rank": 2,
+   "found": true,
+   "chunks": 2,
+   "evidence_tokens": 728,
+   "relevant_share": 0.4988399071925754,
+   "low_relevance": false,
+   "best_rerank_score": 0.874582052230835,
+   "sent": [
+    "6(6)>132א(ד) [section_lookup]",
+    "6(6)>132א(ה) [section_lookup]"
+   ],
+   "seconds": 1.4
+  },
+  {
+   "id": "B6",
+   "group": "B",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 6,
+   "evidence_tokens": 2597,
+   "relevant_share": 0.19774346793349168,
+   "low_relevance": false,
+   "best_rerank_score": 0.9724782109260559,
+   "sent": [
+    "6(4)>116יז12(ג) [search]",
+    "6(4)>116יז10(ב) [search]",
+    "6(4)>116יז10(א) [search]",
+    "6(4)>116יז11 [search]",
+    "6(4)>116יז12(א) [search]",
+    "6(4)>116יז12(ב) [search]"
+   ],
+   "seconds": 0.9
+  },
+  {
+   "id": "B7",
+   "group": "B",
+   "answerable": true,
+   "rank": 3,
+   "found": true,
+   "chunks": 6,
+   "evidence_tokens": 2271,
+   "relevant_share": 1.0,
+   "low_relevance": false,
+   "best_rerank_score": 0.7257959842681885,
+   "sent": [
+    "4(א) [section_lookup]",
+    "4(ב) [section_lookup]",
+    "6(4)>116יז10(א) [section_lookup]",
+    "6(4)>116יז10(ג) [section_lookup]",
+    "4(ג) [cross_reference]",
+    "4(ה) [cross_reference]"
+   ],
+   "seconds": 1.5
+  },
+  {
+   "id": "B8",
+   "group": "B",
+   "answerable": true,
+   "rank": 1,
+   "found": true,
+   "chunks": 5,
+   "evidence_tokens": 1704,
+   "relevant_share": 0.2040104620749782,
+   "low_relevance": false,
+   "best_rerank_score": 0.9329683780670166,
+   "sent": [
+    "4(ד) [search]",
+    "4(א) [search]",
+    "4(ג) [search]",
+    "4(ה) [search]",
+    "4(ב) [cross_reference]"
+   ],
+   "seconds": 1.3
+  },
+  {
+   "id": "C1",
+   "group": "C",
+   "answerable": false,
+   "rank": null,
+   "found": false,
+   "chunks": 2,
+   "evidence_tokens": 630,
+   "relevant_share": null,
+   "low_relevance": false,
+   "best_rerank_score": 0.7712216377258301,
+   "sent": [
+    "preamble(קבלת החוק) [search]",
+    "6(4)>116יז10(ד) [search]"
+   ],
+   "seconds": 0.7
+  },
+  {
+   "id": "C2",
+   "group": "C",
+   "answerable": false,
+   "rank": null,
+   "found": false,
+   "chunks": 1,
+   "evidence_tokens": 544,
+   "relevant_share": null,
+   "low_relevance": true,
+   "best_rerank_score": 0.27256178855895996,
+   "sent": [
+    "12>2א2 [search]"
+   ],
+   "seconds": 1.3
+  }
+ ]
+}

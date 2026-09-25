@@ -1,0 +1,166 @@
+{
+ "A1": {
+  "answer_text": "השאלה שלך קשורה לתקנות הפרסום (ת\"מ) ולתנאים של הפרסום של תכניות תכנון עירוני (ת\"מ 100) – אך חשוב להבחין כי תקנות הפרסום לא קובעות סכום ספציפי שמעליו יש צורך באישור של ועדת הפטור, אלא מגדירות תנאים כלליים לפרסום תכניות.\n\nעם זאת, לפי תקנות הפרסום (ת\"מ 100), **תכניות תכנון עירוני** (כגון תכנית עירונית, תכנית שטח עירוני, תכנית שטח עירוני-תאגידית, תכנית שטח עירוני-תאגידית-תאגידית, וכו') **חייבות להיחקר על ידי ועדת הפטור** בכל מקרה שבו **התקשרות של הוועדה המרכזית** (הממשלת ישראל) **לא מחייבת את הפרסום** לפי תקנות הפרסום.\n\nבמילים אחרות, **אין סכום ספציפי** שמעליו יש צורך באישור של ועדת הפטור. אלא ש**במקרים מסוימים** – כמו תכניות שמכילות תקנות שטח עירוני-תאגידית, תכניות שטח עירוני-תאגידית-תאגידית, או תכניות שמכילות תקנות שטח עירוני-תאגידית-תאגידית-תאגידית – **התקשרות של הוועדה המרכזית** **לא מחייבת את הפרסום** לפי תקנות הפרסום, ולכן **יש צורך באישור של ועדת הפטור**.\n\n### סיכום:\n- **אין סכום ספציפי** שמעליו יש צורך באישור של ועדת הפטור.\n- **במקרים מסוימים** – כמו תכניות שטח עירוני-תאגידית, תכניות שטח עירוני-תאגידית-תאגידית, וכו' – **התקשרות של הוועדה המרכזית** **לא מחייבת את הפרסום** לפי תקנות הפרסום, ולכן **יש צורך באישור של ועדת הפטור**.\n\nאם אתה מתייחס לתכנית מסוימת, מומלץ להתייעץ עם עורך דין או עם משרד הרשויות המקומיות כדי לקבל תשובה מדויקת לפי התכנית.",
+  "seconds": 202,
+  "verdict": "incorrect",
+  "fabricated_specifics": false,
+  "judge_explanation": "The gold answer clearly states that the amount is over 2.5 million shekels and that approval from the Patur Committee is required. The answer being graded contradicts this by stating that there is no specific amount and that the requirement for approval depends on the type of plan, not the amount. This directly contradicts the gold answer and provides incorrect information.",
+  "fact_coverage": 0.5,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "A2": {
+  "answer_text": "ה정보 הסטטיסטי על מפונים שנמסר לוועדה המרכזית (כגון מידע על מפונים, תיעוד תקציבי, תיעוד תקציבי מוסדי, וכו') מחייב שיקול של **התקנות הגנת הפרивט** וה**תקנות הגנת המידע** (המחייבות שיקול של תקינות וסודיות המידע).\n\nבמקרים רבים, מידע כזה נחשב ל**מידע סודי** או **מידע מוסדי** וחייב להישאר מוסתר או מוגבל גישה בהתאם לתקנות הגנת המידע. עם זאת, במקרים מסוימים, מידע סטטיסטי על מפונים עשוי להיות מחייב **הצגת מידע לועדה המרכזית** בהתאם לתקנות מסוימות, אך **אין תקנות מפורמות** שמחייבות מחיקה מוחלטת של המידע לאחר תום תהליך הבדיקה.\n\n### סיכום:\n- **אין תקנות מפורמות** שמחייבות מחיקה מוחלטת של המידע הסטטיסטי על מפונים לאחר מסע הבדיקה.\n- **המידע עשוי להישאר מוסתר** או **לנתח מחדש** בהתאם לתקנות הגנת המידע.\n- **המגזר המוסדי** או **המגזר הממשלתי** עשויים להחליט על מחיקה או שמירה של המידע בהתאם למדיניות הארגון.\n\nאם אתה מבקש מידע ספציפי על תקנות מסוימות או על מדיניות ספציפית של ארגון מסוים, מומלץ להתייעץ עם עורך דין או עם מוסד המוסר את המידע.",
+  "seconds": 21,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The gold answer clearly states that statistical information on candidates must be deleted by the Central Committee within 14 days after the publication of election results. The answer being graded does not mention this time limit at all and instead discusses data protection regulations and the possibility of information being classified as confidential or institutional. This contradicts the gold answer and introduces fabricated specifics about data protection regulations, which are not relevant to the specific law being referenced.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "A3": {
+  "answer_text": "היו\"ר של הוועדה המרכזית חייב לקבוע את מקומות הקלפיות הייעודיות למפונים **עד ל-30 יוני** של השנה שבה מתנהל המפונים, לפי הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הורAIT\n\nבמקרה של ספק, מומלץ להתייעץ עם עורך דין או עם מנהל המפונים כדי לקבל תשובה מדויקת לפי הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות הוראות ה",
+  "seconds": 42,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The answer incorrectly states that the chairman must set the locations by '30 June' of the year in which the elections are held. The gold answer clearly states the deadline is 'the 30th before the election day,' not a specific date like June 30. This is a fabricated specific date not supported by the gold answer.",
+  "fact_coverage": 0.5,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "A4": {
+  "answer_text": "בתקופת בחירות, לפי חוק המיסוי, יש שיעור מיסוי שונה לתקופת הבחירות, כלומר לתקופת החודשים שמתאימים לתקופת הבחירות. השיעור המיסויי בתשלומים בתקופת בחירות הוא **14.5%** (במקום השיעור הרגיל של 15%).\n\nהשיטה הזו ננקחת כדי לסייע למשווקים ולממשלת המדינה להפחית את הלחץ הפיננסי במהלך תקופת הבחירות, תוך שמירה על היקף הכסף הדרוש למשווקים.\n\nאם יש לך שאלה ספציפית או דוגמה, אשמח לעזור בה.",
+  "seconds": 11,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The gold answer states that the tax rate was changed from 25% to 18% in section 2(ב) (section 10). The answer being graded incorrectly claims the rate is 14.5% during elections, which is not supported by the gold answer. This is a fabricated specific value and contradicts the gold answer.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "A5": {
+  "answer_text": "בסעיף 62(ג) לחוק הבחירות לכנסת, שהוקם בשנת 1949, הוחלפו מספרים שנועדו להגביר את מספר המושלים של המפלגות בכנסת. המספרים שהוחלפו הם:\n\n- **12** – המספר של המושלים שנקבע למשותפת בכנסת הראשונה.\n- **15** – המספר של המושלים שנקבע למשותפת בכנסת השנייה.\n- **17** – המספר של המושלים שנקבע למשותפת בכנסת השלישית.\n- **19** – המספר של המושלים שנקבע למשותפת בכנסת הרביעית.\n- **20** – המספר של המושלים שנקבע למשותפת בכנסת החמישית.\n- **22** – המספר של המושלים שנקבע למשותפת בכנסת השישית.\n- **24** – המספר של המושליים שנקבע למשותפת בכנסת השביעית.\n- **26** – המספר של המושלים שנקבע למשותפת בכנסת השמינית.\n- **28** – המספר של המושלים שנקבע למשותפת בכנסת התשיעית.\n- **30** – המספר של המושלים שנקבע למשותפת בכנסת העשירית.\n- **32** – המספר של המושלים שנקבע למשותפת בכנסת האחת עשרה.\n- **34** – המספר של המושלים שנקבע למשותפת בכנסת השנים עשרה.\n- **36** – המספר של המושלים שנקבע למשותפת בכנסת השלושה עשרה.\n- **38** – המספר של המושלים שנקבע למשותפת בכנסת הארבעה עשרה.\n- **40** – המספר של המושלים שנקבע למשותפת בכנסת החמשה עשרה.\n- **42** – המספר של המושלים שנקבע למשותפת בכנסת השש עשרה.\n- **44** – המספר של המושלים שנקבע למשותפת בכנסת השבעה עשרה.\n- **46** – המספר של המושלים שנקבע למשותפת בכנסת השמונה עשרה.\n- **48** – המספר של המושלים שנקבע למשותפת בכנסת התשע עשרה.\n- **50** – המספר של המושלים שנקבע למשותפת בכנסת העשר עשרה.\n- **52** – המספר של המושלים שנקבע למשותפת בכנסת העשרים ואחת.\n- **54** – המספר של המושלים שנקבע למשותפת בכנסת העשרים ושתיים.\n- **56** – המספר של המושלים שנקבע למשותפת בכנסת העשרים ושלוש.\n- **58** – המספר של המושלים שנקבע למשותפת בכנסת העשרים וארבע.\n- **60** – המספר של המושלים שנקבע למשותפת בכנסת העשרים וחמש.\n- **62** – המספר של המושלים שנקבע למשותפת בכנסת העשרים ושש.\n- **64** – המספר של המושלים שנקבע למשותפת בכנסת העשרים ושבע.\n- **66** – המספר של המושלים שנקבע למשותפת בכנסת העשרים ושמונה.\n- **68** – המספר של המושלים שנקבע למשותפת בכנסת העשרים ותשעה.\n- **70** – המספר של המושלים שנקבע למשותפת בכנסת העשרים עשרה.\n\nהמספרים הללו הוחלפו על פי סעיף 62(ג) לחוק הבחירות לכנסת, כדי להגביר את מספר המושלים של המפלגות בכנסת, בהתאם למספר המצביעים שקיבלו.",
+  "seconds": 42,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The answer provides a long list of numbers and details about the number of members allocated to parties in various Knessets, which is not related to the question. The gold answer clearly states that in section 62(ג) of the Elections Law, the numbers '40' and '35' were replaced with '43' and '39' respectively, citing section 7(4). The answer given does not mention these specific numbers or the correct section, and instead fabricates a detailed but irrelevant list of numbers.",
+  "fact_coverage": 0.25,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "A6": {
+  "answer_text": "החוק התקבל בכנסת כאשר קיבלה את ה**אישור הרוב** (לפחות 61 קבוצות) ב**מצב של קואליציה** או ב**מצב של קואליציה מוגזמת** (במקרה של סכנת פסיקה). \n\nאם אתה מבקש מידע על חוק ספציפי, אנא ציין את שמו, וسאך אספק לך תשובה מדויקת.",
+  "seconds": 10,
+  "verdict": "incorrect",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer does not address the question, which asks for the date when the law was accepted by the Knesset. Instead, it discusses conditions under which a law might be accepted (majority approval, coalition, etc.), which is not relevant to the specific question. The gold answer provides a specific date, which the answer ignores and does not contradict directly, but fails to answer the question.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "B1": {
+  "answer_text": "המונח \"מפונה\" אינו מופיע באופן מפורש בחוקים העוסקים בדרישות למכירת נכסים, אך הוא משמש בדרך כלל כמונח כללי לתיאור נכסים שמכור בהם מבקש למכור נכס בדרכים מסוימות, בהתאם לדרישות החוק.\n\nבמונחים של חוק שוק המקרקעין (1965), ובפרט בתקנות הדרישות למכירת נכסים, מושג \"מפונה\" משמש בדרך כלל לתיאור נכסים שמכור בהם מבקש למכור נכס בדרכים מסוימות, בהתאם לדרישות החוק.\n\nלדוגמה, לפי תקנה 10 לתקנות חוק שוק המקרקעין (1965), מבקש למכור נכס חייב לספק מידע מסוים על הנכס, ובמקרים מסוימים, כמו נכסים שמכור בהם מבקש למכור נכס בדרכים מסוימות, הוא נחשב \"מפונה\".\n\nבמילים אחרות, \"מפונה\" הוא מונח כללי לתיאור נכסים שמכור בהם מבקש למכור נכס בדרכים מסוימות, בהתאם לדרישות החוק, ומכאן שדרישות הפרסום וההעניק של מידע על הנכס תקפות גם על נכסים שמכור בהם מבקש למכור נכס בדרכים מסוימות.\n\nאם יש לך שאלה ספציפית או דוגמה מסוימת, אשמח לעזור בה.",
+  "seconds": 19,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The answer incorrectly defines 'מפונה' as a term related to real estate sales regulations, specifically under the Real Estate Law (1965), which is unrelated to the gold answer. The gold answer clearly states that 'מפונה' refers to someone who left their place of residence due to the security situation since October 7, 2023, and has not yet returned. The answer provided fabricates a legal definition not supported by the gold answer.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "B2": {
+  "answer_text": "\"נחזות עמוקה\" היא תعبירתי שמשמשת לציון תעמולה בחירות שמכילה ניחושים או תחזיות על תוצאות הבחירות, בדרך כלל ללא התייחסות למקור או לדיוק. במילים אחרות, מדובר בתעמולה שמכילה ניחושים או תחזיות על תוצאות הבחירות, אך ללא התייחסות למקור או לדיוק, ולעיתים גם ללא התייחסות לנתונים אמינים.\n\n### מה החובה על מי שמפרסם תעמולת \"נחזות עמוקה\"?\n\nבישראל, תעמולה בחירות מחייבת התייחסות למקור, לדיוק, ולתנאי שוויון בין המועמדים. לפי **חוק הבחירות לכנסת, 1949**, יש לפרסם תעמולה בחירות בצורה שוויונית, ולשאת אחר התייחסות למקור של כל מידע שמשמש בתעמולה.\n\nבמקרים של \"נחזות עמוקה\", כלומר תחזיות או ניחושים על תוצאות הבחירות ללא התייחסות למקור או לדיוק, יש סיכוי שיתרpret על המפרסם, במיוחד אם מדובר בתעמולה שמכילה ניחושים או תחזיות על תוצאות הבחירות.\n\n### מהו הסכום של החובה?\n\nההתייחסות למקור ולחידוש תחזיות או ניחושים על תוצאות הבחירות היא חובה לפי **חוק הבחירות לכנסת, 1949**, ובפרט לפי **סעיף 10** של החוק, שמציג את הדרישות לפרסום תעמולה בחירות בצורה שוויונית.\n\nאם המפרסם מפרסם תחזיות או ניחושים על תוצאות הבחירות ללא התייחסות למקור או לדיוק, הוא עלול להיחשב כמפר של החוק, ולעיתים גם כמפר של הוראות התקשורת.\n\n### סיכום:\n\n\"נחזות עמוקה\" היא תעמולה בחירות שמכילה ניחושים או תחזיות על תוצאות הבחירות ללא התייחסות למקור או לדיוק. המפרסם של תעמולה כזו חייב להתייחס למקור, ולשאת אחר התייחסות לדיוק, בהתאם לחוק הבחירות לכנסת, 1949. אם לא יעשה כן, הוא עלול להיחשב כמפר של החוק.",
+  "seconds": 28,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The answer incorrectly defines 'nchezot amukha' (deep fake) as a type of election propaganda containing guesses or predictions about election results without citing sources or accuracy. This is not the definition provided in the gold answer, which describes it as content that appears to be original but was created digitally (including AI) or altered significantly. The answer also fabricates specifics, such as mentioning a 'sum of the obligation' and referencing 'section 10' of the Election Law, which are not supported by the gold answer.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "B3": {
+  "answer_text": "הוראת השעה בעניין נחזות עמוקה (הנקראת גם \"הנחזות העמוקה\" או \"הנחזות העמוקה\" – תרגום מדויק תלוי במקור) תקפה למשך **12 שעות** מרגע שהוראה זו ניתנה. \n\nהנחזות העמוקה היא תהליך רפואי שבו מזריקים חומר תרופתי לדם כדי להפחית את פעילות הנוירונים בדמاغה, ומכאן שזמן ההפעלה של ההוראה (הנחזות) הוא חשוב מאוד כדי להבטיח שהחומר יעבוד בצורה מיטבית.\n\nאם יש לך שאלה ספציפית יותר או מטרה להתייעץ עם רופא, מומלץ להתייעץ עם רופא או מختص רפואי.",
+  "seconds": 14,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The answer incorrectly states that the regulation is valid for 12 hours, which is not supported by the gold answer. The gold answer specifies that the regulation is valid for a period of one year from the publication of the law until the end of the year in which the elections for the 26th Knesset take place. The answer also introduces fabricated medical details about deep brain stimulation that are unrelated to the legal question.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "B4": {
+  "answer_text": "כן, אפשר לקיים בהיוועדות החזותית דיון על אישור השתתפות של רשימת מועמדים בבחירות, אך חשוב להבחין בין סוגי ההיוועדות והשיקולים המשפטיים והכליות הקשורים להן.\n\n### 1. **היוועדות החזותית (היוועדה החזותית של המועמדים):**\nהיוועדה החזותית היא הרשות המוסמכת להכריע בשאלות של מועמדות, כולל האם רשימה מוסמכת להשתתף בבחירות. ההכרעה של היועדה החזותית היא סופית וחייבת להיחשב כמחייבת, לפי החלטת הרשות המוסמכת.\n\n### 2. **האפשרות להתקיים בהיוועדות החזותית דיון על אישור השתתפות:**\nכן, אפשר לקיים דיון בהיוועדות החזותית על השאלה האם רשימה מוסמכת להשתתף בבחירות. הדיון יכול לכלול ניתוח של הדרישות החוקיות, הדרישות של הרשות המוסמכת, והסיבות לדרישה להשתתפות או לא.\n\n### 3. **השיקולים המשפטיים:**\n- **ההכרעה של היועדה החזותית היא סופית** – כלומר, החלטת היועדה היא הסופית, ואין צורך להתייעץ עם רשות אחרת.\n- **היוועדה החזותית אינה מוסמכת להתייעץ עם רשות אחרת** – כלומר, אין צורך להתייעץ עם הרשות המוסמכת או עם הרשות המנהלית, אלא להכריע לפי הדרישות החוקיות.\n\n### 4. **האפשרות להתקיים בהיוועדות החזותית דיון על אישור השתתפות:**\nכן, אפשר לקיים דיון בהיוועדות החזותית על השאלה האם רשימה מוסמכת להשתתף בבחירות. הדיון יכול לכלול ניתוח של הדרישות החוקיות, הדרישות של הרשות המוסמכת, והסיבות לדרישה להשתתפות או לא.\n\n### 5. **האפשרות להתקיים בהיוщения החזותית דיון על אישור השתתפות:**\nכן, אפשר לקיים דיון בהיוועדות החזותית על השאלה האם רשימה מוסמכת להשתתף בבחירות. הדיון יכול לכלול ניתוח של הדרישות החוקיות, הדרישות של הרשות המוסמכת, והסיבות לדרישה להשתתפות או לא.\n\n### סיכום:\nכן, אפשר לקיים בהיוועדות החזותית דיון על אישור השתתפות של רשימת מועמדים בבחירות. הדיון יכול לכלול ניתוח של הדרישות החוקיות, הדרישות של הרשות המוסמכת, והסיבות לדרישה להשתתפות או לא. ההכרעה של היועדה החזותית היא סופית, ואין צורך להתייעץ עם רשות אחרת.",
+  "seconds": 33,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The answer claims that it is possible to hold a discussion in a visual committee (היוועדה החזותית) regarding the approval of a list's participation in elections, which directly contradicts the gold answer that explicitly states this is not possible. The gold answer also references section 24א(ב), (ד), which supports the claim that such a discussion does not take place in a visual committee. The answer fabricates legal specifics not supported by the gold answer.",
+  "fact_coverage": 0.5,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "B5": {
+  "answer_text": "הסמכויות של יו\"ר הוועדה המרכזית לפי סעיף 132א של חוק המוסד (החוק הצעתי) **לא חלות על הפעלת אזעקות**.\n\nהסמכויות המפורטות בסעיף 132א כוללות, בין היתר, את היכולת לנהל דיון, להורות על סגירת הדיון, להורות על קבלת החלטות, ולבצע פעולות רשמיות בשם הוועדה. עם זאת, הפעלת אזעקות – כלומר, הפעלת תהליך של אזעקת מוסד – היא פעולה שחייבת להיעשות בהתאם לחוקים המחייבים, ובפרט לפי **חוק המוסד (החוק הצעתי)**, הפעלת אזעקות היא תהליך שחייב להיעשות בהתאם לתקנות ובהתאם לדרישות חוקיות מסוימות, ולא תלויה בסמכויות של יו\"ר הוועדה המרכזית.\n\nלכן, **היו\"ר של הוועדה המרכזית אינו רשאי להורות על הפעלת אזעקות** לפי סעיף 132א. פעולה זו תלויה על החלטת הוועדה המרכזית, ובמקרים מסוימים על החלטת הרשות המוסדית או הרשות המוסדית הלאומית, בהתאם לדרישות החוק.",
+  "seconds": 20,
+  "verdict": "partially_correct",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer correctly states that the powers of the chairman of the central committee under section 132a do not apply to the activation of alarms. However, it adds extra information not present in the gold answer, such as details about the process of activating alarms and the involvement of other bodies (the central committee, the institutional authority, etc.), which are not mentioned in the gold answer. While this does not contradict the gold answer, it goes beyond it, making it 'partially correct' rather than 'correct'.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "partial_without_context"
+ },
+ "B6": {
+  "answer_text": "מצביע מפונה קלפי ייעודית (כגון קלף מפונים, קלף מפונים מוגדר, או קלף מפונים מוגדר לפי תקנות) מתבצע בהתאם לתקנות המבוססות על הוראות הפקודה על מפונים, וכן בהתאם לתקנות שנקבעו על ידי משרד הבריאות או לפי החלטות רשות המפונים.\n\n### תהליך מצביע מפונה קלפי ייעודית למפונים:\n\n1. **התקשרות לרשות המפונים**  \n   לפני מצביע מפונה קלפי ייעודית, יש להתקשר לרשות המפונים (למשל, רשות המפונים במשרד הבריאות) ולבקש אישור או מידע על הדרישות הנדרשות.\n\n2. **הכנת הקלף**  \n   הקלף ייכין על פי הדרישות של רשות המפונים, ויתבסס על הוראות הפקודה על מפונים. לרוב, הקלף ימכיל את הדברים הבאים:\n   - שם המפונאי\n   - מספר רישיון המפונאי\n   - תאריך תחילת הרישיון\n   - תאריך סיום הרישיון\n   - פרטי המפונאי (כתובת, טלפון, מייל)\n   - פרטי המפונים (שם, תאריך לידה, תעודת זהות, מספר תעודת זהות, תאריך הכניסה למאגר המפונים)\n   - פרטי המפונים (אם מדובר במפונים רבים, יופיעו כל המפונים במאגר)\n\n3. **העלאה למאגר המפונים**  \n   לאחר הכנת הקלף, יש להעלות אותו למאגר המפונים, לפי הדרישות של רשות המפונים. לעיתים, יש להגיש את הקלף בפתק מפונים או בדוח מפונים.\n\n4. **אישור רשות המפונים**  \n   רשות המפונים תבחן את הקלף ותอนוסח את הדרישות. אם הקלף מתאים, תינתן אישור לכניסת המפונים למאגר.\n\n5. **העלאה למאגר המפונים**  \n   לאחר אישור רשות המפונים, המפונים יתנשלו למאגר המפונים, ויתווספו למאגר.\n\n### חשוב:\n- יש להתייעץ עם רשות המפונים או עם עורך דין מוסמך כדי לוודא שהקלף מוכן לפי הדרישות.\n- ייתכן שדרישות שונות בהתאם לסוג הקלף (למשל, קלף מפונים, קלף מפונים מוגדר, קלף מפונים מוגדר לפי תקנות).\n- יש להקפיד על תקינות המידע, כולל תאריכים, מספרי תעודות, ופרטי המפונים.\n\nאם יש לך מידע ספציפי על הקלף או על המפונאי, אשמח לעזור לך להכין את הקלף או להכין את הדרישות.",
+  "seconds": 35,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The answer provides a detailed, fabricated process for submitting a 'klafi yehudit' (targeted klafi) for mafonim (voters), including steps like contacting the mafonim authority, preparing a form with specific details, and uploading to a database. However, none of this is mentioned in the gold answer, which only describes the procedure as signing a declaration before the klafi committee and placing the envelope in a sealed envelope. The gold answer does not mention any involvement of the mafonim authority, forms with personal details, or a database. The answer introduces new, unsupported information, making it incorrect.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "B7": {
+  "answer_text": "השאלה שלך קשורה לפרשנות הוראות שונות בתקנות הاعتراف בדרכים (ת\"א) ובתקנות הاعتراف בדרכים (ת\"א) – אך בפועל, בתקנות הاعتراف בדרכים (ת\"א) (ת\"א 100/1968), יש שני סעיפים שמתמקדים בתקנות הاعتراف בדרכים – סעיף 4 וסעיף 116יז10 (המכונה לעיתים \"סעיף 116יז10\" או \"סעיף 116יז10\" – אך חשוב לשים לב שהסימן \"יז\" הוא סימן של תקנות, ולא סימן של סעיף). \n\nעם זאת, ייתכן שמדובר בפרשנות של תקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتر Floyd.\n\nבכל מקרה, בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדeways (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות הاعتراف בדרכים (ת\"א) – תקנות שמתמקדות בתקנות הاعتراف בדרכים – ובפרט בתקנות",
+  "seconds": 47,
+  "verdict": "abstained",
+  "fabricated_specifics": false,
+  "judge_explanation": "The answer does not provide a clear distinction between the two terms as requested. It repeatedly mentions 'תקנות הاعטרاف בדרכים (ת\"א)' but does not address the specific difference between 'רשות ציבורית' in section 4 and 'גורם ציבורי' in section 116יז10. The response appears to be incomplete and lacks the necessary information to be considered correct or partially correct. The answer does not state that it cannot find the information, but it also does not provide a meaningful response, which aligns with 'abstained' as it fails to answer the question.",
+  "fact_coverage": 0.0,
+  "trap_hits": [],
+  "classification": "abstained"
+ },
+ "B8": {
+  "answer_text": "היו\"ר של הכנסת **לא יכול** למנוע העסקה של עובד כנסת בוועדת בחירות, ולא יכול להאציל סמכות זו.  \nהסיבה לכך היא ש**העסקה של עובד כנסת בוועדת בחירות** היא חלק מה процедур האזרחיות של הכנסת, והיא מנהלת על ידי **הכנסת עצמה**, בהתאם לתקנות הכנסת.\n\n### הסבר מפורט:\n\n1. **העסקה של עובד כנסת בוועדת בחירות**:\n   - לפי **תקנות הכנסת**, כל עובד כנסת יכול להציע עצמאית, או בהדרגה, להשתתף בוועדת בחירות.\n   - הבחירה האם להשתתף בוועדת בחירות היא **לאחרונה** של העובד, והיא **לא מחייבת** את העובד.\n   - אם העובד כנסת מבקש להשתתף בוועדת בחירות, הוא **מחייב** את עצמו להשתתף בוועדת בחירות, לפי הוראות החקיקה.\n\n2. **היו\"ר של הכנסת**:\n   - היורר של הכנסת הוא ראש של הארגון, אך הוא **לא יכול להורות על סמכויות של עובדים**.\n   - הוא **לא יכול להאציל סמכות** להחליט האם עובד כנסת ישתתף בוועדת בחירות, כי זה חלק מהסמכות של העובד עצמו.\n\n3. **הסמכות של הכנסת**:\n   - הסמכות להחלטות על תקנות הכנסת, כולל תקנות הבחירת נציגים, נמצאת **בכנסת עצמה**, ולא ביו\"ר.\n   - אם יש ספק או מחלוקת לגבי תקנות הבחירה, ניתן להתייעץ עם **הממונה על בחירות** או להגיש תביעה לכנסת.\n\n### סיכום:\n- **היו\"ר של הכנסת** **לא יכול** למנוע את העסקה של עובד כנסת בוועדת בחירות.\n- **היו\"ר של הכנסת** **לא יכול להאציל סמכות** זו, כי היא שייכת לכנסת עצמה.\n\nאם יש לך שאלה ספציפית על תקנות הבחירה או על תהליך הבחירה, אשמח לעזור.",
+  "seconds": 28,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The answer incorrectly states that the Speaker of the Knesset **cannot** prevent the employment of a Knesset employee in an election committee, and that the power **cannot** be delegated. This directly contradicts the gold answer, which states that the Speaker **can** prevent the employment **under specific conditions** (when he notifies the head of the Central Election Committee of a real difficulty due to the employee's absence and no agreement was reached between them), and that the power **cannot** be delegated. The answer also fabricates information about the Knesset's procedures and the role of the Speaker, which are not supported by the gold answer.",
+  "fact_coverage": 0.5,
+  "trap_hits": [],
+  "classification": "hallucination"
+ },
+ "C1": {
+  "answer_text": "לפי חוק הבחירות לכנסת, הבחירות לכנסת ה-26 ייערכו ביום **13 באפריל 2021**.",
+  "seconds": 6,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The gold answer states that the law does not specify a date. The answer provided gives a specific date (13 April 2021), which is not supported by the gold answer and is therefore fabricated.",
+  "fact_coverage": null,
+  "trap_hits": [
+   "13 באפריל 2021"
+  ],
+  "classification": "hallucination"
+ },
+ "C2": {
+  "answer_text": "הגובה של הקנס על פרסום נחזות עמוקה בלי גילוי תלוי בתקנות הרשות להגנה על הפרטי (ה\"רשות\") ובתנאי שהנחזות נחשפה ללא אישור. לפי תקנות הרשות, קנס על פרסום נchezות עמוקה ללא אישור יכול להגיע до **100,000 ש\"ח**.\n\nבמקרים מסוימים, במיוחד אם מדובר בפרסום נchezות עמוקה של אדם אחר (למשל, נchezות של אדם אחר שחשף את עצמו), הקנס יכול להיות גבוה יותר, אך בדרך כלל הוא מוגבל ל-100,000 ש\"ח.\n\nאם יש לך מידע ספציפי על מקרה מסוים, אשמח לעזור לך לפרש אותו.",
+  "seconds": 12,
+  "verdict": "incorrect",
+  "fabricated_specifics": true,
+  "judge_explanation": "The gold answer states that the law does not specify a fine amount, but rather adds the Advertising Law to the definition of 'debt' in the Enforcement of Fines Law. The answer being graded incorrectly asserts a specific fine amount (100,000 shekels) which is not supported by the gold answer. This is a fabrication of specifics.",
+  "fact_coverage": null,
+  "trap_hits": [
+   "100,000 ש\"ח"
+  ],
+  "classification": "hallucination"
+ }
+}

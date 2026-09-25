@@ -147,3 +147,12 @@ def test_missing_contrary_note_is_auto_recorded_only_when_the_search_was_affirme
     unsupported, added = record_contrary_search_notes(memo(unresolved_questions=[], supporting_authority=[]))
     assert added == []  # an unsupported claim still has to be listed as unresolved by the model
     assert any("no supporting_authority" in e for e in validate_memorandum(unsupported, {}))
+
+
+def test_a_citation_on_a_fragment_or_a_lead_in_is_flagged():
+    evidence = {"law@1973:14": meta()}
+    for fragment in ("ובנוסף,", "שונו מספרים בהתאם לחוקים הבאים:"):
+        problems = check_draft_citations(f"{fragment} {cite()}", memo(), evidence)
+        assert "doesn't state the claim" in problems[0][-1]
+    two_tokens = f"A mistaken party may rescind. {cite()}{cite()}"  # the second shares the first's sentence
+    assert check_draft_citations(two_tokens, memo(), evidence) == {}

@@ -209,10 +209,14 @@ class LegalDraft(BaseModel):
 
 class EntailmentVerdict(BaseModel):
     """Legal tab citation verification: does the cited evidence actually
-    establish the stated relation (supports / contrary) to the claim?"""
+    establish the stated relation (supports / contrary) to the claim?
 
-    verdict: Literal["entailed", "partially_entailed", "not_entailed"]
+    explanation comes first on purpose: constrained decoding writes fields in
+    schema order, so the verifier quotes the source before it commits to a
+    verdict instead of justifying one it already gave."""
+
     explanation: str
+    verdict: Literal["entailed", "partially_entailed", "not_entailed"]
 
 
 class WordRepair(BaseModel):
@@ -228,24 +232,26 @@ class ScriptRepair(BaseModel):
 
 
 class EvalJudgement(BaseModel):
-    """scripts/eval_legal.py: grades one answer against its gold answer."""
+    """scripts/eval_legal.py: grades one answer against its gold answer.
+    explanation first: the judge compares the facts before it gives a verdict
+    (see EntailmentVerdict)."""
 
+    explanation: str = Field(description="Compare the answer's essential facts with the gold answer's, briefly")
     verdict: Literal["correct", "partially_correct", "incorrect", "abstained"]
     fabricated_specifics: bool = Field(
         description="True if the answer states a specific number, date, amount or rule that is not in the gold "
         "answer. The laws and sections it cites don't count."
     )
-    explanation: str
 
 
 class EvalContradiction(BaseModel):
     """scripts/eval_legal.py: the narrow second question asked before an answer
-    holding every key fact may be graded down."""
+    holding every key fact may be graded down. The quote comes before the verdict."""
 
+    conflict: str = Field(description="The conflicting statement, quoted, or empty if none")
     contradicts_gold: bool = Field(
         description="True only if the answer states something that conflicts with a fact in the gold answer"
     )
-    conflict: str = Field(description="The conflicting statement, quoted, or empty if none")
 
 
 class ReplyLanguage(BaseModel):

@@ -53,7 +53,7 @@ class ProvisionRecord:
     breadcrumb: str  # e.g. "Book IV: Sanctifying Function > Title VII: Marriage"
     text: str
     source_url: str
-    language: str  # "en" | "la"
+    language: str  # "it" | "la"
 
 
 @dataclass

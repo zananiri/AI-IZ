@@ -58,7 +58,10 @@ Words that are garbled or in another language count only where they make an esse
 
 fabricated_specifics: true if the answer asserts a specific number, date, amount or rule as the answer that the gold answer does not support. The laws and sections it cites are not specifics.
 
-Judge meaning, not wording. The answer may be in Hebrew. Explain briefly."""
+Judge meaning, not wording. The answer may be in Hebrew. First explain briefly (at most three sentences), comparing the answer's essential facts with the gold answer's; then give the verdict."""
+
+# The explanation comes before the verdict (llm/schemas.EvalJudgement): room for both.
+JUDGE_MAX_TOKENS = 1024
 
 
 @dataclass
@@ -101,6 +104,20 @@ def evidence_coverage(texts: list[str], groups: list[list[str]]) -> float | None
     return hit / len(groups)
 
 
+def reasoning_record(turn) -> dict:
+    """What a pipeline turn (legal/pipeline.LegalTurnResult) thought, for the run's JSON:
+    Pass 0's notes, every call's reasoning, and a timing/stop line per call -- a call that
+    stopped on "length" hit its token budget."""
+    calls = getattr(turn, "llm_calls", None) or []
+    return {
+        "analysis_notes": getattr(turn, "analysis_notes", ""),
+        "reasoning": [{"call_site": c.get("call_site"), "attempt": c.get("attempt"), "reasoning": c["reasoning"]}
+                      for c in calls if c.get("reasoning")],
+        "llm_calls": [{k: c.get(k) for k in ("call_site", "attempt", "thinking", "seconds", "prompt_tokens",
+                                              "completion_tokens", "done_reason", "error")} for c in calls],
+    }
+
+
 def with_citations(answer: str, cited: list[str]) -> str:
     """The answer as a reader sees it: its text, then the provisions its footnotes cite
     (a stripped answer hides which law says what)."""
@@ -130,7 +147,7 @@ async def contradiction(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalC
         [ChatMessage("system", CONTRADICTION_PROMPT), ChatMessage("user", _judge_input(q, answer))],
         LLMCallSite("legal_eval_judge"),
         schema=EvalContradiction,
-        sampling=SamplingParams(temperature=0.0, max_tokens=512),
+        sampling=SamplingParams(temperature=0.0, max_tokens=JUDGE_MAX_TOKENS),
     )
 
 
@@ -165,7 +182,7 @@ async def judge(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalJudgement
         ],
         LLMCallSite("legal_eval_judge"),
         schema=EvalJudgement,
-        sampling=SamplingParams(temperature=0.0, max_tokens=512),
+        sampling=SamplingParams(temperature=0.0, max_tokens=JUDGE_MAX_TOKENS),
     )
 
 
@@ -333,6 +350,9 @@ def render_report(meta: dict, questions: list[EvalQuestion], before: dict, after
                 lines.append(f"  - trap matches: {run['trap_hits']}")
             if run.get("error"):
                 lines.append(f"  - error: {run['error']}")
+            if run.get("analysis_notes"):
+                lines.append("  - analysis notes (Pass 0; its reasoning is in after.json and the audit log):")
+                lines += [f"    > {line}" for line in run["analysis_notes"].splitlines() if line.strip()]
     return "\n".join(lines) + "\n"
 
 

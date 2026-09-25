@@ -143,6 +143,7 @@ async def run_after(questions, out: Path) -> dict:
             "audit_path": turn.audit_path,
             **graded,
             **scores,
+            **ev.reasoning_record(turn),
         }
         _save(out, results)
         _log(f"AFTER {q.id}: verdict={graded['verdict']} score={scores['score']:.2f}")

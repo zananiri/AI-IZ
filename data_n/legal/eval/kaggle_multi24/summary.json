@@ -1,0 +1,51 @@
+{
+ "questions": 24,
+ "score": 78.93518518518518,
+ "answer": 50.0,
+ "retrieval": 100.0,
+ "citation": 94.92753623188405,
+ "verdicts": {
+  "correct": 10,
+  "partially_correct": 4,
+  "incorrect": 10,
+  "abstained": 0,
+  "error": 0
+ },
+ "by_type": {
+  "answerable": {
+   "questions": 18,
+   "score": 86.72839506172839,
+   "answer": 63.888888888888886,
+   "retrieval": 100.0,
+   "citation": 96.29629629629629
+  },
+  "multi_law": {
+   "questions": 1,
+   "score": 83.33333333333334,
+   "answer": 50.0,
+   "retrieval": 100.0,
+   "citation": 100.0
+  },
+  "ambiguous": {
+   "questions": 2,
+   "score": 58.33333333333333,
+   "answer": 0.0,
+   "retrieval": 100.0,
+   "citation": 75.0
+  },
+  "not_in_law": {
+   "questions": 1,
+   "score": 66.66666666666666,
+   "answer": 0.0,
+   "retrieval": 100.0,
+   "citation": 100.0
+  },
+  "unanswerable": {
+   "questions": 2,
+   "score": 33.33333333333333,
+   "answer": 0.0,
+   "retrieval": 100.0,
+   "citation": 100.0
+  }
+ }
+}

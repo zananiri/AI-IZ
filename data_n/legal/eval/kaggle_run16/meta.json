@@ -1,0 +1,8 @@
+{
+ "eval_set": "elections-law-2026-he",
+ "started": "2026-09-24T10:49:03",
+ "model (before RAG, pipeline, judge)": "qwen3:8b",
+ "judge": "qwen3:14b",
+ "DictaLM in after-RAG run": "skipped (--no-dicta)",
+ "retrieval": "BAAI/bge-m3, top_k=6, keyword=True, reranker=BAAI/bge-reranker-v2-m3, evidence budget=2500"
+}

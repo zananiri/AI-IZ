@@ -27,6 +27,9 @@ class ThinkingDefaults(BaseModel):
     tone_rewrite: bool = True
     chunk_summary: bool = False
     legal_language_id: bool = False
+    # The one Legal call that thinks: free-text notes, so no JSON grammar competes with the
+    # reasoning, and the reasoning is logged (llm/trace.py). See legal/pipeline.analyze_question.
+    legal_analysis: bool = True
     legal_research_memo: bool = False
     legal_draft: bool = False
     legal_citation_verification: bool = False
@@ -119,6 +122,11 @@ class LegalPipelineConfig(BaseModel):
     max_memo_revisions: int = 2
     max_draft_revisions: int = 1
     entailment_concurrency: int = 4
+    # Pass 0: the model reads the evidence against the question with thinking on and writes
+    # notes the memorandum and the draft both start from. Its budget covers thinking + notes,
+    # and is capped further to fit the orchestrator's max_model_len.
+    analysis_pass: bool = True
+    analysis_max_tokens: int = 4096
 
 
 class LegalConfig(BaseModel):
@@ -240,6 +248,11 @@ class ToneControlConfig(BaseModel):
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     json_output: bool = Field(default=True, alias="json")
+    # One JSON line per LLM call (llm/trace.py): call site, the model's reasoning, its output,
+    # why it stopped, token counts -- and the full prompt when llm_trace_prompts is on.
+    # None disables the file; the Legal audit log still records each turn's calls.
+    llm_trace_dir: str | None = "./data/llm_trace"
+    llm_trace_prompts: bool = True
 
     model_config = {"populate_by_name": True}
 
@@ -315,6 +328,10 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
         canon = raw.get("canon", {})
         canon = {**canon, "generation": {**canon.get("generation", {}), **canon_overrides}}
         raw = {**raw, "canon": canon}
+
+    if "DOCSLIDES_LLM_TRACE_DIR" in os.environ:  # "" disables the trace file
+        trace_dir = os.environ["DOCSLIDES_LLM_TRACE_DIR"] or None
+        raw = {**raw, "logging": {**(raw.get("logging") or {}), "llm_trace_dir": trace_dir}}
 
     return raw
 

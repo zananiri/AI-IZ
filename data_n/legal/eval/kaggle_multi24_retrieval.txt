@@ -1,0 +1,50 @@
+q01 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:4
+q02 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:6, 3527:7, 3527:5, 3527:9, 3527:8, 3527:10, 3527:11
+q03 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:3, 3527:1
+q04 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:26
+q05 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:38
+q06 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:25(א), 3527:25(א), 3527:24, 3527:25(א)
+q07 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:16
+q08 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:12(ג), 3527:12(ד)
+q09 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:11
+q10 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:24, 3527:23(ב), 3527:23(א), 3527:23(ה), 3527:13, 3527:19, 3527:23(ד), 3527:23(ג)
+q11 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:15
+q12 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3481:1>25(א)(2), 3481:1>25(א)(1), 3481:1>25(א)(3)
+q13 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3481:1>25(א)(5), 3481:1>25(א)(1)
+q14 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3481:1>25(א)(4), 3481:1>25(א)(5), 3527:25(א), 3527:25(א), 3511:25, 3481:2, 3481:1>25(א)(1), 3481:1>25(א)(3), 3481:1>25(א)(2)
+q15 multi_law    retrieved= 100% flag=no  missing=[]
+      sent: 3546:6(2)>24א(ט), 3527:2, 3527:25(א), 3527:25(א), 3527:23(א), 3527:25(א)
+q16 ambiguous    retrieved= 100% flag=no  missing=[]
+      sent: 3481:1>25(א)(5), 3481:1>25(א)(2), 3527:25(ג), 3527:25(א), 3511:25, 3481:1>25(א)(4), 3481:1>25(א)(1), 3481:1>25(א)(3)
+q17 ambiguous    retrieved= 100% flag=no  missing=[]
+      sent: 3546:7(6), 3546:7(4), 3527:26, 3546:7(5)>62ב
+q18 not_in_law   retrieved= 100% flag=no  missing=[]
+      sent: 3527:40
+q19 unanswerable retrieved=    - flag=no  missing=[]
+      sent: 3527:18
+q20 unanswerable retrieved= 100% flag=no  missing=[]
+      sent: 3481:1>25(א)(5), 3481:1>25(א)(3), 3481:1>25(א)(2), 3481:1>25(א)(4), 3481:1>25(א)(1)
+q21 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3546:6(2)>24א(א)
+q22 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3527:23(ו), 3527:23(ד), 3527:24, 3527:25(א), 3527:25(א), 3527:25(א)
+q23 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3546:6(4)>116יז10(ה), :preamble, :preamble, 3546:6(4)>116יז10(א), :preamble, :preamble
+q24 answerable   retrieved= 100% flag=no  missing=[]
+      sent: 3546:6(2)>24א(ו), 3527:23(ד)
+
+expected sections retrieved: 100%

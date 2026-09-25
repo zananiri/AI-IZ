@@ -118,8 +118,6 @@ class LLMCallSite:
         "legal_script_repair",
         "legal_eval_baseline",
         "legal_eval_judge",
-        "canon_orchestration",
-        "canon_answer",
     ]
 
 
@@ -529,7 +527,6 @@ class QwenClient:
 
 _client_singleton: QwenClient | None = None
 _legal_orchestrator_singleton: QwenClient | None = None
-_canon_generation_singleton: QwenClient | None = None
 
 
 def get_client() -> QwenClient:
@@ -548,15 +545,6 @@ def get_legal_orchestrator_client() -> QwenClient:
     return _legal_orchestrator_singleton
 
 
-def get_canon_generation_client() -> QwenClient:
-    """Answers Canon GPT questions grounded in retrieved canon-law chunks.
-    See canon/pipeline.py."""
-    global _canon_generation_singleton
-    if _canon_generation_singleton is None:
-        _canon_generation_singleton = QwenClient(get_config().canon.generation)
-    return _canon_generation_singleton
-
-
 async def aclose_all_clients() -> None:
     """Closes whichever of the above singletons were actually instantiated,
     without creating new ones just to close them -- called once at app
@@ -564,7 +552,6 @@ async def aclose_all_clients() -> None:
     for client in (
         _client_singleton,
         _legal_orchestrator_singleton,
-        _canon_generation_singleton,
     ):
         if client is not None:
             await client.aclose()

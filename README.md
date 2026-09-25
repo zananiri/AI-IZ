@@ -167,14 +167,6 @@ but this is a real, unresolved upstream clash, not a false positive. If it
 causes problems in practice, run MinerU ingestion as a separate process/venv
 instead of sharing one with the FastAPI/Gradio app.
 
-The `canon` extra (`chromadb`, `sentence-transformers`, `beautifulsoup4`) is
-needed for the **Canon GPT** tab -- a RAG pipeline over the Code of Canon
-Law and the Code of Canons of the Eastern Churches (see
-`src/docslides/canon/`). It's only required to run
-`scripts/ingest_canon_law.py` (a one-time/offline step that builds the local
-vector store at `data/canon_vectordb/`, see the script's docstring) and to
-serve the tab itself; the rest of the app imports fine without it.
-
 ### 2. Download models (ONE-TIME, ONLINE step)
 
 First, verify the configured Qwen3-32B repo still matches the current

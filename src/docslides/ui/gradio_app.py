@@ -463,127 +463,6 @@ def build_legal_tab() -> None:
     legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
 
 
-# ---------------------------------------------------------------------------
-# Canon GPT tab -- a RAG pipeline (see api/routes_canon.py, canon/pipeline.py,
-# canon/retrieval.py): an orchestrator model reformulates the question and
-# guesses which code(s) it's about, retrieval fetches matching provisions
-# from a local vector store built offline from vatican.va
-# (scripts/ingest_canon_law.py), and the orchestrator answers grounded in
-# that retrieved text. Unlike the Legal tab, citations here are real source
-# links pulled from retrieval metadata rather than model-generated text.
-# ---------------------------------------------------------------------------
-
-
-def _format_canon_citations(citations: list[dict]) -> str:
-    if not citations:
-        return "_No citations yet._"
-    lines = []
-    for c in citations:
-        label = c.get("label", "")
-        url = c.get("url")
-        breadcrumb = c.get("breadcrumb", "")
-        entry = f"[{label}]({url})" if url else label
-        if breadcrumb:
-            entry += f" — {breadcrumb}"
-        lines.append(f"- {entry}")
-    return "\n".join(lines)
-
-
-def _stream_canon_job(job_id: str, history: list):
-    """Same SSE event contract as `_stream_legal_job`; the "citations" event
-    here carries structured {label, url, breadcrumb} entries built straight
-    from retrieval metadata (see routes_canon.py), rendered as linked
-    citations instead of plain text."""
-    content_text = ""
-    status_text = "Connecting"
-    llm_status = f"\U0001f50c {status_text}..."
-    started_streaming = False
-    citations_md = "_No citations yet._"
-
-    with httpx.Client(timeout=None) as client:
-        with client.stream("GET", f"{API_BASE_URL}/api/canon-events/{job_id}") as resp:
-            event_kind = None
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                if line.startswith("event:"):
-                    event_kind = line.split(":", 1)[1].strip()
-                elif line.startswith("data:"):
-                    data = json.loads(line.split(":", 1)[1].strip())
-                    if event_kind == "status":
-                        status_text = data["message"]
-                        llm_status = f"⏳ {status_text}..."
-                    elif event_kind == "content_delta":
-                        started_streaming = True
-                        content_text += data["text"]
-                        llm_status = "✍️ Writing response..."
-                    elif event_kind == "citations":
-                        citations_md = _format_canon_citations(data.get("citations", []))
-                    elif event_kind == "done":
-                        llm_status = "✅ Done"
-                    elif event_kind == "error":
-                        content_text += f"\n\n⚠️ {data.get('message')}"
-                        started_streaming = True
-                        llm_status = "❌ Error"
-
-                    detected = detect_language(content_text[:200]) if started_streaming else None
-                    display_text = content_text if started_streaming else f"_{status_text}..._"
-                    new_history = history + [{"role": "assistant", "content": display_text}]
-                    yield (
-                        gr.update(value=new_history, rtl=_is_rtl_lang(detected)),
-                        gr.update(value=None),
-                        gr.update(value=citations_md),
-                        gr.update(value=llm_status),
-                    )
-                    if event_kind in ("done", "error"):
-                        break  # after the yield, so the final status or error still shows
-
-
-def send_canon_message(message: str, history: list):
-    message = (message or "").strip()
-    if not message:
-        yield history, gr.update(), gr.update(), gr.update()
-        return
-
-    history = history + [{"role": "user", "content": message}]
-    payload = {"messages": [{"role": "user", "content": message}]}
-
-    with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/canon-chat", json=payload)
-        resp.raise_for_status()
-        job_id = resp.json()["job_id"]
-
-    yield from _stream_canon_job(job_id, history)
-
-
-def build_canon_tab() -> None:
-    cfg = get_config()
-    gr.Markdown(
-        f"_Model: **{cfg.canon.generation.model}** via **{cfg.canon.generation.backend}** "
-        f"· retrieval: **{cfg.canon.embedding_model}** over CIC 1983 and CCEO 1990 (Latin)_"
-    )
-    with gr.Row():
-        with gr.Column(scale=3):
-            canon_chatbot = gr.Chatbot(label="Canon GPT")
-            canon_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
-            with gr.Row():
-                canon_msg_box = gr.Textbox(
-                    label="Question",
-                    scale=4,
-                    placeholder="Ask about canon law, in any language -- researched against the "
-                    "Code of Canon Law (CIC) and the Code of Canons of the Eastern Churches (CCEO)",
-                )
-                canon_send_btn = gr.Button("Send", scale=1)
-        with gr.Column(scale=1):
-            gr.Markdown("### Sources")
-            canon_citations_panel = gr.Markdown(value="_No citations yet._")
-
-    canon_outputs = [canon_chatbot, canon_msg_box, canon_citations_panel, canon_llm_status]
-    send = _glow_while_running(send_canon_message, canon_outputs, canon_msg_box)
-    canon_send_btn.click(fn=send, inputs=[canon_msg_box, canon_chatbot], outputs=canon_outputs)
-    canon_msg_box.submit(fn=send, inputs=[canon_msg_box, canon_chatbot], outputs=canon_outputs)
-
-
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="AI Workbench - Ibrahim Z.") as demo:
         gr.Markdown("# AI Workbench - Ibrahim Z.")
@@ -592,8 +471,6 @@ def build_app() -> gr.Blocks:
                 build_chat_tab()
             with gr.Tab("Legal GPT"):
                 build_legal_tab()
-            with gr.Tab("Canon GPT"):
-                build_canon_tab()
     return demo
 
 

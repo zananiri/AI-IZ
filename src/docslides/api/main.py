@@ -10,7 +10,6 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from docslides.api.routes_canon import router as canon_router
 from docslides.api.routes_chat import router as chat_router
 from docslides.api.routes_legal import router as legal_router
 from docslides.api.routes_pptx import router as pptx_router
@@ -53,7 +52,6 @@ app.include_router(upload_router)
 app.include_router(pptx_router)
 app.include_router(chat_router)
 app.include_router(legal_router)
-app.include_router(canon_router)
 
 
 @app.get("/health")

@@ -7,7 +7,7 @@
     enabled, the model's <think>...</think> block streamed separately from
     the final answer. Rendered as a collapsible reasoning panel above the
     streaming final answer.
-  * "citations" -- Legal / Canon tabs: structured source citations,
+  * "citations" -- Legal tab: structured source citations,
     rendered in a side panel rather than the chat bubble.
   * "legal_report" -- Legal tab only: the pipeline's structured output
     (research memorandum, escalation, coverage gaps) -- see

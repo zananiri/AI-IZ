@@ -233,30 +233,6 @@ legal_data:
       - 'שותפות'
       - 'קיבוץ|מושב'
 
-canon:
-  # Canon GPT tab: a genuine RAG pipeline (src/docslides/canon/) over the
-  # Code of Canon Law (CIC 1983) and Code of Canons of Eastern Churches
-  # (CCEO 1990, Latin only -- see scripts/ingest_canon_law.py header for
-  # why), ingested offline into a local ChromaDB store. `generation` defaults
-  # to the general `llm:` model below (no dedicated deployment needed, unlike
-  # the Legal tab's orchestrator) -- override it independently only if you
-  # want a different model answering canon-law questions.
-  vectordb_dir: "./data/canon_vectordb"
-  embedding_model: "BAAI/bge-m3"          # local sentence-transformers model, runs on CPU
-  top_k: 8
-  generation:
-    backend: "vllm"
-    base_url: "http://vllm:8000/v1"
-    model: "Qwen/Qwen3.5-32B-AWQ"
-    api_key: "not-needed"
-    request_timeout_s: 600
-    max_model_len: 8192
-    guided_decoding_backend: "xgrammar"
-    default_sampling:
-      temperature: 0.2
-      top_p: 0.9
-      max_tokens: 2048
-
 vllm_launch:
   # Reference command used at deploy time to sanity-check the served model
   # matches this config. See scripts/verify_vllm_launch.py.

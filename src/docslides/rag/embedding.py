@@ -1,10 +1,9 @@
-"""In-process sentence-transformers embeddings shared by the RAG tabs (Canon
-GPT, Legal GPT). Cached per model name, so two tabs configured with the same
-model (both default to BAAI/bge-m3) share one loaded copy instead of each
-holding ~2GB of weights.
+"""In-process sentence-transformers embeddings for the Legal tab and the legal corpus
+(scripts/legal_data/vectorize.py). Cached per model name and device, so callers configured with
+the same model (BAAI/bge-m3 by default) share one loaded copy instead of each holding ~2GB of weights.
 
-`sentence_transformers` is imported lazily: it lives in the optional `canon`
-/`legal` dependency groups, and importing this module must not require it.
+`sentence_transformers` is imported lazily: it lives in the optional `legal` dependency group,
+and importing this module must not require it.
 """
 
 from __future__ import annotations

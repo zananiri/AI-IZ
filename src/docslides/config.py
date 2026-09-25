@@ -36,8 +36,6 @@ class ThinkingDefaults(BaseModel):
     legal_script_repair: bool = False
     legal_eval_baseline: bool = False
     legal_eval_judge: bool = False
-    canon_orchestration: bool = True
-    canon_answer: bool = False
 
 
 class SamplingDefaults(BaseModel):
@@ -207,19 +205,6 @@ class LegalDataConfig(BaseModel):
     privacy: LegalDataPrivacyConfig = Field(default_factory=LegalDataPrivacyConfig)
 
 
-class CanonConfig(BaseModel):
-    """Canon GPT tab: RAG over the CIC and CCEO canon-law codes -- see
-    src/docslides/canon/ and scripts/ingest_canon_law.py. `generation` is a
-    full `LLMConfig`, independent from the general `llm:` section like
-    `LegalConfig`'s models are, but defaults to pointing at the same
-    deployment since no dedicated fine-tuned model is needed here."""
-
-    vectordb_dir: str = "./data/canon_vectordb"
-    embedding_model: str = "BAAI/bge-m3"
-    top_k: int = 8
-    generation: LLMConfig
-
-
 class PathsConfig(BaseModel):
     data_dir: str
     upload_dir: str
@@ -332,7 +317,6 @@ class AppConfig(BaseModel):
     llm: LLMConfig
     legal: LegalConfig
     legal_data: LegalDataConfig = Field(default_factory=LegalDataConfig)
-    canon: CanonConfig
     vllm_launch: VLLMLaunchConfig = Field(default_factory=VLLMLaunchConfig)
     paths: PathsConfig
     languages: LanguagesConfig
@@ -367,13 +351,6 @@ _LEGAL_ORCHESTRATOR_ENV_OVERRIDES = {
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL": "base_url",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL": "model",
 }
-_CANON_GENERATION_ENV_OVERRIDES = {
-    "DOCSLIDES_CANON_BACKEND": "backend",
-    "DOCSLIDES_CANON_BASE_URL": "base_url",
-    "DOCSLIDES_CANON_MODEL": "model",
-}
-
-
 def _env_overrides(env_map: dict[str, str]) -> dict[str, str]:
     return {key: os.environ[env] for env, key in env_map.items() if env in os.environ}
 
@@ -388,12 +365,6 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
         legal = raw.get("legal", {})
         legal = {**legal, "orchestrator": {**legal.get("orchestrator", {}), **orchestrator_overrides}}
         raw = {**raw, "legal": legal}
-
-    canon_overrides = _env_overrides(_CANON_GENERATION_ENV_OVERRIDES)
-    if canon_overrides:
-        canon = raw.get("canon", {})
-        canon = {**canon, "generation": {**canon.get("generation", {}), **canon_overrides}}
-        raw = {**raw, "canon": canon}
 
     if os.environ.get("DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL"):
         legal_data = {**(raw.get("legal_data") or {}), "contact_email": os.environ["DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL"]}
@@ -412,7 +383,6 @@ def get_config(path: str | Path | None = None) -> AppConfig:
     raw = _apply_env_overrides(_load_yaml(cfg_path))
     cfg = AppConfig.model_validate(raw)
     cfg.paths.ensure_exist()
-    Path(cfg.canon.vectordb_dir).mkdir(parents=True, exist_ok=True)
     for legal_dir in (
         cfg.legal.retrieval.vectordb_dir,
         cfg.legal.ingestion.sources_dir,

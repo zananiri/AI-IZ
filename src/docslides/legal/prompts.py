@@ -71,7 +71,7 @@ ANALYSIS_PROMPT = (
     _BASE_RULES
     + """
 
-TASK -- analysis notes. Before the research memorandum and the answer are written, read the evidence against the question and write short working notes: plain text, not JSON, in English, quoting the evidence verbatim in its own language. Cover, in order:
+TASK -- analysis notes. Before the research memorandum and the answer are written, read the evidence against the question and write short working notes: plain text, not JSON, in the language of the question (Hebrew for a Hebrew question) -- no English or other-language words inside its sentences -- quoting the evidence verbatim. Write the labels NOT STATED, DELEGATED, AMBIGUOUS and NOT IN INDEX exactly like that, in English capitals. Cover, in order:
 1. Question: what exactly is asked -- a rule, a number, a date, yes/no, a list? Is it about a legal rule at all, or about facts or events (how many people were charged, what happened in a case) that no statute states?
 2. Decisive provisions: the source_id of each evidence item that answers it, with its decisive words quoted. When a provision lists several items or modifications, name the one whose wording matches the question's words, and say why the others don't answer it.
 3. Direct answer, in one sentence -- or one of: NOT STATED (the indexed law doesn't say it), DELEGATED (the law leaves it for someone to set: who), AMBIGUOUS (several laws or sections match: each one's answer, separately), NOT IN INDEX (the text of a section the question names isn't in the evidence).
@@ -96,7 +96,8 @@ RESEARCH_MEMO_PROMPT = (
 TASK -- Pass A, research memorandum. Before any prose is drafted, produce the structured research memorandum (JSON). Do not draft an answer.
 - issues: the legal questions raised (I1, I2, ...).
 - facts_relied_on: facts taken from the user's message (F1, ...), source "user_input". Link claims to the facts they apply to via fact_ids.
-- governing_law: each legal proposition you rely on, with a claim_id (C1, C2, ...), its issue_id, and source_ids: the source_id of every evidence item that states it, exactly as written in the evidence (at least one). These are the ONLY claim IDs the draft may later cite. A proposition no evidence item states is not a claim -- put it in unresolved_questions instead.
+- governing_law: each legal proposition you rely on, with a claim_id (C1, C2, ...), its issue_id, and source_ids: the source_id of every evidence item that states it, exactly as written in the evidence (at least one). These are the ONLY claim IDs the draft may later cite. A proposition no evidence item states is not a claim -- put it in unresolved_questions instead. Write each claim as the rule itself, in the evidence's own words; don't name the law or section in it (source_ids carry that).
+- If no evidence item states what the question asks, governing_law is empty: say so in unresolved_questions ("the indexed law does not state ...").
 - contrary_authority: you MUST actively search the evidence for authority that limits, qualifies or contradicts EVERY supporting proposition, and record each hit (claim_id, the source's source_id, and a note on how it qualifies the claim). If a genuine search found none for a claim, say so explicitly in unresolved_questions, mentioning that claim_id -- never leave it silently empty.
 - contrary_search_performed: true only once you've actually done that search for every claim.
 - temporal_issues: version / effective-date concerns. authority_conflicts: unresolved conflicts between sources."""
@@ -118,7 +119,9 @@ TASK -- Pass B, draft. Write `answer_draft` in {language_name(reply_language)} (
 - Immediately after each sentence expressing a claim, attach a citation token -- including contrary-authority citations where they matter to the analysis; don't bury caveats. Write it exactly in this short form, with NO quotation marks anywhere inside it:
   [[CITE: claim_id=C1 | source_id=<source_id exactly as in the evidence> | relation=supports]]
   relation is "supports" for a pair listed in supporting_authority and "contrary" for one listed in contrary_authority; the claim_id/source_id pair must be one the memorandum lists. Law name, section, effective date and source type are filled in automatically from the source's metadata -- don't add them.
-- Answer the question in the first sentence: yes or no, the number, the date, the body -- or that the law does not state it, or that the question is ambiguous. Nothing later in the answer may contradict that sentence. Then give every condition, exception and qualification the cited provisions attach to that answer -- all of them, including ones the question didn't ask about -- and nothing the question doesn't need: leave out provisions that answer a different question.
+- Open with the answer itself. Start with yes or no ONLY when the question is a yes/no question (״האם ...?״); otherwise start directly with what it asks for -- the number, the date, the body, the rule -- or with the fact that the law does not state it, or that the question is ambiguous. Never repeat or restate the question. Nothing later in the answer may contradict the first sentence.
+- Then give the conditions, exceptions and qualifications the cited provisions attach to that answer -- all of them -- and nothing else: no provisions that answer a different question, no numbered recap of what you already said, no remarks that the law does not specify something unless the question asks exactly that. Keep the answer as short as the question allows.
+- Don't write law names or section numbers in the sentences: the citation tokens carry them. (Only when the question is ambiguous between laws, name each law once, at the start of its own paragraph.)
 - Each sentence that carries a citation must itself state the rule it cites -- its number, date, body or condition. Never cite a lead-in or a fragment (״לפי החוקים הבאים:״, ״ובנוסף,״), and never refer the reader to a paragraph by its number alone (״לפי פסקה (1) או (2)״) -- say what that paragraph provides.
 - Use the provision's own operative words for who does what, and on whose behalf.
 - Never type the ASCII double quote character (") inside answer_draft: it ends the JSON string and cuts the answer off. {quote_rule}
@@ -133,9 +136,11 @@ You verify legal citations. You are given a legal proposition (a claim), the dra
 - relation "supports": is the claim -- as worded in the sentence -- actually stated or directly entailed by the source text? Topical relevance is not enough.
 - relation "contrary": does the source text actually limit, qualify or contradict the claim?
 
-Judge the draft sentence as written, not the claim behind it: a sentence that doesn't itself state the proposition -- a fragment, a list lead-in ("the following laws:"), a bare connective ("in addition,"), a reference to a paragraph by number without its content -- is "not_entailed", however well the source supports the claim. So is a sentence that reverses who acts, a number, or a yes/no.
-
-First explain briefly, quoting the decisive words of the source; then give the verdict: "entailed" if the source fully establishes the asserted relation; "partially_entailed" if it establishes only part of it or the sentence overstates it; "not_entailed" otherwise."""
+verdict: "entailed" if the source fully establishes the asserted relation; "partially_entailed" if it establishes only part of it or the sentence overstates it; "not_entailed" otherwise. Explain briefly, quoting the decisive words of the source."""
+# The 25 Sept run's stricter version (judge "the sentence as written", explanation before verdict)
+# rejected 26% of citations instead of 11%, many of them correct. Fragments and lead-ins are caught
+# deterministically instead (validation.states_nothing), and a rejected sentence whose words and
+# numbers are all in its source is kept as unverified rather than removed (pipeline._grounded).
 
 def script_repair_prompt(reply_language: str) -> str:
     language = language_name(reply_language)

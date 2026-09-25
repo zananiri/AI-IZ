@@ -156,3 +156,9 @@ def test_a_citation_on_a_fragment_or_a_lead_in_is_flagged():
         assert "doesn't state the claim" in problems[0][-1]
     two_tokens = f"A mistaken party may rescind. {cite()}{cite()}"  # the second shares the first's sentence
     assert check_draft_citations(two_tokens, memo(), evidence) == {}
+
+
+def test_an_authority_conflict_that_denies_any_conflict_is_dropped():
+    cleaned = clean_memorandum(memo(authority_conflicts=["אין סתירה בין סעיף 3 לסעיף 5", "No conflict found.",
+                                                         "סעיף 3 סותר את סעיף 5"]))
+    assert cleaned.authority_conflicts == ["סעיף 3 סותר את סעיף 5"]

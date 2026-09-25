@@ -43,9 +43,11 @@ class FakeClient:
         self.json_responses = {k: list(v) for k, v in (json_responses or {}).items()}
         self.text_responses = {k: list(v) for k, v in (text_responses or {}).items()}
         self.calls = []
+        self.samplings = []  # (call site, SamplingParams) per JSON call
 
     async def complete_json(self, messages, call_site, schema, sampling=None, **_):
         self.calls.append((call_site.name, messages))
+        self.samplings.append((call_site.name, sampling))
         queue = self.json_responses.get(call_site.name)
         if not queue:
             raise AssertionError(f"unexpected JSON call to {call_site.name}")
@@ -135,7 +137,8 @@ def test_hebrew_turn_revises_memo_and_answers_with_the_verified_draft(wire):
 
 
 def test_english_turn_withholds_a_draft_whose_only_citation_fails(wire):
-    invented = CITE.replace(SOURCE, "invented:99")
+    # An invented claim too: a known claim with one source in the memo would be repaired to it.
+    invented = CITE.replace(SOURCE, "invented:99").replace('claim_id="C1"', 'claim_id="C9"')
     qwen = FakeClient(
         "qwen",
         json_responses={
@@ -532,3 +535,99 @@ def test_a_named_section_several_laws_have_is_flagged_up_front(wire, monkeypatch
     assert opening.endswith("להלן מה שקובע כל אחד מהם.")
     assert result.output["answer_draft"].endswith(cite2)
     assert not any("leaves out" in r for r in result.escalation_reasons)
+
+
+# --- 25 Sept fixes: a rejected restatement is kept, invented source ids are repaired, a cut-off draft is
+# --- redrafted with different sampling, "not stated" is an answer, "no conflict" isn't a conflict --------
+
+
+def test_a_verbatim_sentence_the_verifier_rejects_is_kept_as_unverified(wire):
+    verbatim = f"מי שהתקשר בחוזה עקב טעות רשאי לבטל את החוזה. {CITE}"
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": verbatim, "escalation_flag": False}] * 2,
+            "legal_citation_verification": [{"verdict": "not_entailed", "explanation": "misread"}] * 2,
+        },
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    assert result.output["answer_draft"] == verbatim  # not removed, not withheld
+    assert result.footnotes[0]["verified"] is False
+    assert "kept as unverified" in result.footnotes[0]["problems"][0]
+    assert any("could not be verified" in r for r in result.escalation_reasons)
+    assert pipeline._grounded("מי שהתקשר בחוזה עקב טעות רשאי לבטל את החוזה.", CHUNK_TEXT)
+    assert not pipeline._grounded("מי שהתקשר בחוזה עקב טעות רשאי לבטל אותו תוך 30 ימים.", CHUNK_TEXT)  # 30 isn't there
+    assert not pipeline._grounded("הביטול אפשרי במשך עשר שנים.", CHUNK_TEXT)
+
+
+def test_a_citation_to_an_invented_source_is_repaired_from_the_memo(wire):
+    invented = "הצד הטועה רשאי לבטל את החוזה. [[CITE: claim_id=C1 | source_id=S1 | relation=supports]]"
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": invented, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}],
+        },
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    assert result.output["answer_draft"] == f"הצד הטועה רשאי לבטל את החוזה. {CITE}"
+    assert result.footnotes[0]["verified"] and not result.output["escalation_flag"]
+    assert _audit(result)["draft_attempts"][0]["repaired_source_ids"] == [f"C1: S1 -> {SOURCE}"]
+
+
+def test_a_draft_cut_off_after_a_lead_in_is_redrafted_with_different_sampling(wire):
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": "להלן מה שקובע החוק:", "escalation_flag": False},
+                            {"answer_draft": f"הצד הטועה רשאי לבטל את החוזה. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}],
+        },
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    temperatures = [s.temperature for name, s in qwen.samplings if name == "legal_draft"]
+    assert temperatures == [0.0, 0.7]
+    revision = [m for n, m in qwen.calls if n == "legal_draft"][1][-1].content
+    assert "cut off" in revision
+    assert result.output["answer_draft"] == f"הצד הטועה רשאי לבטל את החוזה. {CITE}"
+    assert _audit(result)["draft_attempts"][0]["cut_off"] is True
+
+
+def test_nothing_in_the_evidence_is_answered_as_not_stated(wire):
+    empty = {**GOOD_MEMO, "governing_law": [], "unresolved_questions": []}
+    qwen = FakeClient(
+        "qwen",
+        json_responses={"legal_research_memo": [empty] * 3},
+        text_responses={"legal_analysis": ["3. Direct answer: NOT STATED -- no provision counts indictments."]},
+    )
+    wire(qwen)
+
+    result = _run("נגד כמה נאשמים הוגש כתב אישום לפי החוק?")
+
+    assert "legal_draft" not in qwen.names()
+    assert result.display_answer.startswith("החוק שבמאגר אינו קובע זאת")
+    assert result.escalation_reasons[0].startswith("No retrieved provision states what was asked")
+
+
+def test_a_memo_that_fails_the_gate_for_another_reason_still_gets_the_gate_notice(wire):
+    bad = {**GOOD_MEMO, "contrary_search_performed": False}
+    qwen = FakeClient(
+        "qwen",
+        json_responses={"legal_research_memo": [bad] * 3},
+        text_responses={"legal_analysis": ["Direct answer: NOT STATED"]},  # the memo has claims: not "not stated"
+    )
+    wire(qwen)
+
+    assert _run("אפשר לבטל חוזה שחתמתי בטעות?").display_answer.startswith("לא ניתן היה להפיק מזכר מחקר")

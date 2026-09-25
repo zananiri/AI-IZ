@@ -47,10 +47,18 @@ _ECHOED_ERROR_RE = re.compile(
 )
 
 
+# An "authority conflict" that says there is none ("אין סתירה בין ...") -- small models fill the field
+# anyway, and every entry escalates the turn as an unresolved conflict.
+_NO_CONFLICT_RE = re.compile(
+    r"^\s*(?:אין\s+(?:כל\s+)?סתירה|לא\s+(?:קיימת|נמצאה|קיימות|נמצאו)\s+סתיר|no\s+(?:real\s+|actual\s+)?(?:conflict|contradiction))",
+    re.IGNORECASE,
+)
+
+
 def clean_memorandum(memo: ResearchMemorandum) -> ResearchMemorandum:
     """Drops free-text list entries with no letters or digits (e.g. "],"
     leaked from a malformed generation) so they can't surface as escalation
-    reasons or count as explanations."""
+    reasons or count as explanations, and "conflicts" that deny any conflict."""
     def keep(values: list[str]) -> list[str]:
         return [v.strip() for v in values if re.search(r"\w", v) and not _ECHOED_ERROR_RE.search(v)]
 
@@ -58,7 +66,7 @@ def clean_memorandum(memo: ResearchMemorandum) -> ResearchMemorandum:
         update={
             "unresolved_questions": keep(memo.unresolved_questions),
             "temporal_issues": keep(memo.temporal_issues),
-            "authority_conflicts": keep(memo.authority_conflicts),
+            "authority_conflicts": [c for c in keep(memo.authority_conflicts) if not _NO_CONFLICT_RE.search(c)],
         }
     )
 

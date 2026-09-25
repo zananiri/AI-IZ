@@ -82,7 +82,8 @@ Section numbers: an amending law's section and the section it inserts ("6(2)" an
 Words that are garbled or in another language count only where they make an essential fact unreadable -- that fact
 is then missing.
 fabricated_specifics: true if the answer asserts a specific number, date, amount or rule the gold answer does not
-support. The laws and sections it cites are not specifics. Judge meaning, not wording. The texts may be in Hebrew.
+support. The laws and sections it cites are not specifics. Naming the law or section a rule comes from -- in the text
+or in the cited provisions -- is never fabricated and never lowers the verdict, even when the gold answer names no law. Judge meaning, not wording. The texts may be in Hebrew.
 First explain briefly (at most three sentences), comparing the answer's essential facts with the gold answer's;
 then give the verdict."""
 

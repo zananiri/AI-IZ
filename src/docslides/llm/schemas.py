@@ -211,12 +211,11 @@ class EntailmentVerdict(BaseModel):
     """Legal tab citation verification: does the cited evidence actually
     establish the stated relation (supports / contrary) to the claim?
 
-    explanation comes first on purpose: constrained decoding writes fields in
-    schema order, so the verifier quotes the source before it commits to a
-    verdict instead of justifying one it already gave."""
+    Verdict first: the explanation-first order tried on 25 Sept 2026 made the
+    8B verifier reject correct sentences far more often (11% -> 26%)."""
 
-    explanation: str
     verdict: Literal["entailed", "partially_entailed", "not_entailed"]
+    explanation: str
 
 
 class WordRepair(BaseModel):

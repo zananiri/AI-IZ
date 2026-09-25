@@ -36,6 +36,7 @@ from docslides.legal import amendments, audit, prompts, script_check
 from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.citations import (
     expand_citations,
+    format_citation,
     parse_citations,
     remove_cited_sentences,
     render_with_footnotes,
@@ -90,6 +91,18 @@ _GATE_FAILED_NOTICE = {
     "question ; aucun projet de réponse n'a donc été rédigé. La question a été signalée pour examen par un "
     "avocat habilité.",
 }
+
+_NOT_STATED_NOTICE = {
+    "en": "The indexed law does not state this: none of the retrieved provisions addresses what was asked. "
+    "The question has been flagged for review by a licensed attorney.",
+    "he": "החוק שבמאגר אינו קובע זאת: אף אחת מההוראות שנמצאו אינה עוסקת במה שנשאל. "
+    "השאלה סומנה לבדיקה של עורך דין מוסמך.",
+    "ar": "القانون المفهرس لا ينص على ذلك: لا يتناول أي من الأحكام التي تم العثور عليها ما سُئل عنه. "
+    "تم تحويل السؤال لمراجعة محامٍ مرخّص.",
+    "fr": "Le droit indexé ne le précise pas : aucune des dispositions trouvées ne traite de la question posée. "
+    "La question a été signalée pour examen par un avocat habilité.",
+}
+_NOT_STATED_RE = re.compile(r"\bNOT STATED\b")
 
 _UNVERIFIED_NOTICE = {
     "en": "The drafted answer could not be verified against the indexed sources, so it was withheld. "
@@ -457,6 +470,49 @@ async def _entailment(
             check.verdict, check.explanation = "not_entailed", f"verification call failed: {exc}"
 
 
+_GROUNDED_SHARE = 0.8  # share of a sentence's words that must be in its source to count as a restatement
+_MIN_GROUNDED_WORDS = 4
+
+
+def _grounded(sentence: str, source_text: str) -> bool:
+    """The sentence restates its source: every number in it is there, and nearly every word is (in
+    some prefix form). The 8B verifier sometimes rejects exactly such sentences -- on 25 Sept it read
+    "the Constitution Committee" as "not the Knesset" and removed q05's dates -- so a rejected
+    restatement is kept, marked unverified, instead of removed."""
+    from docslides.legal.keyword import terms
+
+    source_terms = set(terms(source_text))
+    words = [w for w in re.findall(r"\S+", sentence) if terms(w)]
+    if len(words) < _MIN_GROUNDED_WORDS or unsupported_numbers(sentence, [source_text]):
+        return False
+    present = sum(1 for w in words if set(terms(w)) & source_terms)
+    return present / len(words) >= _GROUNDED_SHARE
+
+
+def _repair_source_ids(text: str, memo: ResearchMemorandum, evidence: dict[str, ChunkMetadata]) -> tuple[str, list[str]]:
+    """A citation naming a source the evidence doesn't have ("source_id=S1") whose claim has exactly
+    one source of that relation in the memorandum: that source. The memorandum made the pairing;
+    the entailment check still verifies it."""
+    pairs: dict[tuple[str, str], set[str]] = {}
+    for relation, authorities in (("supports", memo.supporting_authority), ("contrary", memo.contrary_authority)):
+        for authority in authorities:
+            pairs.setdefault((authority.claim_id, relation), set()).add(authority.source_id)
+    pieces, cursor, repaired = [], 0, []
+    for citation in parse_citations(text):
+        pieces.append(text[cursor : citation.start])
+        cursor = citation.end
+        relation = citation.relation or "supports"
+        sources = pairs.get((citation.claim_id, relation), set())
+        if citation.source_id not in evidence and len(sources) == 1:
+            (source_id,) = sources
+            repaired.append(f"{citation.claim_id}: {citation.source_id or '(none)'} -> {source_id}")
+            pieces.append(format_citation(claim_id=citation.claim_id, source_id=source_id, relation=relation))
+        else:
+            pieces.append(citation.raw)
+    pieces.append(text[cursor:])
+    return "".join(pieces), repaired
+
+
 async def verify_citations(
     qwen: QwenClient, draft: str, memo: ResearchMemorandum, retrieval: RetrievalResult, evidence: dict[str, ChunkMetadata]
 ) -> list[CitationCheck]:
@@ -482,6 +538,12 @@ async def verify_citations(
             if not check.structural_problems
         )
     )
+    for check in checks:
+        if (check.verdict == "not_entailed" and check.relation == "supports" and not check.structural_problems
+                and _grounded(check.sentence, "\n".join(p.text for p in grouped[check.source_id]))):
+            check.verdict = "partially_entailed"
+            check.explanation = ("kept as unverified: its words and numbers are all in the cited source; "
+                                 f"the verifier said: {check.explanation}")
     return checks
 
 
@@ -584,13 +646,14 @@ async def draft_answer(
         ),
     ]
     previous: tuple[LegalDraft, list[CitationCheck], list[str]] | None = None
+    sampling = SamplingParams(temperature=0.0, max_tokens=2048)  # same memo, same draft
     for attempt in range(1 + max_revisions):
         try:
             draft = await qwen.complete_json(
                 messages,
                 LLMCallSite("legal_draft"),
                 schema=LegalDraft,
-                sampling=SamplingParams(temperature=0.0, max_tokens=2048),  # same memo, same draft
+                sampling=sampling,
                 salvage=_salvage_draft,
             )
         except Exception as exc:  # noqa: BLE001 -- malformed after every retry and not salvageable
@@ -599,19 +662,30 @@ async def draft_answer(
                 return previous
             raise DraftUnavailable(f"{type(exc).__name__}: {exc}") from exc
         as_written = draft.model_dump_json()  # short-form tokens, for the revision turn
-        draft.answer_draft = expand_citations(draft.answer_draft, evidence)
+        repaired_text, repaired = _repair_source_ids(draft.answer_draft, memo, evidence)
+        draft.answer_draft = expand_citations(repaired_text, evidence)
         checks = await verify_citations(qwen, draft.answer_draft, memo, retrieval, evidence)
         failures = _citation_failures(checks)
         no_citations = not checks and bool(memo.supporting_authority)
         if no_citations:
             failures.append("the draft contains no [[CITE]] tokens although the memorandum has supporting authority")
+        # A draft that stops after a lead-in ("... בכל אחד מהחוקים:") was most likely cut off by an
+        # ASCII double quote inside a Hebrew word. At temperature 0 the redraft repeats the same text,
+        # so it is sampled differently -- and told why.
+        cut_off = no_citations or bool(re.search(r"[:,]\s*$", strip_citations(draft.answer_draft)))
+        if cut_off:
+            failures.append("the draft stops mid-answer: it was probably cut off by an ASCII double-quote character "
+                            "inside a word -- write ״ instead, and finish every sentence with its citation token")
         uncovered = [law for law in _uncovered_laws(laws_in_play or [], [c.source_id for c in checks], evidence)
                      if law in memo_laws]
-        attempts_log.append({"attempt": attempt + 1, "draft": draft.model_dump(),
-                             "citation_checks": [asdict(c) for c in checks], "uncovered_laws": uncovered})
+        attempts_log.append({"attempt": attempt + 1, "draft": draft.model_dump(), "repaired_source_ids": repaired,
+                             "cut_off": cut_off, "citation_checks": [asdict(c) for c in checks],
+                             "uncovered_laws": uncovered})
         if (not failures and not uncovered) or attempt == max_revisions:
             return draft, checks, failures
         previous = (draft, checks, failures)
+        if cut_off:
+            sampling = SamplingParams(temperature=0.7, top_p=0.8, top_k=20, max_tokens=2048, seed=attempt + 1)
         problems = failures + [
             f"the question is ambiguous -- provisions of several laws match it ({'; '.join(laws_in_play or [])}) -- "
             f"and the memorandum has claims for {law}, but the draft doesn't cite it: say that the question is "
@@ -859,6 +933,12 @@ async def _legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnRes
     if gate_errors:
         reasons = ["The research memorandum failed validation after revision: " + "; ".join(gate_errors[:5])]
         reasons += _escalation_reasons(None, memo, retrieval, evidence, [])
+        if memo is not None and not memo.governing_law and (_NOT_STATED_RE.search(analysis_notes)
+                                                             or retrieval.low_relevance):
+            # Nothing in the evidence states what was asked -- which is the answer (a count of cases, a
+            # fine the law never set), not a failure to produce one.
+            reasons.insert(0, "No retrieved provision states what was asked (Pass 0: NOT STATED)")
+            return await _no_answer(qwen, entry, reply_language, _NOT_STATED_NOTICE, reasons, memo, retrieved)
         return await _no_answer(qwen, entry, reply_language, _GATE_FAILED_NOTICE, reasons, memo, retrieved)
 
     await status("Pass B: drafting the answer and verifying every citation")

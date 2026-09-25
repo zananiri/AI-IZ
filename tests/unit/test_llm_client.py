@@ -100,7 +100,8 @@ def test_reasoning_inline_in_think_tags_is_split_from_the_answer():
     assert QwenClient._split_thinking("just an answer") == ("", "just an answer")
 
 
-def test_the_verifier_and_the_judge_explain_before_their_verdict():
-    for schema in (EntailmentVerdict, EvalJudgement):
-        fields = list(schema.model_json_schema()["properties"])
-        assert fields.index("explanation") < fields.index("verdict")
+def test_the_judge_explains_before_its_verdict_and_the_verifier_after():
+    judge = list(EvalJudgement.model_json_schema()["properties"])
+    assert judge.index("explanation") < judge.index("verdict")
+    verifier = list(EntailmentVerdict.model_json_schema()["properties"])  # verdict first: see its docstring
+    assert verifier.index("verdict") < verifier.index("explanation")

@@ -36,7 +36,18 @@ ocr = [
     "paddleocr>=2.9",
     "paddlepaddle>=2.6",
     "pytesseract>=0.3.10",
-    "surya-ocr>=0.6",
+    # Capped at <0.20 (0.16.7/0.17.0/0.17.1 -- next release is 0.20.0):
+    # - 0.20.0 itself pins httpx<0.28, conflicting with magic-pdf's
+    #   ultralytics-platform dependency needing httpx>=0.28.
+    # - 0.21.2+ switched its transformers requirement to >=5.12.1, which
+    #   conflicts with magic-pdf's own transformers<5.0 pin.
+    # pip resolves ocr/ingestion-mineru in separate `pip install -e ".[...]"`
+    # calls (see scripts/setup.ps1), so it won't catch either conflict
+    # itself -- it'll happily downgrade httpx or upgrade transformers for
+    # surya-ocr and silently break magic-pdf (TypeError/AttributeError at
+    # OCR/formula-recognition time, not at install time). See also the
+    # `legal` extra's sentence-transformers cap.
+    "surya-ocr>=0.16.7,<0.20",
 ]
 lang = [
     "fasttext-wheel>=0.9.2",
@@ -72,7 +83,12 @@ dev = [
 # scripts/ingest_legal.py, src/docslides/legal/).
 legal = [
     "chromadb>=0.5",
-    "sentence-transformers>=3.0",
+    # Capped at <6.0: 6.x requires transformers>=5.0, incompatible with
+    # magic-pdf (ingestion-mineru extra)'s transformers<5.0 pin -- same
+    # cross-extra hazard as the `ocr` extra's surya-ocr cap above, since this
+    # extra is also installed via its own separate `pip install -e ".[legal]"`
+    # call (README / requirements-legal-data.txt), not alongside ingestion-mineru.
+    "sentence-transformers>=3.0,<6.0",
 ]
 # Bulk legal corpus: fetchers + vectorize.py in scripts/legal_data/ (src/docslides/legal_data/).
 # Use together with `legal` (chromadb, sentence-transformers). Also: requirements-legal-data.txt.

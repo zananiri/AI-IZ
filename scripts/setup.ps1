@@ -145,6 +145,36 @@ if (-not $SkipMineru) {
 Write-Host ""
 
 # ---------------------------------------------------------------------------
+# Surface any version conflict pip's resolver left behind. This is the class
+# of bug that bit us once already: `pip install -e ".[legal]"` (README.md's
+# Legal-tab step, run separately from this script) silently pulled in
+# transformers 5.x for sentence-transformers, which broke magic-pdf's
+# transformers<5.0 pin -- not an install-time error, just a quiet OCR/
+# formula-recognition failure the next time MinerU ran. pyproject.toml now
+# caps sentence-transformers/surya-ocr to stay out of transformers 5.x, but
+# `pip check` here is the safety net for whatever the next such conflict is
+# (a future extra, a future pip release picking differently, etc). The two
+# conflicts below are already known and harmless, so they're filtered out
+# instead of alarming on every run: huggingface-hub (magic-pdf wants <1.0,
+# gradio wants >=1.16 -- both packages tolerate the mismatch in practice) and
+# PyYAML (paddlex wants an exact patch version pip usually can't satisfy
+# alongside everything else -- functionally identical patch releases).
+if (-not $SkipMineru) {
+    $PipCheck = & $VenvPy -m pip check 2>&1
+    $Unexpected = $PipCheck | Where-Object {
+        $_ -notmatch "huggingface-hub" -and $_ -notmatch "PyYAML"
+    }
+    if ($Unexpected) {
+        Write-Host "-- pip check found dependency conflicts (see pyproject.toml's" -ForegroundColor Yellow
+        Write-Host "   version caps near surya-ocr/sentence-transformers for the pattern" -ForegroundColor Yellow
+        Write-Host "   this usually is) --" -ForegroundColor Yellow
+        $Unexpected | ForEach-Object { Write-Host "   $_" -ForegroundColor Yellow }
+        $Skipped.Add("pip check found conflicts -- see above")
+    }
+}
+Write-Host ""
+
+# ---------------------------------------------------------------------------
 Write-Host "== [4/7] Detecting LLM backend for this machine ==" -ForegroundColor Cyan
 $Backend = $ForceBackend
 if (-not $Backend) {

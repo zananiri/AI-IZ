@@ -15,4 +15,7 @@ mwparserfromhell>=0.6.6  # Open Law Book wikitext templates
 
 # vectorize.py
 chromadb>=0.5
-sentence-transformers>=3.0
+# Capped at <6.0: 6.x requires transformers>=5.0, which conflicts with
+# magic-pdf (ingestion-mineru extra)'s transformers<5.0 pin -- see the same
+# cap on pyproject.toml's `legal` extra.
+sentence-transformers>=3.0,<6.0

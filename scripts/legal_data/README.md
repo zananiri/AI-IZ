@@ -22,6 +22,13 @@ updated on 7 Jan 2026, while the dump is refreshed monthly (20260901 at the time
 pip install -e ".[legal,legal-data]"      # or: pip install -r requirements-legal-data.txt
 ```
 
+If you've also installed `ingestion-mineru` (MinerU/magic-pdf, see the main README), run
+`pip check` afterwards. pyproject.toml caps `sentence-transformers`/`surya-ocr` to stay off
+`transformers` 5.x for this reason, but the two extras are installed in separate `pip` calls, so a
+future version bump on either side can still land on an incompatible combination -- and it fails
+quietly (a working install, MinerU's OCR/formula-recognition breaking the next time it runs) rather
+than at install time.
+
 Set your contact address in `config/config.yaml` (`legal_data.contact_email`) or in the
 `DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL` environment variable. It goes in the User-Agent, and the
 fetchers refuse to send requests without it.

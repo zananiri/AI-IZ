@@ -22,3 +22,7 @@ legal_txt/supreme_court/
 legal_txt/metadata/
 legal_txt/_manifests/
 legal_txt/_sample/
+# The built corpus vectordb/jsonl zips (Kaggle Output): far too big for git, and rebuildable from
+# the fetch above + scripts/legal_data/vectorize.py. Install locally with install_corpus.py, or
+# upload as a private Kaggle Dataset for notebooks that need it as an input (see notebooks/).
+legal_txt/chroma_bkp/

@@ -257,6 +257,51 @@ class ReplyLanguage(BaseModel):
     language: str = Field(description="ISO 639-1 code of the language the question is written in")
 
 
+class BulkEvalJudgement(BaseModel):
+    """scripts/legal_data/eval_run.py judge subcommand: grades one answer from
+    legal_txt/Evals/israeli_legal_eval (500-question set) against its gold.jsonl
+    entry, per israeli_legal_eval/judge_prompt.md Prompt A. Field names match what
+    israeli_legal_eval/score.py's `report` command reads from judged.jsonl."""
+
+    correctness: Literal[0, 1, 2] = Field(
+        description="2 = all key points right and nothing materially wrong; 1 = partly right; "
+        "0 = wrong conclusion, material legal error, or no substantive answer"
+    )
+    grounding: Literal["grounded", "misgrounded", "ungrounded", "n/a"]
+    hallucination: bool = Field(description="True if the answer invents a law, section, case, number or date")
+    key_points_hit: list[int] = Field(description="1-based key point numbers the answer covers")
+    needs_review: bool = Field(
+        description="True if gold_confidence is 'medium' and the answer disagrees only on a specific "
+        "detail such as a section number or a period"
+    )
+    note: str = Field(description="One short sentence")
+
+
+class CasePenalty(BaseModel):
+    type: str
+    points: float = Field(description="Negative, e.g. -10")
+    detail: str
+
+
+class CaseJudgement(BaseModel):
+    """scripts/legal_data/eval_cases.py: grades one paralegal work file against its
+    legal_txt/Evals cases_gold.json entry, per israeli_legal_eval/judge_prompt.md
+    Prompt B. section_scores are proportional credit up to each rubric weight."""
+
+    facts_summary: float
+    chronology: float
+    legal_issues: float
+    deadlines: float
+    red_flags: float
+    missing_info: float
+    deliverable: float
+    next_step: float
+    penalties: list[CasePenalty] = Field(default_factory=list)
+    total: float = Field(description="Sum of the section scores plus the (negative) penalty points")
+    missed_items: list[str] = Field(default_factory=list)
+    note: str
+
+
 SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "outline_result": OutlineResult,
     "slide_content": SlideContent,
@@ -269,4 +314,6 @@ SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "entailment_verdict": EntailmentVerdict,
     "reply_language": ReplyLanguage,
     "eval_judgement": EvalJudgement,
+    "bulk_eval_judgement": BulkEvalJudgement,
+    "case_judgement": CaseJudgement,
 }

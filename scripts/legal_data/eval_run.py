@@ -78,8 +78,8 @@ section, case or fact that does not exist, say so plainly rather than inventing 
 state a specific rule, number or date you cannot support from <context> or from law you are certain \
 of. Answer in the language the question is written in."""
 
-ANSWER_MAX_TOKENS = 1024
-JUDGE_MAX_TOKENS = 1024
+ANSWER_MAX_TOKENS = 3072  # 1024 cut 4 of 60 RAG answers off mid-thinking, leaving them empty
+JUDGE_MAX_TOKENS = 2048  # same as eval_cases.py; 1024 truncated ~1 in 5 judge calls
 
 
 def _log(message: str) -> None:

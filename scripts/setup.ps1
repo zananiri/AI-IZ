@@ -276,14 +276,20 @@ if ($Backend -eq "vllm") {
     # config/config.yaml's vLLM defaults (general llm: + Legal orchestrator)
     # are overridden without editing it. docker-compose.
     # portable.yml sets the same vars itself, so it does not read this file.
-    @"
+    # Written without a BOM: Windows PowerShell 5.1's `Set-Content -Encoding
+    # utf8` prepends one, which glues onto the first key
+    # ("﻿DOCSLIDES_LLM_BACKEND") so the backend silently falls back to
+    # vllm while the Ollama base URL still applies -> 404 on /chat/completions.
+    $EnvLocal = @"
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OllamaModel
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
-"@ | Set-Content -Path ".env.local" -Encoding utf8
+
+"@
+    [System.IO.File]::WriteAllText((Join-Path $RepoRoot ".env.local"), $EnvLocal, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "wrote $RepoRoot\.env.local (backend=ollama, model=$OllamaModel)"
 }
 Write-Host ""

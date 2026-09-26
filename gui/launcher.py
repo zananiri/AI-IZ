@@ -59,7 +59,10 @@ def read_env_local() -> dict[str, str]:
     env: dict[str, str] = {}
     if not ENV_LOCAL_PATH.exists():
         return env
-    for line in ENV_LOCAL_PATH.read_text(encoding="utf-8").splitlines():
+    # utf-8-sig: tolerate a BOM from older setup.ps1 runs (Windows PowerShell
+    # 5.1 `Set-Content -Encoding utf8` writes one), which would otherwise hide
+    # the first key and silently fall back to the vllm backend.
+    for line in ENV_LOCAL_PATH.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

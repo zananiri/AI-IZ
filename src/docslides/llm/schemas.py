@@ -257,6 +257,20 @@ class ReplyLanguage(BaseModel):
     language: str = Field(description="ISO 639-1 code of the language the question is written in")
 
 
+class EvalIssue(BaseModel):
+    issue: str = Field(description="The legal issue, a few words in Hebrew")
+    law: str = Field(description="Full official Hebrew name of the Israeli statute or regulation that governs it")
+    sections: list[str] = Field(default_factory=list, description="Section numbers that apply, e.g. '15' or '25א'; empty if unsure")
+
+
+class EvalRetrievalPlan(BaseModel):
+    """scripts/legal_data/eval_run.py answer subcommand: the issues a question raises and the
+    legislation the answering model believes governs each -- used to steer retrieval (a direct
+    section lookup plus one search per issue), never shown to the judge."""
+
+    issues: list[EvalIssue]
+
+
 class BulkEvalJudgement(BaseModel):
     """scripts/legal_data/eval_run.py judge subcommand: grades one answer from
     legal_txt/Evals/israeli_legal_eval (500-question set) against its gold.jsonl

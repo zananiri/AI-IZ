@@ -118,6 +118,8 @@ class LLMCallSite:
         "legal_script_repair",
         "legal_eval_baseline",
         "legal_eval_judge",
+        "legal_eval_plan",
+        "legal_eval_rewrite",
     ]
 
 

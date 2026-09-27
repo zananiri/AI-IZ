@@ -36,6 +36,8 @@ class ThinkingDefaults(BaseModel):
     legal_script_repair: bool = False
     legal_eval_baseline: bool = False
     legal_eval_judge: bool = False
+    legal_eval_plan: bool = False
+    legal_eval_rewrite: bool = False
 
 
 class SamplingDefaults(BaseModel):

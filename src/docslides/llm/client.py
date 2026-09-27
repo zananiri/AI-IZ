@@ -326,12 +326,20 @@ class QwenClient:
             try:
                 completion = await self._post_completion(payload)
             except httpx.HTTPStatusError as exc:
-                if not thinking or exc.response.status_code != 400:
+                if exc.response.status_code != 400:
                     raise
-                # A model or server that can't think ("does not support thinking"): answer without it.
-                logger.warning("llm_thinking_unsupported", call_site=call_site.name, error=exc.response.text[:300])
-                thinking = False
-                payload = self._build_payload(messages, call_site, sampling, False, guided_json_schema, stream=False)
+                if thinking:
+                    # A model or server that can't think ("does not support thinking"): answer without it.
+                    logger.warning("llm_thinking_unsupported", call_site=call_site.name, error=exc.response.text[:300])
+                    thinking = False
+                    payload = self._build_payload(messages, call_site, sampling, False, guided_json_schema, stream=False)
+                elif "think" in payload and "think" in exc.response.text.lower():
+                    # A model with no thinking mode that rejects even "think": false (e.g. Gemma 3 on some
+                    # Ollama versions): leave the field out, which such a model can only read as off.
+                    logger.warning("llm_think_field_rejected", call_site=call_site.name, error=exc.response.text[:300])
+                    payload = {k: v for k, v in payload.items() if k != "think"}
+                else:
+                    raise
                 completion = await self._post_completion(payload)
             return completion
         except Exception as exc:

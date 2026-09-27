@@ -1,0 +1,287 @@
+"""Retrieval for the Legal tab over the bulk corpus (legal.corpus.vectordb_dir -- the Chroma
+store scripts/legal_data/vectorize.py builds from the legal_txt/ JSONL, one collection per
+category) instead of the signed index of drop-in law PDFs (legal/retrieval.py). Selected by
+legal.retrieval.source: "corpus".
+
+Planned retrieval, as the bulk eval runs it (scripts/legal_data/eval_run.py):
+
+  1. the orchestrator lists the issues the question raises and the law + sections it believes
+     govern each (`plan_issues`, thinking off);
+  2. `retrieve_planned` searches on the question and on each "law + issue", looks every named
+     section up directly, keeps at most MAX_PER_SECTION chunks per section and reranks the pool
+     with legal.retrieval.reranker_model;
+  3. `to_retrieval_result` turns the hits into the RetrievalResult the pipeline runs on:
+     chunks grouped into provisions by source_id, trimmed best-first to
+     legal.retrieval.max_evidence_tokens, and the thin-coverage flag set from the reranker score
+     (or, without a reranker, the embedding distance).
+
+The corpus isn't signed, so nothing is checked against the bundle, and it holds no amendment
+index: those parts of the pipeline stay empty on this path.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from docslides.cleaning.tokens import count_tokens
+from docslides.config import get_config
+from docslides.legal import amendments
+from docslides.legal.models import ChunkMetadata
+from docslides.legal.retrieval import RetrievalResult, RetrievedLegalChunk
+from docslides.legal_data.hebrew import normalize_for_embedding
+from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams
+from docslides.llm.schemas import EvalIssue, EvalRetrievalPlan
+from docslides.logging_setup import get_logger
+from docslides.rag.embedding import embed_texts
+
+logger = get_logger(__name__)
+
+PLAN_PROMPT = """List the distinct legal issues this question about ISRAELI law raises (at most \
+{max_issues}) and, for each, the Israeli statute or regulation that governs it -- its full official \
+Hebrew name -- with the section numbers you believe apply. Prefer the primary statute (a חוק or \
+פקודה) over regulations, unless the question is specifically about a regulation. If you are not \
+sure of a section number, leave sections empty rather than guess.
+
+<question>{question}</question>"""
+
+PLAN_MAX_TOKENS = 512
+FETCH_K = 24  # dense candidates per query per category, before dedupe and reranking
+RERANK_POOL = 40  # candidates the cross-encoder scores
+LOOKUP_K = 5  # hits per direct section lookup (filtered to the section number, then to the law)
+MAX_PER_SECTION = 2  # chunks one section may contribute (a long section splits into parts)
+MAX_LOOKUP_SLOTS = 3  # context slots reserved for sections the plan named
+
+_SECTION_RE = re.compile(r"\d{1,4}[א-ת]{0,3}\d{0,3}")
+_NIQQUD_RE = re.compile(r"[֑-ׇ]")
+_YEAR_RE = re.compile(r"(?:^|\s)ה?תש[א-ת]{1,3}(?=\s|$)|\d{4}")
+_PART_SUFFIX_RE = re.compile(r"#p\d+")
+
+_SOURCE_TYPES = {"laws": "statute", "procedural_rules": "regulation", "supreme_court": "ruling"}
+_SOURCE_ORIGINS = {"laws": "knesset", "procedural_rules": "reshumot", "supreme_court": "court_gov_il"}
+
+
+def law_key(name: str) -> str:
+    """A law's name reduced for matching: text before the first comma (the year), no niqqud,
+    quotes, dashes or brackets, and no leading ה on words -- so "חוק הכַּשרוּת המשפטית, תשכ״ב–1962"
+    and "חוק הכשרות המשפטית והאפוטרופסות, התשכ"ב-1962" compare equal on their shared part."""
+    name = _NIQQUD_RE.sub("", (name or "").replace("־", " ").split(",")[0])
+    name = re.sub(r"[\"'״׳`()\-–—\s]+", " ", name)
+    name = _YEAR_RE.sub(" ", name)
+    return " ".join(w[1:] if w.startswith("ה") and len(w) > 3 else w for w in name.split())
+
+
+def same_law(named: str, title: str) -> bool:
+    a, b = law_key(named), law_key(title)
+    return bool(a) and bool(b) and (a == b or a in b or b in a)
+
+
+def section_numbers(sections: list[str]) -> list[str]:
+    """"סעיף 14(ד)" -> "14", "25א" -> "25א": the base numbers a plan names, as the corpus
+    stores them in section_number."""
+    out: list[str] = []
+    for raw in sections:
+        match = _SECTION_RE.search(str(raw))
+        if match and match.group(0) not in out:
+            out.append(match.group(0))
+    return out
+
+
+async def plan_issues(qwen, question: str, max_issues: int = 3) -> list[EvalIssue]:
+    """The orchestrator's own list of issues and governing laws (thinking off: a short,
+    structured call). An empty list on failure, which leaves retrieval on the question alone."""
+    try:
+        plan = await qwen.complete_json(
+            [ChatMessage("user", PLAN_PROMPT.format(max_issues=max_issues, question=question))],
+            LLMCallSite("legal_retrieval_plan"), schema=EvalRetrievalPlan,
+            sampling=SamplingParams(temperature=0.0, max_tokens=PLAN_MAX_TOKENS), enable_thinking=False,
+        )
+    except Exception as exc:  # noqa: BLE001 -- retrieval still works without a plan
+        logger.warning("legal_retrieval_plan_failed", error=f"{type(exc).__name__}: {exc}")
+        return []
+    return [i for i in plan.issues if i.law.strip()][:max_issues]
+
+
+def _hits_from(result: dict, category: str, source: str) -> list[dict]:
+    return [
+        {"id": chunk_id, "category": category, "distance": distance, "meta": meta, "text": document, "sources": {source}}
+        for chunk_id, distance, meta, document in zip(
+            (result.get("ids") or [[]])[0], (result.get("distances") or [[]])[0],
+            (result.get("metadatas") or [[]])[0], (result.get("documents") or [[]])[0])
+    ]
+
+
+def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[str], top_k: int,
+                     per_issue_slot: bool = False) -> list[dict]:
+    """Retrieval steered by the answering model's own reading of the question:
+
+    1. dense search on the question itself and on each "law + issue" the plan names;
+    2. a direct lookup of every section the plan names (filtered to that section number,
+       then to the named law) -- the step that surfaces, say, section 15 of the Contracts Law
+       for a fact pattern about misrepresentation, which the question's wording alone doesn't;
+    3. at most MAX_PER_SECTION chunks per section, then the cross-encoder
+       (legal.retrieval.reranker_model) reranks the pool against the question and the issues;
+    4. up to MAX_LOOKUP_SLOTS slots go to the looked-up sections (and, for issue spotting, one
+       to each issue's best hit) whatever their rerank score; the rest go by rerank score.
+
+    Falls back to plain embedding order when the reranker can't be loaded."""
+    from docslides.legal.retrieval import _reranker
+    from docslides.legal_data.corpus_index import CorpusCollection
+
+    legal_cfg = get_config().legal
+    corpus_cfg = legal_cfg.corpus
+    queries = [query_text] + [f"{i.law} {i.issue}" for i in issues]
+    lookups = [(i.law, number) for i in issues for number in section_numbers(i.sections)[:3]]
+    texts = queries + [f"{law} סעיף {number}" for law, number in lookups]
+    vectors = embed_texts(
+        legal_cfg.retrieval.embedding_model,
+        [normalize_for_embedding(t, corpus_cfg.fold_final_letters_for_embedding) for t in texts],
+    )
+
+    pool: dict[str, dict] = {}
+
+    def add(hit: dict, rank: int) -> None:
+        kept = pool.setdefault(hit["id"], {**hit, "sources": set(), "fused": 0.0})
+        kept["sources"] |= hit["sources"]
+        kept["fused"] += 1.0 / (60 + rank)
+        kept["distance"] = min(kept["distance"], hit["distance"])
+
+    for category in categories:
+        path = Path(corpus_cfg.vectordb_dir) / category
+        if not path.exists():
+            continue
+        collection = CorpusCollection(path, f"{corpus_cfg.collection_prefix}_{category}")
+        if collection.count() == 0:
+            continue
+        for qi, vector in enumerate(vectors[: len(queries)]):
+            for rank, hit in enumerate(_hits_from(collection.query(vector, FETCH_K), category, f"q{qi}")):
+                add(hit, rank)
+        for li, (law, number) in enumerate(lookups):
+            vector = vectors[len(queries) + li]
+            result = collection.query(vector, LOOKUP_K, where={"section_number": number})
+            matched = [h for h in _hits_from(result, category, f"l{li}") if same_law(law, h["meta"].get("title", ""))]
+            for rank, hit in enumerate(matched):
+                add(hit, rank)
+
+    # One section may split into several chunks; keep its best MAX_PER_SECTION.
+    per_section: dict[tuple, int] = {}
+    candidates: list[dict] = []
+    for hit in sorted(pool.values(), key=lambda h: (-h["fused"], h["distance"])):
+        key = (hit["meta"].get("title"), hit["meta"].get("section_number") or hit["id"])
+        if per_section.get(key, 0) >= MAX_PER_SECTION:
+            continue
+        per_section[key] = per_section.get(key, 0) + 1
+        candidates.append(hit)
+
+    lookup_hits = [h for h in candidates if any(s.startswith("l") for s in h["sources"])]
+    head = candidates[:RERANK_POOL]
+    head += [h for h in lookup_hits if h not in head]
+    reranker = _reranker(legal_cfg.retrieval.reranker_model) if legal_cfg.retrieval.reranker_model else None
+    if reranker is not None and head:
+        rerank_query = query_text + "\n" + "; ".join(f"{i.issue} – {i.law}" for i in issues)
+        for hit, score in zip(head, reranker.predict([(rerank_query, h["text"]) for h in head])):
+            hit["score"] = float(score)
+        ranked = sorted(head, key=lambda h: -h["score"])
+    else:
+        ranked = head
+
+    picked: list[dict] = []
+    for hit in sorted(lookup_hits, key=lambda h: -h.get("score", h["fused"]))[:MAX_LOOKUP_SLOTS]:
+        picked.append(hit)
+    if per_issue_slot:
+        for qi in range(1, len(queries)):
+            best = next((h for h in ranked if f"q{qi}" in h["sources"]), None)
+            if best is not None and best not in picked and len(picked) < top_k:
+                picked.append(best)
+    for hit in ranked:
+        if len(picked) >= top_k:
+            break
+        if hit not in picked:
+            picked.append(hit)
+    return picked[:top_k]
+
+
+def _ymd_to_iso(value) -> str:
+    digits = str(value or "")
+    return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}" if re.fullmatch(r"\d{8}", digits) else ""
+
+
+def chunk_metadata(chunk_id: str, category: str, meta: dict) -> ChunkMetadata:
+    """A corpus chunk's scalar metadata (legal_data/corpus_chunking.py) as the pipeline's
+    ChunkMetadata. The parts of one split provision ("<source_id>#p2") share a source_id."""
+    title = meta.get("title") or ""
+    section = meta.get("section_number") or meta.get("case_number") or ""
+    source_id = _PART_SUFFIX_RE.sub("", chunk_id)
+    return ChunkMetadata(
+        chunk_id=chunk_id,
+        source_id=source_id,
+        section_key=f"{meta.get('record_id') or ''}:{section}",
+        law_id=str(meta.get("record_id") or meta.get("law_id") or ""),
+        law_name=title,
+        chapter=None,
+        part=None,
+        section_number=str(section),
+        subsection_number=meta.get("subsection") or None,
+        breadcrumb=meta.get("breadcrumb") or title,
+        effective_date_start=_ymd_to_iso(meta.get("effective_ymd") or meta.get("decision_ymd")),
+        effective_date_end=None,
+        status="repealed" if meta.get("status") == "repealed" else "current",
+        source_type=_SOURCE_TYPES.get(category, "statute"),
+        source_origin=_SOURCE_ORIGINS.get(category, "knesset"),
+        ingestion_date="",
+        language="he",
+        part_index=int(meta.get("part_index") or 1),
+        part_count=int(meta.get("part_count") or 1),
+        law_key=amendments.law_key(title),
+        inserted_section=meta.get("inserted_section") or "",
+    )
+
+
+def to_retrieval_result(hits: list[dict]) -> RetrievalResult:
+    """Planned-retrieval hits (best first) as the pipeline's RetrievalResult: every part of a
+    provision stays with it, and whole provisions go in best-first until
+    legal.retrieval.max_evidence_tokens is spent (the best one is always kept)."""
+    cfg = get_config().legal.retrieval
+    by_source: dict[str, list[RetrievedLegalChunk]] = {}
+    for hit in hits:
+        metadata = chunk_metadata(hit["id"], hit["category"], hit["meta"])
+        via = "section_lookup" if any(s.startswith("l") for s in hit.get("sources", ())) else "search"
+        by_source.setdefault(metadata.source_id, []).append(
+            RetrievedLegalChunk(hit["id"], hit["text"], metadata, hit["distance"], via, hit.get("score"))
+        )
+
+    chunks: list[RetrievedLegalChunk] = []
+    trimmed: list[str] = []
+    spent = 0
+    for parts in by_source.values():
+        size = sum(count_tokens(p.text) for p in parts)
+        if chunks and cfg.max_evidence_tokens is not None and spent + size > cfg.max_evidence_tokens:
+            trimmed += [p.chunk_id for p in parts]
+            continue
+        chunks += parts
+        spent += size
+
+    distances = [c.distance for c in chunks if c.distance is not None]
+    scores = [c.score for c in chunks if c.score is not None]
+    best_distance = min(distances) if distances else None
+    best_score = max(scores) if scores else None
+    if not chunks:
+        low_relevance = True
+    elif best_score is not None:
+        low_relevance = best_score < cfg.min_rerank_score
+    else:
+        low_relevance = best_distance is None or best_distance > cfg.low_relevance_distance
+    return RetrievalResult(
+        chunks=chunks,
+        low_relevance=low_relevance,
+        best_distance=best_distance,
+        bundle_verification="unsigned_corpus",
+        trimmed_chunk_ids=trimmed,
+        best_rerank_score=best_score,
+    )
+
+
+def retrieve_corpus(query: str, issues: list[EvalIssue]) -> RetrievalResult:
+    corpus_cfg = get_config().legal.corpus
+    hits = retrieve_planned(query, issues, corpus_cfg.categories, corpus_cfg.top_k)
+    return to_retrieval_result(hits)

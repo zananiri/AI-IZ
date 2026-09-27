@@ -80,6 +80,7 @@ def _retrieval() -> RetrievalResult:
 @pytest.fixture
 def wire(monkeypatch, tmp_path):
     monkeypatch.setattr(get_config().legal, "audit_dir", str(tmp_path))
+    monkeypatch.setattr(get_config().legal.retrieval, "source", "signed_index")  # fake_retrieve stands in for it
     queries = []
 
     def fake_retrieve(query):
@@ -631,3 +632,36 @@ def test_a_memo_that_fails_the_gate_for_another_reason_still_gets_the_gate_notic
     wire(qwen)
 
     assert _run("אפשר לבטל חוזה שחתמתי בטעות?").display_answer.startswith("לא ניתן היה להפיק מזכר מחקר")
+
+
+def test_corpus_source_plans_the_search_and_answers_from_the_corpus(wire, monkeypatch):
+    monkeypatch.setattr(get_config().legal.retrieval, "source", "corpus")
+    searched = []
+
+    def fake_retrieve_corpus(query, issues):
+        searched.append((query, [(i.law, i.sections) for i in issues]))
+        return _retrieval()
+
+    def no_signed_index(*_):
+        raise AssertionError("the signed index must not be searched")
+
+    monkeypatch.setattr(pipeline.corpus_retrieval, "retrieve_corpus", fake_retrieve_corpus)
+    monkeypatch.setattr(pipeline, "retrieve", no_signed_index)
+    monkeypatch.setattr(pipeline, "amendment_index", no_signed_index)
+    draft_he = f"הצד הטועה רשאי לבטל את החוזה. {CITE}"
+    qwen = FakeClient(
+        "qwen",
+        json_responses={
+            "legal_retrieval_plan": [{"issues": [{"issue": "ביטול בשל טעות", "law": LAW, "sections": ["14"]}]}],
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": draft_he, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "סעיף 14(א)"}],
+        },
+    )
+    wire(qwen)
+
+    result = _run("אפשר לבטל חוזה שחתמתי בטעות?")
+
+    assert searched == [("אפשר לבטל חוזה שחתמתי בטעות?", [(LAW, ["14"])])]
+    assert result.output["answer_draft"] == draft_he and not result.output["escalation_flag"]
+    assert _audit(result)["retrieval_plan"][0]["sections"] == ["14"]

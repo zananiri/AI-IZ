@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 BUNDLE_KEY_ENV = "DOCSLIDES_LEGAL_BUNDLE_KEY"
 
-VerificationLevel = Literal["signed", "hashes_only"]
+VerificationLevel = Literal["signed", "hashes_only", "unsigned_corpus"]  # the last: legal/corpus_retrieval.py
 
 
 class BundleError(Exception):

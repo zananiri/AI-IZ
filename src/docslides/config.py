@@ -37,6 +37,7 @@ class ThinkingDefaults(BaseModel):
     legal_eval_baseline: bool = False
     legal_eval_judge: bool = False
     legal_eval_plan: bool = False
+    legal_retrieval_plan: bool = False
     legal_eval_rewrite: bool = False
 
 
@@ -64,6 +65,9 @@ class LLMConfig(BaseModel):
 
 
 class LegalRetrievalConfig(BaseModel):
+    # What the Legal tab searches: "corpus" = the bulk corpus (legal.corpus, legal/corpus_retrieval.py),
+    # "signed_index" = the signed index of drop-in law PDFs and reviewed sources (vectordb_dir below).
+    source: Literal["corpus", "signed_index"] = "corpus"
     vectordb_dir: str = "./data/legal_vectordb"
     embedding_model: str = "BAAI/bge-m3"
     top_k: int = 6
@@ -142,6 +146,9 @@ class LegalCorpusConfig(BaseModel):
     # Folding ך ם ן ף ץ into their regular forms makes spellings bge-m3 never saw: off for the
     # embedded text by default. The lexical copy (for a keyword index) is always folded.
     fold_final_letters_for_embedding: bool = False
+    # What the Legal tab searches when legal.retrieval.source is "corpus".
+    categories: list[str] = Field(default_factory=lambda: ["laws", "procedural_rules"])
+    top_k: int = 8  # chunks kept after reranking, before the max_evidence_tokens budget
 
 
 class LegalConfig(BaseModel):

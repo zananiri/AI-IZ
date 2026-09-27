@@ -119,6 +119,7 @@ class LLMCallSite:
         "legal_eval_baseline",
         "legal_eval_judge",
         "legal_eval_plan",
+        "legal_retrieval_plan",
         "legal_eval_rewrite",
     ]
 

@@ -57,6 +57,10 @@ legal:
       top_p: 0.9
       max_tokens: 2048
   retrieval:
+    # What the Legal tab searches: "corpus" = the bulk corpus below (legal.corpus: laws and
+    # procedural rules, planned retrieval -- legal/corpus_retrieval.py); "signed_index" = the
+    # signed index of the drop-in law PDFs in legal_txt/ and reviewed sources (vectordb_dir).
+    source: "corpus"
     vectordb_dir: "./data/legal_vectordb"
     embedding_model: "BAAI/bge-m3"             # multilingual: non-Hebrew queries still match Hebrew statutes
     top_k: 6
@@ -106,6 +110,8 @@ legal:
     chunk_overlap_tokens: 64
     embed_batch_size: 64
     fold_final_letters_for_embedding: false
+    categories: ["laws", "procedural_rules"]   # searched by the Legal tab when retrieval.source is "corpus"
+    top_k: 8                                   # chunks kept after reranking, then cut to max_evidence_tokens
 
 # Corpus acquisition: scripts/legal_data/fetch_*.py (see scripts/legal_data/README.md). Only the
 # hosts below are contacted, robots.txt is honoured, at most one request per second per host.

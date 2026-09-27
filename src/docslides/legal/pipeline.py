@@ -1,6 +1,7 @@
 """Legal tab pipeline: grounded RAG over Israeli law.
 
-    language routing -> retrieval -> Pass 0 analysis notes (thinking on)
+    language routing -> retrieval (the bulk corpus, or the signed index: legal.retrieval.source)
+    -> Pass 0 analysis notes (thinking on)
     -> Pass A research memorandum -> validation gate
     -> Pass B draft -> citation verification (structural + entailment)
     -> unverified sentences removed -> wrong-script words repaired
@@ -32,7 +33,7 @@ from pathlib import Path
 
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
-from docslides.legal import amendments, audit, prompts, script_check
+from docslides.legal import amendments, audit, corpus_retrieval, prompts, script_check
 from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.citations import (
     expand_citations,
@@ -809,7 +810,10 @@ def _footnotes(final_text: str, evidence: dict[str, ChunkMetadata], checks: list
 
 
 def _amendment_notes(evidence: dict[str, ChunkMetadata]) -> dict[str, list]:
-    """source_id -> later indexed amendments to that provision's law (legal/amendments.py)."""
+    """source_id -> later indexed amendments to that provision's law (legal/amendments.py).
+    Only the signed index has an amendment index; the bulk corpus has none."""
+    if get_config().legal.retrieval.source == "corpus":
+        return {}
     try:
         index = amendment_index()
     except Exception as exc:  # noqa: BLE001 -- a missing index must not block answering
@@ -867,6 +871,19 @@ def _write_audit(entry: dict) -> Path:
     return audit.write_entry(entry)
 
 
+async def _retrieve(qwen: QwenClient, query: str, status: StatusFn, entry: dict) -> RetrievalResult:
+    """The evidence for the turn, from legal.retrieval.source: the bulk corpus (planned retrieval,
+    legal/corpus_retrieval.py) or the signed index of drop-in law PDFs (legal/retrieval.py)."""
+    if get_config().legal.retrieval.source == "corpus":
+        await status("Planning the search")
+        issues = await corpus_retrieval.plan_issues(qwen, query)
+        entry["retrieval_plan"] = [i.model_dump() for i in issues]
+        await status("Searching the Israeli-law corpus")
+        return await asyncio.to_thread(corpus_retrieval.retrieve_corpus, query, issues)
+    await status("Searching the Israeli-law index")
+    return await asyncio.to_thread(retrieve, query)
+
+
 async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnResult:
     with trace.collect(job_id) as calls:
         result = await _legal_turn(query, job_id, status)
@@ -882,8 +899,7 @@ async def _legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnRes
     reply_language = await detect_reply_language(qwen, query)
     entry["reply_language"] = reply_language
 
-    await status("Searching the Israeli-law index")
-    retrieval = await asyncio.to_thread(retrieve, query)
+    retrieval = await _retrieve(qwen, query, status, entry)
     grouped = retrieval.by_source_id()
     evidence = {source_id: parts[0].metadata for source_id, parts in grouped.items()}
     amendment_notes = _amendment_notes(evidence)

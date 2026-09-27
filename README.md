@@ -234,10 +234,22 @@ this is what
 `.env.local` (written by the setup scripts) and `docker-compose.portable.yml`
 do.
 
-### Legal tab: building the Israeli-law index
+### Legal tab: where it searches
 
-The Legal tab answers only from sources that were staged, reviewed and
-signed into its local index, so it has nothing to cite until you add some.
+By default (`legal.retrieval.source: "corpus"` in `config/config.yaml`) the
+Legal tab runs its full pipeline over the bulk legal corpus: the laws and
+procedural regulations built on Kaggle and installed with
+`python scripts/legal_data/install_corpus.py legal_corpus_vectordb.zip` into
+`data/legal_corpus_vectordb`. Each question is first planned (issues, governing
+laws and sections), then searched and reranked the same way as the bulk eval
+(`scripts/legal_data/eval_run.py`). The law PDFs in `legal_txt/` are not used.
+Set `source: "signed_index"` to answer from the signed index below instead.
+
+### Legal tab: building the signed Israeli-law index
+
+With `legal.retrieval.source: "signed_index"`, the Legal tab answers only from
+sources that were staged, reviewed and signed into its local index, so it has
+nothing to cite until you add some.
 It never fetches from the web: get official texts yourself, within each
 site's terms of use.
 

@@ -305,8 +305,10 @@ def build_chat_tab() -> None:
 
 # ---------------------------------------------------------------------------
 # Legal tab -- grounded RAG over Israeli law (see api/routes_legal.py,
-# legal/pipeline.py): Qwen researches, drafts and verifies against sources
-# approved into the signed index, and answers in the question's language.
+# legal/pipeline.py): Qwen plans the search, retrieves from the bulk legal
+# corpus (legal/corpus_retrieval.py; legal.retrieval.source), researches,
+# drafts and verifies against what it retrieved, and answers in the
+# question's language.
 # Citations appear as [n]
 # markers in the answer and as footnotes (with verification status) in the
 # side panel; the Pass A research memorandum is viewable below them.
@@ -434,8 +436,14 @@ def send_legal_message(message: str, history: list):
 
 def build_legal_tab() -> None:
     legal = get_config().legal
+    source = (
+        f"legal corpus ({', '.join(legal.corpus.categories)})"
+        if legal.retrieval.source == "corpus"
+        else "signed index"
+    )
     gr.Markdown(
-        f"_Research, drafting & verification: **{legal.orchestrator.model}** via **{legal.orchestrator.backend}**_"
+        f"_Research, drafting & verification: **{legal.orchestrator.model}** via **{legal.orchestrator.backend}**"
+        f" · sources: **{source}**_"
     )
 
     with gr.Row():
@@ -447,7 +455,7 @@ def build_legal_tab() -> None:
                     label="Legal question",
                     scale=4,
                     placeholder="Ask a question about Israeli law in any language -- answered only from the "
-                    "reviewed statutes, regulations and rulings in the local index, in your language",
+                    "Israeli laws and procedural regulations in the legal corpus, in your language",
                 )
                 legal_send_btn = gr.Button("Send", scale=1)
         with gr.Column(scale=1):

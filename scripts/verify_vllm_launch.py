@@ -20,10 +20,13 @@ from docslides.config import get_config  # noqa: E402
 
 
 def build_launch_command(cfg) -> str:
+    # One server serves the general chat and the Legal orchestrator: it needs the larger window.
+    max_model_len = max(cfg.llm.max_model_len, cfg.legal.orchestrator.max_model_len)
     return (
         f"vllm serve {cfg.llm.model} \\\n"
         f"  --quantization {cfg.vllm_launch.quantization} \\\n"
-        f"  --max-model-len {cfg.llm.max_model_len} \\\n"
+        f"  --max-model-len {max_model_len} \\\n"
+        f"  --kv-cache-dtype fp8 \\\n"
         f"  --gpu-memory-utilization {cfg.vllm_launch.gpu_memory_utilization} \\\n"
         f"  --guided-decoding-backend {cfg.llm.guided_decoding_backend} \\\n"
         f"  --port {cfg.vllm_launch.port}"

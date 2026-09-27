@@ -17,7 +17,12 @@ services:
     command:
       - "--model=${QWEN_MODEL_REPO:-Qwen/Qwen3-32B-AWQ}"
       - "--quantization=${QWEN_QUANTIZATION:-awq}"
-      - "--max-model-len=${QWEN_MAX_MODEL_LEN:-8192}"
+      # 16k: the Legal tab's evidence + thinking pass (config.yaml legal.orchestrator.max_model_len).
+      # An fp8 KV cache halves its memory so 16k fits next to the ~19GB AWQ weights on a 24GB
+      # card; set QWEN_KV_CACHE_DTYPE=auto on a 32GB+ card, or QWEN_MAX_MODEL_LEN=8192 (and the
+      # config's max_model_len with it) if vLLM reports too little KV-cache memory.
+      - "--max-model-len=${QWEN_MAX_MODEL_LEN:-16384}"
+      - "--kv-cache-dtype=${QWEN_KV_CACHE_DTYPE:-fp8}"
       - "--gpu-memory-utilization=${QWEN_GPU_MEM_UTIL:-0.90}"
       - "--port=8000"
       - "--guided-decoding-backend=${QWEN_GUIDED_BACKEND:-xgrammar}"

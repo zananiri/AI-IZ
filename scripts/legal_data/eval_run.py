@@ -118,9 +118,22 @@ as they are. Return only the rewritten answer.
 {answer}
 </answer>"""
 
-ANSWER_MAX_TOKENS = 3072  # 1024 cut 4 of 60 RAG answers off mid-thinking, leaving them empty
-ISSUE_SPOTTING_TOP_K = 12
-JUDGE_MAX_TOKENS = 2048  # same as eval_cases.py; 1024 truncated ~1 in 5 judge calls
+# Output budgets, reasoning included. The 26 Sept bulk500 run (16k context, never more than 6.1k
+# of it used) stopped 8 of 500 answers at 3072 and 11 of 431 judge calls at 2048 while still
+# thinking, 7 answers came back empty; the context window was never the limit.
+ANSWER_MAX_TOKENS = 6144
+ISSUE_SPOTTING_TOP_K = 16
+JUDGE_MAX_TOKENS = 4096  # same as eval_cases.py
+
+
+def eval_sampling(max_tokens: int, thinking: bool) -> SamplingParams:
+    """Greedy without thinking (reproducible). With thinking, Qwen3's recommended sampling
+    (temperature 0.6, top_p 0.95, top_k 20) with a fixed seed: its model card warns that greedy
+    decoding in thinking mode degrades answers and loops -- the 26 Sept trace has reasoning that
+    repeats "Wait, no..." until the budget runs out (IL-283)."""
+    if thinking:
+        return SamplingParams(temperature=0.6, top_p=0.95, top_k=20, seed=0, max_tokens=max_tokens)
+    return SamplingParams(temperature=0.0, max_tokens=max_tokens)
 
 
 def _log(message: str) -> None:
@@ -226,11 +239,11 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
             user += f"\n\n{ISSUE_SPOTTING_NOTE}"
         messages = [ChatMessage("system", ANSWER_SYSTEM), ChatMessage("user", user)]
 
-        sampling = SamplingParams(temperature=0.0, max_tokens=max_tokens)
         text = (await qwen.complete_text(
-            messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
+            messages, LLMCallSite("legal_eval_baseline"), sampling=eval_sampling(max_tokens, thinking),
             enable_thinking=thinking,  # the point of this run: capture how the model reasons, for fine-tuning
         )).strip()
+        sampling = eval_sampling(max_tokens, False)
         if not text and thinking:
             # The reasoning used the whole budget and no answer was written: answer without it.
             repairs.append("empty_answer_retry")
@@ -277,13 +290,13 @@ async def cmd_answer(a) -> None:
              f"{' -- ' + row['error'] if row.get('error') else ''}")
 
 
-async def judge_one(qwen, item: dict, thinking: bool = True) -> dict:
+async def judge_one(qwen, item: dict, thinking: bool = True, max_tokens: int = JUDGE_MAX_TOKENS) -> dict:
     with trace.collect(job_id=item["id"]):
         try:
             verdict = await qwen.complete_json(
                 [ChatMessage("user", item["prompt"])], LLMCallSite("legal_eval_judge"),
                 schema=BulkEvalJudgement,
-                sampling=SamplingParams(temperature=0.0, max_tokens=JUDGE_MAX_TOKENS),
+                sampling=eval_sampling(max_tokens, thinking),
                 enable_thinking=thinking,  # the judge's own reasoning matters just as much for calibration
             )
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
@@ -302,7 +315,7 @@ async def cmd_judge(a) -> None:
         if item["id"] in done:
             continue
         started = time.monotonic()
-        row = await judge_one(qwen, item, thinking=a.thinking)
+        row = await judge_one(qwen, item, thinking=a.thinking, max_tokens=a.max_tokens)
         _append(out, row)
         _log(f"{item['id']}: correctness={row['correctness']} ({round(time.monotonic() - started)}s)")
 
@@ -315,7 +328,7 @@ def main() -> None:
     pa.add_argument("--questions", default="legal_txt/Evals/israeli_legal_eval/questions.jsonl")
     pa.add_argument("--mode", choices=["rag"], default="rag", help="accepted for older commands; rag is the only mode")
     pa.add_argument("--categories", default="laws,procedural_rules")
-    pa.add_argument("--top-k", type=int, default=8)
+    pa.add_argument("--top-k", type=int, default=12)
     pa.add_argument("--out", required=True)
     pa.add_argument("--limit", type=int, help="answer only the first N questions (smoke test)")
     pa.add_argument("--max-tokens", type=int, default=ANSWER_MAX_TOKENS,
@@ -327,6 +340,8 @@ def main() -> None:
     pj.add_argument("--requests", required=True, help="judge_requests.jsonl from score.py prepare")
     pj.add_argument("--out", required=True)
     pj.add_argument("--thinking", action=argparse.BooleanOptionalAction, default=True)
+    pj.add_argument("--max-tokens", type=int, default=JUDGE_MAX_TOKENS,
+                    help="output budget per judgement, reasoning included")
 
     a = p.parse_args()
     from docslides.llm.client import aclose_all_clients

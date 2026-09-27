@@ -89,7 +89,7 @@ class LegalRetrievalConfig(BaseModel):
     #     cross-references), filled best-first; counted like chunk budgets.
     relevance_margin: float | None = 0.08
     sibling_margin: float | None = 0.12
-    max_evidence_tokens: int | None = 2500
+    max_evidence_tokens: int | None = 5000
     # Hebrew-aware keyword search fused with the embedding ranking (legal/keyword.py).
     keyword_search: bool = True
     # Chunks fetched for each section number the question names ("סעיף 132א"); 0 disables.
@@ -148,7 +148,7 @@ class LegalCorpusConfig(BaseModel):
     fold_final_letters_for_embedding: bool = False
     # What the Legal tab searches when legal.retrieval.source is "corpus".
     categories: list[str] = Field(default_factory=lambda: ["laws", "procedural_rules"])
-    top_k: int = 8  # chunks kept after reranking, before the max_evidence_tokens budget
+    top_k: int = 12  # chunks kept after reranking, before the max_evidence_tokens budget
 
 
 class LegalConfig(BaseModel):
@@ -348,17 +348,21 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 # config.yaml -- config/config.yaml stays the single source of truth for
 # everything else (languages, OCR routing, sampling defaults, ...). The Legal
 # tab's orchestrator is an independent deployment (see LegalConfig) with its
-# own override triple, so it can be pointed at Ollama separately from -- or
-# together with -- the general `llm:` section.
+# own override set, so it can be pointed at Ollama separately from -- or
+# together with -- the general `llm:` section. *_MAX_MODEL_LEN sets the context
+# window (Ollama's num_ctx; under vLLM it must not exceed the served
+# --max-model-len), so a host can match it to its memory.
 _LLM_ENV_OVERRIDES = {
     "DOCSLIDES_LLM_BACKEND": "backend",
     "DOCSLIDES_LLM_BASE_URL": "base_url",
     "DOCSLIDES_LLM_MODEL": "model",
+    "DOCSLIDES_LLM_MAX_MODEL_LEN": "max_model_len",
 }
 _LEGAL_ORCHESTRATOR_ENV_OVERRIDES = {
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND": "backend",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL": "base_url",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL": "model",
+    "DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN": "max_model_len",
 }
 def _env_overrides(env_map: dict[str, str]) -> dict[str, str]:
     return {key: os.environ[env] for env, key in env_map.items() if env in os.environ}

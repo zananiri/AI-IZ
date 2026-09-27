@@ -64,27 +64,39 @@ they run on; override with `FORCE_BACKEND`/`-ForceBackend`):
 |---|---|---|
 | Hardware | NVIDIA GPU only (24GB-class, e.g. RTX 4090/5090) | Any: CPU, NVIDIA, AMD (ROCm), Apple Silicon (Metal) |
 | Install | Docker image (`vllm/vllm-openai`) | Native host install (not Docker -- see `docker-compose.portable.yml`'s header comment for why, esp. on Mac) |
-| Model | Qwen3-32B AWQ/GPTQ 4-bit (~20GB) via Hugging Face | `qwen3:32b` (or smaller, e.g. `qwen3:8b`) via `ollama pull` |
+| Model | Qwen3-32B AWQ/GPTQ 4-bit (~20GB) via Hugging Face | `qwen3:32b` via `ollama pull` (`qwen3:14b` on a host too small to load it) |
 | Speed | Fastest -- purpose-built for concurrent GPU serving | Slower, especially CPU-only; scales with whatever acceleration the host has |
 | Structured JSON / thinking toggle | `guided_json` extra_body / `chat_template_kwargs` | top-level `format` JSON Schema / `think` field |
 
 Both are driven through the same `src/docslides/llm/client.py` interface --
 nothing above the LLM client needs to know which backend is active.
 
-Qwen3-32B is heavy even quantized (~20GB); on a CPU-only or modest machine,
-override `llm.model` to a smaller Ollama tag (e.g. `qwen3:8b`) for usable
-latency -- set `OLLAMA_MODEL`/`-OllamaModel` when running the setup script.
-`scripts/setup.*` now does this automatically on the Ollama path when it
-detects under ~48GB of RAM (unless you pass `OLLAMA_MODEL`/`-OllamaModel`
-explicitly): below that threshold, qwen3:32b's ~20GB GGUF plus llama.cpp's
-CPU "repack" buffer (a second, similarly sized buffer briefly resident while
-loading) reliably fails to allocate (`std::bad_alloc` /
+Qwen3-32B (`qwen3:32b` under Ollama) is the model on both backends. It is
+heavy even quantized (~20GB), so on the Ollama path `scripts/setup.*` falls
+back to `qwen3:14b` (~9GB) only on a host that can't load it -- under ~48GB
+of RAM on Windows/Linux, under ~36GB on a Mac -- unless you pass
+`OLLAMA_MODEL=qwen3:32b` / `-OllamaModel qwen3:32b` explicitly. Below that
+threshold, qwen3:32b's ~20GB GGUF plus llama.cpp's CPU "repack" buffer (a
+second, similarly sized buffer briefly resident while loading) fails to
+allocate (`std::bad_alloc` /
 `ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate ...` in
 Ollama's server log) -- which looks like the chat/Legal tabs hanging or not
 responding rather than an install error. The setup scripts also set
 `OLLAMA_MAX_LOADED_MODELS=1` so that when two Ollama models are called back
 to back (e.g. the Legal orchestrator and an evaluation's judge model) the
-second evicts the first instead of both trying to stay resident at once.
+second evicts the first instead of both trying to stay resident at once, and
+`OLLAMA_FLASH_ATTENTION=1` + `OLLAMA_KV_CACHE_TYPE=q8_0`, which halve the
+context's memory.
+
+**Context window.** The Legal tab runs with a 16k-token window
+(`legal.orchestrator.max_model_len: 16384`): up to 5k tokens of evidence
+(`legal.retrieval.max_evidence_tokens`) plus the thinking analysis pass and
+the memo/draft outputs. vLLM serves 16k with an fp8 KV cache
+(`QWEN_MAX_MODEL_LEN`, `QWEN_KV_CACHE_DTYPE` in `docker-compose.yml`) so it
+still fits next to the weights on a 24GB card; under Ollama it is the
+`num_ctx` sent with every request. `DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`
+/ `DOCSLIDES_LLM_MAX_MODEL_LEN` override it per host (`LEGAL_CONTEXT_LENGTH` /
+`-LegalContextLength` in the setup scripts).
 The Legal tab uses one model, the Qwen orchestrator, for every stage and
 answers in the question's language, Hebrew included.
 
@@ -107,19 +119,22 @@ Re-running either script is safe -- already-downloaded files are left in place.
 
 ```bash
 # macOS/Linux
-./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_MODEL=qwen3:8b
+./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_MODEL=qwen3:32b / LEGAL_CONTEXT_LENGTH=16384
 ```
 
 ```powershell
 # Windows
-.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaModel qwen3:8b
+.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaModel qwen3:32b / -LegalContextLength 16384
 ```
 
 When the Ollama backend is selected, the script writes `.env.local` with the
 `DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` triple (general chat model) plus
-a matching `DOCSLIDES_LEGAL_ORCHESTRATOR_*` triple for the Legal tab's
-independent Qwen orchestrator deployment -- both overriding
-`config/config.yaml`'s vLLM defaults. See [Hardware requirements](#hardware-requirements).
+a matching `DOCSLIDES_LEGAL_ORCHESTRATOR_*` set for the Legal tab's
+independent Qwen orchestrator deployment (backend, URL, model and
+`_MAX_MODEL_LEN`, its context window) -- all overriding
+`config/config.yaml`'s vLLM defaults. Both scripts also install the
+`legal` and `legal-data` extras the Legal tab needs. See
+[Hardware requirements](#hardware-requirements).
 
 After setup, use **`gui/DocSlides.bat`** (Windows) or **`gui/DocSlides.command`**
 (macOS) to start/stop everything and watch live status (backend, app, Docker)
@@ -213,7 +228,7 @@ services.
 
 **No NVIDIA GPU?** Use Ollama instead of the two steps above: install it
 (https://ollama.com/download or your package manager), then
-`ollama pull qwen3:32b` (or a smaller tag, e.g. `qwen3:8b`). No Hugging
+`ollama pull qwen3:32b` (or `qwen3:14b` on a host with too little memory). No Hugging
 Face download needed for the chat model.
 
 ### 3. Configure
@@ -338,7 +353,8 @@ Reference `vllm serve` command (also printed by
 ```bash
 vllm serve <Qwen3-32B-AWQ-or-GPTQ-repo> \
   --quantization awq \
-  --max-model-len 8192 \
+  --max-model-len 16384 \
+  --kv-cache-dtype fp8 \
   --gpu-memory-utilization 0.90 \
   --guided-decoding-backend xgrammar \
   --port 8000
@@ -350,7 +366,7 @@ vllm serve <Qwen3-32B-AWQ-or-GPTQ-repo> \
 
 ```bash
 # terminal 1
-vllm serve <repo> --quantization awq --max-model-len 8192 --gpu-memory-utilization 0.90 --port 8000
+vllm serve <repo> --quantization awq --max-model-len 16384 --kv-cache-dtype fp8 --gpu-memory-utilization 0.90 --port 8000
 
 # terminal 2
 docslides-api   # FastAPI + Gradio UI on :8456 (UI at /ui)

@@ -37,15 +37,18 @@ legal:
   orchestrator:
     backend: "vllm"
     base_url: "http://vllm:8000/v1"
-    model: "Qwen/Qwen3.5-32B-AWQ"                # verify against the current model repo before deploying
+    # Qwen3-32B: the same weights docker-compose.yml's vLLM serves (QWEN_MODEL_REPO), so the
+    # Legal tab and the general chat share one server. Ollama tag: qwen3:32b (scripts/setup.*).
+    model: "Qwen/Qwen3-32B-AWQ"
     api_key: "not-needed"
-    request_timeout_s: 600
+    request_timeout_s: 900
     # Must not exceed the served --max-model-len (docker-compose.yml:
-    # QWEN_MAX_MODEL_LEN, default 8192). Under Ollama it is the num_ctx sent
-    # with every request. Output budgets are capped to fit it (llm/client.py),
-    # so at 8192 the thinking analysis pass gets ~3k tokens; 16384 gives it
-    # the full pipeline.analysis_max_tokens (the Kaggle notebook sets 16384).
-    max_model_len: 8192
+    # QWEN_MAX_MODEL_LEN, default 16384). Under Ollama it is the num_ctx sent
+    # with every request (DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN overrides
+    # it). Output budgets are capped to fit it (llm/client.py): 16384 holds
+    # the full evidence budget below plus the thinking analysis pass's
+    # pipeline.analysis_max_tokens; at 8192 both get squeezed.
+    max_model_len: 16384
     guided_decoding_backend: "xgrammar"
     # Thinking stays off for every JSON call (memo, draft, verification): the
     # analysis pass does the reasoning in free text, and its reasoning is
@@ -73,8 +76,8 @@ legal:
     # 16-question elections eval (evals/legal/) -- re-check them on new laws.
     relevance_margin: 0.08                     # drop hits this much farther than the best hit
     sibling_margin: 0.12                       # add other parts of a split provision only this close
-    max_evidence_tokens: 2500                  # all evidence, best-first; fits the 8k window with the
-                                               # memo/draft outputs -- raise with max_model_len
+    max_evidence_tokens: 5000                  # all evidence, best-first; fits the 16k window with the
+                                               # analysis/memo/draft outputs -- lower it with max_model_len
     keyword_search: true                       # Hebrew-aware BM25 fused with the embedding ranking
     section_lookup_max: 2                      # chunks per section number the question names
     reranker_model: "BAAI/bge-reranker-v2-m3"  # null = rank by embedding distance only
@@ -111,7 +114,7 @@ legal:
     embed_batch_size: 64
     fold_final_letters_for_embedding: false
     categories: ["laws", "procedural_rules"]   # searched by the Legal tab when retrieval.source is "corpus"
-    top_k: 8                                   # chunks kept after reranking, then cut to max_evidence_tokens
+    top_k: 12                                  # chunks kept after reranking, then cut to max_evidence_tokens
 
 # Corpus acquisition: scripts/legal_data/fetch_*.py (see scripts/legal_data/README.md). Only the
 # hosts below are contacted, robots.txt is honoured, at most one request per second per host.

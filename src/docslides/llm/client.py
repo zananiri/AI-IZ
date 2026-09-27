@@ -42,11 +42,13 @@ from docslides.logging_setup import get_logger
 logger = get_logger(__name__)
 
 # Output-budget arithmetic (see QwenClient._fit_context). Deliberately pessimistic
-# about Hebrew/Arabic, which Qwen's tokenizer splits finely.
-_CHARS_PER_TOKEN_NON_LATIN = 2.0
-_CHARS_PER_TOKEN_LATIN = 3.5
+# about Hebrew/Arabic, which Qwen's tokenizer splits finely. Fitted on the 26 Sept bulk500
+# trace (931 calls, qwen3 tokenizer): 2.0/3.5 undercounted mixed Hebrew/English prompts by up
+# to 39%, 1.5/3.0 by at most 12% -- the margin covers the rest on a 4k-token prompt.
+_CHARS_PER_TOKEN_NON_LATIN = 1.5
+_CHARS_PER_TOKEN_LATIN = 3.0
 _TOKENS_PER_MESSAGE = 8
-_CONTEXT_MARGIN = 128
+_CONTEXT_MARGIN = 512
 _MIN_OUTPUT_TOKENS = 256
 
 # How much of a malformed reply goes back to the model with the correction request.

@@ -26,14 +26,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from eval_run import RAG_SYSTEM, render_context, retrieve
+from eval_run import RAG_SYSTEM, eval_sampling, render_context, retrieve
 
 from docslides.legal.evaluation import get_judge_client
 from docslides.llm import trace
 from docslides.llm.client import (
     ChatMessage,
     LLMCallSite,
-    SamplingParams,
     get_legal_orchestrator_client,
 )
 from docslides.llm.schemas import CaseJudgement
@@ -46,8 +45,8 @@ CASE_SYSTEM = """You act as a paralegal at a law firm, working under ISRAELI law
 instructions exactly, in the order given, using only facts that appear in the case file -- if you \
 assume something, say so explicitly. Reply in Hebrew."""
 
-WORK_FILE_MAX_TOKENS = 3072
-JUDGE_MAX_TOKENS = 2048
+WORK_FILE_MAX_TOKENS = 6144  # a work file has eight sections, plus the reasoning before them
+JUDGE_MAX_TOKENS = 4096
 
 
 def _log(message: str) -> None:
@@ -87,7 +86,7 @@ async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
         text = await qwen.complete_text(
             [ChatMessage("system", system), ChatMessage("user", user)],
             LLMCallSite("legal_eval_baseline"),
-            sampling=SamplingParams(temperature=0.0, max_tokens=max_tokens),
+            sampling=eval_sampling(max_tokens, thinking),
             enable_thinking=thinking,
         )
     return {"case_id": case_id, "work_file": text.strip(),
@@ -145,14 +144,14 @@ def judge_prompt(case_text: str, work_file: str, gold_entry: dict) -> str:
 
 
 async def judge_one(qwen, case_id: str, case_text: str, work_file: str, gold_entry: dict,
-                    thinking: bool = True) -> dict:
+                    thinking: bool = True, max_tokens: int = JUDGE_MAX_TOKENS) -> dict:
     prompt = judge_prompt(case_text, work_file, gold_entry)
     with trace.collect(job_id=case_id):
         try:
             verdict = await qwen.complete_json(
                 [ChatMessage("user", prompt)], LLMCallSite("legal_eval_judge"),
                 schema=CaseJudgement,
-                sampling=SamplingParams(temperature=0.0, max_tokens=JUDGE_MAX_TOKENS),
+                sampling=eval_sampling(max_tokens, thinking),
                 enable_thinking=thinking,
             )
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
@@ -175,7 +174,8 @@ async def cmd_judge(a) -> None:
         entry = gold[case_id]
         case_text = (base / "cases" / entry["file"]).read_text(encoding="utf-8")
         started = time.monotonic()
-        row = await judge_one(qwen, case_id, case_text, ans["work_file"], entry, thinking=a.thinking)
+        row = await judge_one(qwen, case_id, case_text, ans["work_file"], entry, thinking=a.thinking,
+                              max_tokens=a.max_tokens)
         _append(out, row)
         _log(f"{case_id}: total={row['total']} ({round(time.monotonic() - started)}s)")
 
@@ -237,6 +237,7 @@ def main() -> None:
     pj.add_argument("--answers", required=True)
     pj.add_argument("--out", required=True)
     pj.add_argument("--thinking", action=argparse.BooleanOptionalAction, default=True)
+    pj.add_argument("--max-tokens", type=int, default=JUDGE_MAX_TOKENS, help="output budget per judgement, reasoning included")
 
     pr = sub.add_parser("report")
     pr.add_argument("--judged", required=True)

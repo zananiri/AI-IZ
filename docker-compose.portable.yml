@@ -43,5 +43,8 @@ services:
       - DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
       - DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://host.docker.internal:11434
       - DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=${OLLAMA_MODEL:-qwen3:32b}
+      # Context window (Ollama num_ctx) for the Legal tab: evidence + thinking pass. scripts/setup.*
+      # write the value picked for this host's memory to .env.local; 16384 is the config default.
+      - DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=${LEGAL_CONTEXT_LENGTH:-16384}
     extra_hosts:
       - "host.docker.internal:host-gateway"  # Linux needs this; Docker Desktop (Win/Mac) provides it natively

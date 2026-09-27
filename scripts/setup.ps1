@@ -27,21 +27,25 @@
 
 .PARAMETER OllamaModel
     Model tag to pull when the Ollama backend is selected (general chat model
-    + Legal tab orchestrator). Default: qwen3:32b on a >=48GB-RAM host,
-    auto-downgraded to qwen3:8b on anything smaller (pass this explicitly to
-    override the auto-pick either way). qwen3:32b's GGUF weights are ~20GB and
-    llama.cpp's CPU "repack" step needs a similarly sized second buffer while
-    loading -- on a 32GB machine that reliably fails with
-    "ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate ..." /
-    "std::bad_alloc", which is exactly what makes the chat/Legal tabs look
-    like they hang or don't respond.
+    + Legal tab orchestrator). Default: qwen3:32b. Only a host under 48GB of
+    RAM falls back to qwen3:14b (pass -OllamaModel qwen3:32b to force it):
+    qwen3:32b's GGUF weights are ~20GB and llama.cpp's CPU "repack" step
+    needs a similarly sized second buffer while loading -- on a 32GB machine
+    that fails with "ggml_backend_cpu_buffer_type_alloc_buffer: failed to
+    allocate ..." / "std::bad_alloc", which is exactly what makes the
+    chat/Legal tabs look like they hang or don't respond.
+
+.PARAMETER LegalContextLength
+    Legal tab context window (Ollama num_ctx), written to .env.local.
+    Default: 16384 -- the evidence budget plus the thinking pass
+    (config/config.yaml legal.orchestrator.max_model_len).
 
 .EXAMPLE
     .\scripts\setup.ps1
 .EXAMPLE
     .\scripts\setup.ps1 -ModelsDir D:\models -SkipMineru
 .EXAMPLE
-    .\scripts\setup.ps1 -ForceBackend ollama -OllamaModel qwen3:8b
+    .\scripts\setup.ps1 -ForceBackend ollama -OllamaModel qwen3:14b
 #>
 param(
     [string]$ModelsDir = "./models",
@@ -50,7 +54,8 @@ param(
     [string]$QwenModelRepo = "Qwen/Qwen3-32B-AWQ",
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
-    [string]$OllamaModel = "qwen3:32b"
+    [string]$OllamaModel = "qwen3:32b",
+    [int]$LegalContextLength = 16384
 )
 
 $ErrorActionPreference = "Continue"
@@ -120,6 +125,10 @@ if (-not (Invoke-Pip install -e ".[$extras]")) {
     exit 1
 }
 Invoke-Pip install -U "huggingface_hub[cli]" -q | Out-Null
+Write-Host "-- legal extras (Legal tab: chromadb, sentence-transformers, reranker; bulk corpus tools) --"
+if (-not (Invoke-Pip install -e ".[legal,legal-data]")) {
+    $Skipped.Add("legal extras: pip install -e .[legal,legal-data]")
+}
 
 if (-not $SkipMineru) {
     Write-Host "-- ingestion-mineru extra (magic-pdf) --"
@@ -187,24 +196,22 @@ if (-not $Backend) {
 }
 Write-Host "selected backend: $Backend"
 
-# On the Ollama (CPU/no-NVIDIA) path, right-size the default chat model to
-# the host's RAM unless the caller explicitly passed -OllamaModel. qwen3:32b's
-# ~20GB GGUF plus llama.cpp's CPU "repack" buffer (another ~14-20GB, briefly
-# resident during load) reliably hits std::bad_alloc on anything under ~48GB
-# of RAM -- see the setup.ps1 header comment. That failure looks like the app
-# "not responding" rather than an install error, so it's worth avoiding by
-# default rather than documenting after the fact.
+# On the Ollama (CPU/no-NVIDIA) path, qwen3:32b stays the model unless the
+# host can't load it: its ~20GB GGUF plus llama.cpp's CPU "repack" buffer
+# (another ~14-20GB, briefly resident during load) hits std::bad_alloc under
+# ~48GB of RAM -- see the header comment. That failure looks like the app
+# "not responding" rather than an install error, so such a host gets
+# qwen3:14b (~9GB) unless -OllamaModel was passed explicitly.
 if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel")) {
     $TotalRamGB = 0
     try {
         $TotalRamGB = [math]::Round((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).TotalPhysicalMemory / 1GB)
     } catch {}
     if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 48) {
-        $OllamaModel = "qwen3:8b"
-        Write-Host "[note] $TotalRamGB GB RAM detected -- defaulting Ollama chat model to qwen3:8b" -ForegroundColor Yellow
-        Write-Host "       instead of qwen3:32b (which needs ~48GB+ RAM to load reliably under" -ForegroundColor Yellow
-        Write-Host "       Ollama's CPU backend). Override with -OllamaModel qwen3:32b if you" -ForegroundColor Yellow
-        Write-Host "       still want it." -ForegroundColor Yellow
+        $OllamaModel = "qwen3:14b"
+        Write-Host "[note] $TotalRamGB GB RAM detected -- qwen3:32b needs ~48GB+ to load reliably" -ForegroundColor Yellow
+        Write-Host "       under Ollama's CPU backend, so the model defaults to qwen3:14b (~9GB)." -ForegroundColor Yellow
+        Write-Host "       Pass -OllamaModel qwen3:32b to use it anyway." -ForegroundColor Yellow
     }
 }
 Write-Host ""
@@ -264,17 +271,22 @@ if ($Backend -eq "vllm") {
         # load fails with the same allocation error as an oversized single
         # model on a modest host. Pin it to one resident model at a time so
         # the second call evicts the first instead of fighting it for RAM.
+        # Flash attention + an 8-bit KV cache halve the context's memory, so
+        # the Legal tab's 16k window costs qwen3:32b ~2GB instead of ~4GB.
         $NeedsRestart = $false
-        if ([System.Environment]::GetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "User") -ne "1") {
-            [System.Environment]::SetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "1", "User")
-            $NeedsRestart = $true
+        $OllamaSettings = [ordered]@{ OLLAMA_MAX_LOADED_MODELS = "1"; OLLAMA_FLASH_ATTENTION = "1"; OLLAMA_KV_CACHE_TYPE = "q8_0" }
+        foreach ($name in $OllamaSettings.Keys) {
+            if ([System.Environment]::GetEnvironmentVariable($name, "User") -ne $OllamaSettings[$name]) {
+                [System.Environment]::SetEnvironmentVariable($name, $OllamaSettings[$name], "User")
+                $NeedsRestart = $true
+            }
+            Set-Item -Path "Env:$name" -Value $OllamaSettings[$name]
         }
-        $env:OLLAMA_MAX_LOADED_MODELS = "1"
 
         $ollamaUp = $false
         try { Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2 | Out-Null; $ollamaUp = $true } catch {}
         if ($ollamaUp -and $NeedsRestart) {
-            Write-Host "Restarting Ollama so OLLAMA_MAX_LOADED_MODELS=1 takes effect..."
+            Write-Host "Restarting Ollama so its new settings (one loaded model, flash attention, q8_0 KV cache) take effect..."
             Get-Process -Name "ollama", "ollama app" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
             $ollamaUp = $false
@@ -317,10 +329,11 @@ DOCSLIDES_LLM_MODEL=$OllamaModel
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
+DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LegalContextLength
 
 "@
     [System.IO.File]::WriteAllText((Join-Path $RepoRoot ".env.local"), $EnvLocal, (New-Object System.Text.UTF8Encoding $false))
-    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, model=$OllamaModel)"
+    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, model=$OllamaModel, legal context=$LegalContextLength)"
 }
 Write-Host ""
 

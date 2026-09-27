@@ -54,6 +54,19 @@ def test_max_tokens_is_capped_to_fit_the_context(ollama):
     assert ollama._fit_context([ChatMessage("user", "hi")], SamplingParams(max_tokens=4096)).max_tokens == 4096
 
 
+def test_context_window_can_be_set_per_host_from_the_environment(monkeypatch):
+    from docslides.config import _apply_env_overrides
+
+    monkeypatch.setenv("DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN", "20480")
+    monkeypatch.setenv("DOCSLIDES_LLM_MAX_MODEL_LEN", "12288")
+    raw = _apply_env_overrides({"llm": {"max_model_len": 8192}, "legal": {"orchestrator": {"max_model_len": 16384}}})
+    assert raw["llm"]["max_model_len"] == "12288"
+    assert raw["legal"]["orchestrator"]["max_model_len"] == "20480"
+    orchestrator = type(get_config().legal.orchestrator).model_validate(
+        {**get_config().legal.orchestrator.model_dump(), **raw["legal"]["orchestrator"]})
+    assert orchestrator.max_model_len == 20480
+
+
 def test_a_runaway_reply_is_retried_fresh_with_non_greedy_sampling(ollama, monkeypatch):
     payloads = _scripted(ollama, monkeypatch, [
         Completion('{"answer_draft": "loop loop loop', done_reason="length"),

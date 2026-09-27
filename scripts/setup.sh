@@ -15,13 +15,18 @@
 # Env overrides:
 #   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-32B-AWQ
 #   OLLAMA_MODEL         Ollama path model tag (general + Legal orchestrator).
-#                        default: qwen3:32b on a >=48GB-RAM host, auto-
-#                        downgraded to qwen3:8b below that (set this env var
-#                        to override either way). qwen3:32b's ~20GB GGUF plus
+#                        default: qwen3:32b. Only a host that can't load it
+#                        falls back to qwen3:14b: under 48GB RAM on Linux
+#                        (CPU/AMD), where qwen3:32b's ~20GB GGUF plus
 #                        llama.cpp's CPU "repack" buffer (another ~14-20GB,
-#                        briefly resident while loading) reliably hits
-#                        std::bad_alloc under ~48GB RAM, which looks like the
-#                        app "not responding" rather than a load failure.
+#                        briefly resident while loading) hits std::bad_alloc
+#                        -- which looks like the app "not responding" rather
+#                        than a load failure -- or under 36GB on a Mac, whose
+#                        GPU gets only ~2/3 of unified memory. Set
+#                        OLLAMA_MODEL=qwen3:32b to force it anyway.
+#   LEGAL_CONTEXT_LENGTH Legal tab context window (Ollama num_ctx). default:
+#                        16384 -- the evidence budget plus the thinking pass
+#                        (config/config.yaml legal.orchestrator.max_model_len).
 #   FORCE_BACKEND        "vllm" or "ollama" -- skip GPU auto-detection
 #   SKIP_MINERU=1     skip the magic-pdf (MinerU) extra -- it has a known
 #                     dependency conflict with gradio's huggingface-hub pin
@@ -71,6 +76,8 @@ echo "== [3/7] Installing Python dependencies =="
 echo "-- core + ocr + lang + dev extras --"
 pip install -e ".[ocr,lang,dev]" || { echo "[fatal] core dependency install failed"; exit 1; }
 pip install -U "huggingface_hub[cli]" -q || true
+echo "-- legal extras (Legal tab: chromadb, sentence-transformers, reranker; bulk corpus tools) --"
+pip install -e ".[legal,legal-data]" || SKIPPED+=("legal extras: pip install -e .[legal,legal-data]")
 
 if [ "${SKIP_MINERU:-0}" != "1" ]; then
   echo "-- ingestion-mineru extra (magic-pdf) --"
@@ -118,20 +125,22 @@ if [ "$BACKEND" = "vllm" ]; then
   rm -f .env.local
 else
   echo "== [5/7] Ollama path: installing Ollama + pulling the model =="
+  LEGAL_CONTEXT_LENGTH="${LEGAL_CONTEXT_LENGTH:-16384}"
   if [ -z "${OLLAMA_MODEL:-}" ]; then
+    OLLAMA_MODEL="qwen3:32b"
     TOTAL_RAM_GB=0
+    MIN_RAM_GB=48  # CPU backend: the weights + llama.cpp's repack buffer while loading
     if [ "$OS_NAME" = "Darwin" ]; then
       TOTAL_RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
+      MIN_RAM_GB=36  # Metal: the GPU may use ~2/3 of unified memory; ~24GB with the 16k context
     elif command -v free >/dev/null 2>&1; then
       TOTAL_RAM_GB=$(( $(free -b | awk '/^Mem:/{print $2}') / 1073741824 ))
     fi
-    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 48 ]; then
-      OLLAMA_MODEL="qwen3:8b"
-      echo "[note] ${TOTAL_RAM_GB}GB RAM detected -- defaulting Ollama chat model to qwen3:8b"
-      echo "       instead of qwen3:32b (which needs ~48GB+ RAM to load reliably under"
-      echo "       Ollama's CPU backend). Set OLLAMA_MODEL=qwen3:32b to override."
-    else
-      OLLAMA_MODEL="qwen3:32b"
+    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt "$MIN_RAM_GB" ]; then
+      OLLAMA_MODEL="qwen3:14b"
+      echo "[note] ${TOTAL_RAM_GB}GB RAM detected -- qwen3:32b needs ~${MIN_RAM_GB}GB+ to load"
+      echo "       reliably here, so the Ollama model defaults to qwen3:14b (~9GB)."
+      echo "       Set OLLAMA_MODEL=qwen3:32b to use it anyway."
     fi
   fi
   if ! command -v ollama >/dev/null 2>&1; then
@@ -156,12 +165,24 @@ else
     # same allocation error as an oversized single model on a modest host.
     # Pin it to one resident model at a time so the second call evicts the
     # first instead of fighting it for RAM.
-    export OLLAMA_MAX_LOADED_MODELS=1
-    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-      if [ -f "$rc" ] && ! grep -q "^export OLLAMA_MAX_LOADED_MODELS=" "$rc" 2>/dev/null; then
-        echo 'export OLLAMA_MAX_LOADED_MODELS=1' >> "$rc"
-      fi
+    #
+    # Flash attention + an 8-bit KV cache halve the context's memory, so the
+    # Legal tab's 16k window costs qwen3:32b ~2GB instead of ~4GB.
+    export OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0
+    for setting in OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0; do
+      for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [ -f "$rc" ] && ! grep -q "^export ${setting%%=*}=" "$rc" 2>/dev/null; then
+          echo "export $setting" >> "$rc"
+        fi
+      done
     done
+    if [ "$OS_NAME" = "Darwin" ]; then
+      # The Ollama menu-bar app doesn't read shell rc files; launchctl makes
+      # the settings visible to it (until the next reboot).
+      launchctl setenv OLLAMA_MAX_LOADED_MODELS 1 2>/dev/null || true
+      launchctl setenv OLLAMA_FLASH_ATTENTION 1 2>/dev/null || true
+      launchctl setenv OLLAMA_KV_CACHE_TYPE q8_0 2>/dev/null || true
+    fi
     if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
       echo "Starting 'ollama serve' in the background..."
       nohup ollama serve >/tmp/ollama-serve.log 2>&1 &
@@ -172,7 +193,8 @@ else
     else
       echo "[note] ollama is already running -- if it wasn't just started by this"
       echo "       script, restart it (e.g. 'brew services restart ollama', or quit"
-      echo "       and reopen the app) so OLLAMA_MAX_LOADED_MODELS=1 takes effect."
+      echo "       and reopen the app) so OLLAMA_MAX_LOADED_MODELS=1, OLLAMA_FLASH_ATTENTION=1"
+      echo "       and OLLAMA_KV_CACHE_TYPE=q8_0 take effect."
     fi
     echo "Pulling $OLLAMA_MODEL (this is a large download, comparable to the vLLM weights)..."
     ollama pull "$OLLAMA_MODEL" || {
@@ -193,8 +215,9 @@ DOCSLIDES_LLM_MODEL=$OLLAMA_MODEL
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OLLAMA_MODEL
+DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
 EOF
-  echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL)"
+  echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL, legal context=$LEGAL_CONTEXT_LENGTH)"
 fi
 echo
 

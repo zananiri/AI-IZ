@@ -255,32 +255,29 @@ def build_chat_tab() -> None:
     llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
     reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
 
-    with gr.Row():
-        msg_box = gr.MultimodalTextbox(
-            label="Message",
-            scale=4,
-            lines=4,
-            max_lines=24,
-            placeholder='Ask a question, paste a large block of text to rewrite/translate/summarize, or say '
-            '"make this into a presentation" -- attach a document (PDF, DOCX, PPTX, XLSX, image, or .txt) instead with the 📎 button',
-            # .txt matters here beyond ordinary file attachments: pasting a
-            # large enough block of text makes the browser/Gradio turn the
-            # paste itself into a text/plain file attachment instead of
-            # inline text (see ingestion/parser.py's plain-text fast path) --
-            # without .txt allowed, every large paste was rejected outright
-            # with "Invalid file type: text/plain".
-            file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
-            file_count="single",
-            sources=["upload"],
-        )
-        send_btn = gr.Button("Send", scale=1)
+    msg_box = gr.MultimodalTextbox(
+        label="Message",
+        lines=4,
+        max_lines=24,
+        placeholder='Ask a question, paste a large block of text to rewrite/translate/summarize, or say '
+        '"make this into a presentation" -- attach a document (PDF, DOCX, PPTX, XLSX, image, or .txt) instead with the 📎 button',
+        # .txt matters here beyond ordinary file attachments: pasting a
+        # large enough block of text makes the browser/Gradio turn the
+        # paste itself into a text/plain file attachment instead of
+        # inline text (see ingestion/parser.py's plain-text fast path) --
+        # without .txt allowed, every large paste was rejected outright
+        # with "Invalid file type: text/plain".
+        file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
+        file_count="single",
+        sources=["upload"],
+    )
 
     with gr.Accordion("Tone control", open=False):
         gr.Markdown(
             "Rewrites whatever is in the message box above -- typed/pasted text, or "
             "an attached document (📎) -- with the tone below, instead of answering it "
             "normally. Professionalism drives wording/register (system prompt); "
-            "Creativity drives sampling randomness only. Use this button instead of Send."
+            "Creativity drives sampling randomness only. Use this button instead of the send arrow."
         )
         professionalism_slider = gr.Slider(
             1, 5, value=3, step=1,
@@ -294,7 +291,6 @@ def build_chat_tab() -> None:
 
     chat_outputs = [chatbot, reasoning_panel, msg_box, llm_status]
     send = _glow_while_running(send_chat_message, chat_outputs, msg_box)
-    send_btn.click(fn=send, inputs=[msg_box, chatbot], outputs=chat_outputs)
     msg_box.submit(fn=send, inputs=[msg_box, chatbot], outputs=chat_outputs)
     rewrite_btn.click(
         fn=_glow_while_running(send_tone_rewrite, chat_outputs, msg_box),

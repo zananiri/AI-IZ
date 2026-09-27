@@ -233,15 +233,16 @@ class QwenClient:
 
     @staticmethod
     def _split_thinking(text: str) -> tuple[str, str]:
-        """Split a full (non-streamed) completion into (reasoning, content)."""
-        if "<think>" in text and "</think>" in text:
-            start = text.index("<think>") + len("<think>")
-            end = text.index("</think>")
-            reasoning = text[start:end].strip()
-            content = text[end + len("</think>") :].strip()
-            return reasoning, content
-        if text.lstrip().startswith("<think>"):  # cut off while still thinking: there is no answer
-            return text.lstrip()[len("<think>") :].strip(), ""
+        """Split a full (non-streamed) completion into (reasoning, content). Handles <think>...</think>
+        (Qwen3) and [THINK]...[/THINK] (Mistral-based reasoning models such as DictaLM 3.0 Thinking),
+        and a reply that has only the closing tag because the chat template already opened the block."""
+        for open_tag, close_tag in (("<think>", "</think>"), ("[THINK]", "[/THINK]")):
+            if close_tag in text:
+                end = text.index(close_tag)
+                start = text.index(open_tag) + len(open_tag) if open_tag in text[:end] else 0
+                return text[start:end].strip(), text[end + len(close_tag):].strip()
+            if text.lstrip().startswith(open_tag):  # cut off while still thinking: there is no answer
+                return text.lstrip()[len(open_tag):].strip(), ""
         return "", text.strip()
 
     @property

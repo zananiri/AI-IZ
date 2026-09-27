@@ -75,7 +75,8 @@ def load_gold(path: Path) -> dict[str, dict]:
 
 
 async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
-                      categories: list[str], top_k: int, thinking: bool = True) -> dict:
+                      categories: list[str], top_k: int, thinking: bool = True,
+                      max_tokens: int = WORK_FILE_MAX_TOKENS) -> dict:
     # Always with retrieval over the corpus: there is no model-alone mode.
     hits = retrieve(case_text, categories, top_k)
     reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>"
@@ -86,7 +87,7 @@ async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
         text = await qwen.complete_text(
             [ChatMessage("system", system), ChatMessage("user", user)],
             LLMCallSite("legal_eval_baseline"),
-            sampling=SamplingParams(temperature=0.0, max_tokens=WORK_FILE_MAX_TOKENS),
+            sampling=SamplingParams(temperature=0.0, max_tokens=max_tokens),
             enable_thinking=thinking,
         )
     return {"case_id": case_id, "work_file": text.strip(),
@@ -111,7 +112,8 @@ async def cmd_answer(a) -> None:
         case_text = (base / "cases" / entry["file"]).read_text(encoding="utf-8")
         started = time.monotonic()
         try:
-            row = await answer_one(qwen, instructions, case_id, case_text, categories, a.top_k, thinking=a.thinking)
+            row = await answer_one(qwen, instructions, case_id, case_text, categories, a.top_k, thinking=a.thinking,
+                                   max_tokens=a.max_tokens)
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
             row = {"case_id": case_id, "work_file": "", "error": f"{type(exc).__name__}: {exc}"}
         _append(out, row)
@@ -227,6 +229,7 @@ def main() -> None:
     pa.add_argument("--top-k", type=int, default=16)
     pa.add_argument("--out", required=True)
     pa.add_argument("--limit", type=int, help="answer only the first N cases (cases_gold.json order)")
+    pa.add_argument("--max-tokens", type=int, default=WORK_FILE_MAX_TOKENS, help="output budget per work file, reasoning included")
     pa.add_argument("--thinking", action=argparse.BooleanOptionalAction, default=True)
 
     pj = sub.add_parser("judge")

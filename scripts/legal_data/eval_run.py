@@ -347,7 +347,8 @@ async def plan_issues(qwen, q: dict, max_issues: int) -> list[EvalIssue]:
     return [i for i in plan.issues if i.law.strip()][:max_issues]
 
 
-async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking: bool = True) -> dict:
+async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking: bool = True,
+                     max_tokens: int = ANSWER_MAX_TOKENS) -> dict:
     qtext = _question_text(q)
     issues: list[EvalIssue] = []
     repairs: list[str] = []
@@ -362,7 +363,7 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
             user += f"\n\n{ISSUE_SPOTTING_NOTE}"
         messages = [ChatMessage("system", ANSWER_SYSTEM), ChatMessage("user", user)]
 
-        sampling = SamplingParams(temperature=0.0, max_tokens=ANSWER_MAX_TOKENS)
+        sampling = SamplingParams(temperature=0.0, max_tokens=max_tokens)
         text = (await qwen.complete_text(
             messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
             enable_thinking=thinking,  # the point of this run: capture how the model reasons, for fine-tuning
@@ -405,7 +406,7 @@ async def cmd_answer(a) -> None:
             continue
         started = time.monotonic()
         try:
-            row = await answer_one(qwen, q, categories, a.top_k, thinking=a.thinking)
+            row = await answer_one(qwen, q, categories, a.top_k, thinking=a.thinking, max_tokens=a.max_tokens)
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
             row = {"id": q["id"], "answer": "", "error": f"{type(exc).__name__}: {exc}"}
         _append(out, row)
@@ -454,6 +455,8 @@ def main() -> None:
     pa.add_argument("--top-k", type=int, default=8)
     pa.add_argument("--out", required=True)
     pa.add_argument("--limit", type=int, help="answer only the first N questions (smoke test)")
+    pa.add_argument("--max-tokens", type=int, default=ANSWER_MAX_TOKENS,
+                    help="output budget per answer, reasoning included (a model that always reasons needs more)")
     pa.add_argument("--thinking", action=argparse.BooleanOptionalAction, default=True,
                     help="reasoning on the answer call (--no-thinking for models without a thinking mode)")
 

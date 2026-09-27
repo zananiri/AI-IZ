@@ -4,7 +4,7 @@ against cases_gold.json's 100-point rubric, per israeli_legal_eval/judge_prompt.
 Companion to eval_run.py (the 500 single questions); score.py doesn't cover the cases (its own
 docstring: "prepare"/"report" are for gold.jsonl), so this script also does the aggregate report.
 
-    python scripts/legal_data/eval_cases.py answer --mode rag --out data/legal/eval/cases/answers_rag.jsonl
+    python scripts/legal_data/eval_cases.py answer --out data/legal/eval/cases/answers_rag.jsonl [--limit 5]
     python scripts/legal_data/eval_cases.py judge --answers data/legal/eval/cases/answers_rag.jsonl \
         --out data/legal/eval/cases/judged_rag.jsonl
     python scripts/legal_data/eval_cases.py report --judged data/legal/eval/cases/judged_rag.jsonl \
@@ -74,15 +74,12 @@ def load_gold(path: Path) -> dict[str, dict]:
     return {c["case_id"]: c for c in data["cases"]}
 
 
-async def answer_one(qwen, instructions: str, case_id: str, case_text: str, mode: str,
-                      categories: list[str], top_k: int) -> dict:
-    if mode == "rag":
-        hits = retrieve(case_text, categories, top_k)
-        reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>"
-        system = RAG_SYSTEM.replace("You are a legal assistant", "You act as a paralegal") + \
-            "\n\n" + CASE_SYSTEM
-    else:
-        hits, reference, system = [], "", CASE_SYSTEM
+async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
+                      categories: list[str], top_k: int, thinking: bool = True) -> dict:
+    # Always with retrieval over the corpus: there is no model-alone mode.
+    hits = retrieve(case_text, categories, top_k)
+    reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>"
+    system = RAG_SYSTEM.replace("You are a legal assistant", "You act as a paralegal") + "\n\n" + CASE_SYSTEM
     user = f"{instructions}\n\n---\n\n{case_text}{reference}"
 
     with trace.collect(job_id=case_id):
@@ -90,7 +87,7 @@ async def answer_one(qwen, instructions: str, case_id: str, case_text: str, mode
             [ChatMessage("system", system), ChatMessage("user", user)],
             LLMCallSite("legal_eval_baseline"),
             sampling=SamplingParams(temperature=0.0, max_tokens=WORK_FILE_MAX_TOKENS),
-            enable_thinking=True,
+            enable_thinking=thinking,
         )
     return {"case_id": case_id, "work_file": text.strip(),
             "retrieved": [{"category": h["category"], "distance": round(h["distance"], 4),
@@ -106,14 +103,15 @@ async def cmd_answer(a) -> None:
     done = _load_done(out)
     categories = a.categories.split(",")
     qwen = get_legal_orchestrator_client()
-    _log(f"{len(gold)} cases, {len(done)} already answered, mode={a.mode}")
-    for case_id, entry in gold.items():
+    cases = list(gold.items())[: a.limit] if a.limit else list(gold.items())
+    _log(f"{len(cases)} of {len(gold)} cases, {len(done)} already answered")
+    for case_id, entry in cases:
         if case_id in done:
             continue
         case_text = (base / "cases" / entry["file"]).read_text(encoding="utf-8")
         started = time.monotonic()
         try:
-            row = await answer_one(qwen, instructions, case_id, case_text, a.mode, categories, a.top_k)
+            row = await answer_one(qwen, instructions, case_id, case_text, categories, a.top_k, thinking=a.thinking)
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
             row = {"case_id": case_id, "work_file": "", "error": f"{type(exc).__name__}: {exc}"}
         _append(out, row)
@@ -144,7 +142,8 @@ def judge_prompt(case_text: str, work_file: str, gold_entry: dict) -> str:
     )
 
 
-async def judge_one(qwen, case_id: str, case_text: str, work_file: str, gold_entry: dict) -> dict:
+async def judge_one(qwen, case_id: str, case_text: str, work_file: str, gold_entry: dict,
+                    thinking: bool = True) -> dict:
     prompt = judge_prompt(case_text, work_file, gold_entry)
     with trace.collect(job_id=case_id):
         try:
@@ -152,7 +151,7 @@ async def judge_one(qwen, case_id: str, case_text: str, work_file: str, gold_ent
                 [ChatMessage("user", prompt)], LLMCallSite("legal_eval_judge"),
                 schema=CaseJudgement,
                 sampling=SamplingParams(temperature=0.0, max_tokens=JUDGE_MAX_TOKENS),
-                enable_thinking=True,
+                enable_thinking=thinking,
             )
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
             return {"case_id": case_id, "total": 0.0, "note": f"judge failed: {exc}",
@@ -174,14 +173,14 @@ async def cmd_judge(a) -> None:
         entry = gold[case_id]
         case_text = (base / "cases" / entry["file"]).read_text(encoding="utf-8")
         started = time.monotonic()
-        row = await judge_one(qwen, case_id, case_text, ans["work_file"], entry)
+        row = await judge_one(qwen, case_id, case_text, ans["work_file"], entry, thinking=a.thinking)
         _append(out, row)
         _log(f"{case_id}: total={row['total']} ({round(time.monotonic() - started)}s)")
 
 
 def cmd_report(a) -> None:
     judged = _load_jsonl(Path(a.judged))
-    lines = ["# Paralegal cases eval report", "", f"cases scored: {len(judged)} / 10", "",
+    lines = ["# Paralegal cases eval report", "", f"cases scored: {len(judged)}", "",
              "| case | " + " | ".join(RUBRIC_SECTIONS) + " | penalties | total |",
              "|---|" + "---|" * (len(RUBRIC_SECTIONS) + 2)]
     totals, section_totals = [], {s: [] for s in RUBRIC_SECTIONS}
@@ -223,15 +222,18 @@ def main() -> None:
 
     pa = sub.add_parser("answer")
     pa.add_argument("--dir", default=str(DEFAULT_DIR), help="extracted israeli_legal_eval/ directory")
-    pa.add_argument("--mode", choices=["no_context", "rag"], default="rag")
+    pa.add_argument("--mode", choices=["rag"], default="rag", help="accepted for older commands; rag is the only mode")
     pa.add_argument("--categories", default="laws,procedural_rules")
     pa.add_argument("--top-k", type=int, default=16)
     pa.add_argument("--out", required=True)
+    pa.add_argument("--limit", type=int, help="answer only the first N cases (cases_gold.json order)")
+    pa.add_argument("--thinking", action=argparse.BooleanOptionalAction, default=True)
 
     pj = sub.add_parser("judge")
     pj.add_argument("--dir", default=str(DEFAULT_DIR))
     pj.add_argument("--answers", required=True)
     pj.add_argument("--out", required=True)
+    pj.add_argument("--thinking", action=argparse.BooleanOptionalAction, default=True)
 
     pr = sub.add_parser("report")
     pr.add_argument("--judged", required=True)

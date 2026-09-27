@@ -5,12 +5,9 @@ set) against the bulk legal corpus (data/legal_corpus_vectordb, scripts/legal_da
 which this eval set is too broad to run against (five curated laws vs. the eval's eleven areas
 of law).
 
-    # 1) answer -- no_context (the model alone, no retrieval) and rag (retrieval over the corpus).
+    # 1) answer, always with retrieval over the corpus (there is no model-alone mode).
     #    Skips ids already in --out, so re-running after an interruption resumes.
-    python scripts/legal_data/eval_run.py answer --mode no_context \
-        --questions legal_txt/Evals/israeli_legal_eval/questions.jsonl \
-        --out data/legal/eval/bulk500/answers_no_context.jsonl
-    python scripts/legal_data/eval_run.py answer --mode rag \
+    python scripts/legal_data/eval_run.py answer \
         --questions legal_txt/Evals/israeli_legal_eval/questions.jsonl \
         --out data/legal/eval/bulk500/answers_rag.jsonl
 
@@ -33,10 +30,7 @@ of law).
         --judged data/legal/eval/bulk500/judged_rag.jsonl \
         --json-out data/legal/eval/bulk500/report_rag.json
 
-Repeat all four for --mode no_context (skip retrieval questions there -- --mode no_context still
-answers every item, including mcq/yesno ones score.py grades without a judge, for comparability).
-
-rag mode, per question: (1) the answering model lists the issues and the laws/sections it believes
+Per question: (1) the answering model lists the issues and the laws/sections it believes
 govern them (legal_eval_plan, thinking off); (2) retrieve_planned searches on the question and on
 each issue, looks the named sections up directly, keeps at most two chunks per section and reranks
 with legal.retrieval.reranker_model; (3) the answer call (ANSWER_SYSTEM); (4) an empty answer is
@@ -74,8 +68,6 @@ from docslides.llm.client import (
 )
 from docslides.llm.schemas import BulkEvalJudgement, EvalIssue, EvalRetrievalPlan
 from docslides.rag.embedding import embed_texts
-
-NO_CONTEXT_SYSTEM = "You are a legal assistant. Answer the user's question in the language it was asked in."
 
 # Kept as-is for eval_cases.py (the paralegal cases), which imports it.
 RAG_SYSTEM = """You are a legal assistant answering questions about ISRAELI law.
@@ -355,24 +347,20 @@ async def plan_issues(qwen, q: dict, max_issues: int) -> list[EvalIssue]:
     return [i for i in plan.issues if i.law.strip()][:max_issues]
 
 
-async def answer_one(qwen, q: dict, mode: str, categories: list[str], top_k: int, thinking: bool = True) -> dict:
+async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking: bool = True) -> dict:
     qtext = _question_text(q)
     issues: list[EvalIssue] = []
     repairs: list[str] = []
     with trace.collect(job_id=q["id"]):
-        if mode == "no_context":
-            messages = [ChatMessage("system", NO_CONTEXT_SYSTEM), ChatMessage("user", f"{q['instructions']}\n\n{qtext}")]
-            hits: list[dict] = []
-        else:
-            spotting = q.get("category") == "issue_spotting"
-            issues = await plan_issues(qwen, q, max_issues=6 if spotting else 3)
-            hits = retrieve_planned(qtext, issues, categories, ISSUE_SPOTTING_TOP_K if spotting else top_k,
-                                    per_issue_slot=spotting)
-            user = f"<instructions>{q['instructions']}</instructions>\n\n<question>{qtext}</question>\n\n" \
-                   f"<context>\n{render_context(hits)}\n</context>"
-            if spotting:
-                user += f"\n\n{ISSUE_SPOTTING_NOTE}"
-            messages = [ChatMessage("system", ANSWER_SYSTEM), ChatMessage("user", user)]
+        spotting = q.get("category") == "issue_spotting"
+        issues = await plan_issues(qwen, q, max_issues=6 if spotting else 3)
+        hits = retrieve_planned(qtext, issues, categories, ISSUE_SPOTTING_TOP_K if spotting else top_k,
+                                per_issue_slot=spotting)
+        user = f"<instructions>{q['instructions']}</instructions>\n\n<question>{qtext}</question>\n\n" \
+               f"<context>\n{render_context(hits)}\n</context>"
+        if spotting:
+            user += f"\n\n{ISSUE_SPOTTING_NOTE}"
+        messages = [ChatMessage("system", ANSWER_SYSTEM), ChatMessage("user", user)]
 
         sampling = SamplingParams(temperature=0.0, max_tokens=ANSWER_MAX_TOKENS)
         text = (await qwen.complete_text(
@@ -385,7 +373,7 @@ async def answer_one(qwen, q: dict, mode: str, categories: list[str], top_k: int
             text = (await qwen.complete_text(messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
                                              enable_thinking=False)).strip()
         stray = foreign_words(text)
-        if stray and mode != "no_context":
+        if stray:
             repairs.append("hebrew_rewrite")
             rewritten = (await qwen.complete_text(
                 [ChatMessage("user", REWRITE_PROMPT.format(words=", ".join(dict.fromkeys(stray)), answer=text))],
@@ -411,13 +399,13 @@ async def cmd_answer(a) -> None:
     done = _load_done(out)
     categories = a.categories.split(",")
     qwen = get_legal_orchestrator_client()
-    _log(f"{len(questions)} questions, {len(done)} already answered, mode={a.mode}")
+    _log(f"{len(questions)} questions, {len(done)} already answered")
     for q in questions:
         if q["id"] in done:
             continue
         started = time.monotonic()
         try:
-            row = await answer_one(qwen, q, a.mode, categories, a.top_k, thinking=a.thinking)
+            row = await answer_one(qwen, q, categories, a.top_k, thinking=a.thinking)
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
             row = {"id": q["id"], "answer": "", "error": f"{type(exc).__name__}: {exc}"}
         _append(out, row)
@@ -461,7 +449,7 @@ def main() -> None:
 
     pa = sub.add_parser("answer")
     pa.add_argument("--questions", default="legal_txt/Evals/israeli_legal_eval/questions.jsonl")
-    pa.add_argument("--mode", choices=["no_context", "rag"], required=True)
+    pa.add_argument("--mode", choices=["rag"], default="rag", help="accepted for older commands; rag is the only mode")
     pa.add_argument("--categories", default="laws,procedural_rules")
     pa.add_argument("--top-k", type=int, default=8)
     pa.add_argument("--out", required=True)

@@ -13,17 +13,16 @@
 #   ./scripts/setup.sh [models_dir]
 #
 # Env overrides:
-#   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-32B-AWQ
+#   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-14B-AWQ
+#                        (Qwen/Qwen3-32B-AWQ for the larger model)
 #   OLLAMA_MODEL         Ollama path model tag (general + Legal orchestrator).
-#                        default: qwen3:32b. Only a host that can't load it
-#                        falls back to qwen3:14b: under 48GB RAM on Linux
-#                        (CPU/AMD), where qwen3:32b's ~20GB GGUF plus
-#                        llama.cpp's CPU "repack" buffer (another ~14-20GB,
-#                        briefly resident while loading) hits std::bad_alloc
-#                        -- which looks like the app "not responding" rather
-#                        than a load failure -- or under 36GB on a Mac, whose
-#                        GPU gets only ~2/3 of unified memory. Set
-#                        OLLAMA_MODEL=qwen3:32b to force it anyway.
+#                        default: qwen3:14b (~9GB). qwen3:32b is the larger
+#                        option; it needs ~48GB RAM on a CPU-only host (its
+#                        ~20GB GGUF plus llama.cpp's CPU "repack" buffer,
+#                        briefly resident while loading, hits std::bad_alloc
+#                        below that -- which looks like the app "not
+#                        responding") or ~36GB on a Mac. Under 16GB of RAM
+#                        the default falls back to qwen3:8b.
 #   LEGAL_CONTEXT_LENGTH Legal tab context window (Ollama num_ctx). default:
 #                        16384 -- the evidence budget plus the thinking pass
 #                        (config/config.yaml legal.orchestrator.max_model_len).
@@ -127,20 +126,17 @@ else
   echo "== [5/7] Ollama path: installing Ollama + pulling the model =="
   LEGAL_CONTEXT_LENGTH="${LEGAL_CONTEXT_LENGTH:-16384}"
   if [ -z "${OLLAMA_MODEL:-}" ]; then
-    OLLAMA_MODEL="qwen3:32b"
+    OLLAMA_MODEL="qwen3:14b"
     TOTAL_RAM_GB=0
-    MIN_RAM_GB=48  # CPU backend: the weights + llama.cpp's repack buffer while loading
     if [ "$OS_NAME" = "Darwin" ]; then
       TOTAL_RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
-      MIN_RAM_GB=36  # Metal: the GPU may use ~2/3 of unified memory; ~24GB with the 16k context
     elif command -v free >/dev/null 2>&1; then
       TOTAL_RAM_GB=$(( $(free -b | awk '/^Mem:/{print $2}') / 1073741824 ))
     fi
-    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt "$MIN_RAM_GB" ]; then
-      OLLAMA_MODEL="qwen3:14b"
-      echo "[note] ${TOTAL_RAM_GB}GB RAM detected -- qwen3:32b needs ~${MIN_RAM_GB}GB+ to load"
-      echo "       reliably here, so the Ollama model defaults to qwen3:14b (~9GB)."
-      echo "       Set OLLAMA_MODEL=qwen3:32b to use it anyway."
+    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 16 ]; then
+      OLLAMA_MODEL="qwen3:8b"
+      echo "[note] ${TOTAL_RAM_GB}GB RAM detected -- qwen3:14b needs ~16GB+ with the 16k context,"
+      echo "       so the Ollama model defaults to qwen3:8b. Set OLLAMA_MODEL=qwen3:14b to override."
     fi
   fi
   if ! command -v ollama >/dev/null 2>&1; then
@@ -167,7 +163,7 @@ else
     # first instead of fighting it for RAM.
     #
     # Flash attention + an 8-bit KV cache halve the context's memory, so the
-    # Legal tab's 16k window costs qwen3:32b ~2GB instead of ~4GB.
+    # Legal tab's 16k window costs qwen3:14b ~1.3GB instead of ~2.6GB.
     export OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0
     for setting in OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0; do
       for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do

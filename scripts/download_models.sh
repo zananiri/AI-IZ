@@ -34,14 +34,14 @@ require_module() {
   python -c "import $1" >/dev/null 2>&1
 }
 
-QWEN_MODEL_REPO="${QWEN_MODEL_REPO:-Qwen/Qwen3-32B-AWQ}"
+QWEN_MODEL_REPO="${QWEN_MODEL_REPO:-Qwen/Qwen3-14B-AWQ}"
 
 if [ "${SKIP_QWEN:-0}" = "1" ]; then
-  echo "== Qwen3-32B (vLLM/Hugging Face weights): skipped (SKIP_QWEN=1) =="
+  echo "== Qwen3 (vLLM/Hugging Face weights): skipped (SKIP_QWEN=1) =="
   echo "   (Ollama backend selected -- the chat model was already pulled via 'ollama pull'.)"
   echo
 else
-echo "== Qwen3-32B (quantized) weights: $QWEN_MODEL_REPO (~20GB) =="
+echo "== Qwen3 (quantized) weights: $QWEN_MODEL_REPO (~10GB for 14B, ~20GB for 32B) =="
 echo "Verify this is still the repo you want (see scripts/verify_vllm_launch.py"
 echo "to check it against the current Hugging Face listing) before this runs."
 # `huggingface-cli` was renamed to `hf` in newer huggingface_hub releases;

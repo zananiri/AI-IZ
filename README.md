@@ -64,21 +64,21 @@ they run on; override with `FORCE_BACKEND`/`-ForceBackend`):
 |---|---|---|
 | Hardware | NVIDIA GPU only (24GB-class, e.g. RTX 4090/5090) | Any: CPU, NVIDIA, AMD (ROCm), Apple Silicon (Metal) |
 | Install | Docker image (`vllm/vllm-openai`) | Native host install (not Docker -- see `docker-compose.portable.yml`'s header comment for why, esp. on Mac) |
-| Model | Qwen3-32B AWQ/GPTQ 4-bit (~20GB) via Hugging Face | `qwen3:32b` via `ollama pull` (`qwen3:14b` on a host too small to load it) |
+| Model | Qwen3-14B AWQ 4-bit (~10GB) via Hugging Face (Qwen3-32B AWQ, ~20GB, for milestone runs) | `qwen3:14b` via `ollama pull` (`qwen3:32b` for milestone runs) |
 | Speed | Fastest -- purpose-built for concurrent GPU serving | Slower, especially CPU-only; scales with whatever acceleration the host has |
 | Structured JSON / thinking toggle | `guided_json` extra_body / `chat_template_kwargs` | top-level `format` JSON Schema / `think` field |
 
 Both are driven through the same `src/docslides/llm/client.py` interface --
 nothing above the LLM client needs to know which backend is active.
 
-Qwen3-32B (`qwen3:32b` under Ollama) is the model on both backends. It is
-heavy even quantized (~20GB), so on the Ollama path `scripts/setup.*` falls
-back to `qwen3:14b` (~9GB) only on a host that can't load it -- under ~48GB
-of RAM on Windows/Linux, under ~36GB on a Mac -- unless you pass
-`OLLAMA_MODEL=qwen3:32b` / `-OllamaModel qwen3:32b` explicitly. Below that
-threshold, qwen3:32b's ~20GB GGUF plus llama.cpp's CPU "repack" buffer (a
-second, similarly sized buffer briefly resident while loading) fails to
-allocate (`std::bad_alloc` /
+Qwen3-14B (`qwen3:14b` under Ollama, ~9GB) is the default model on both
+backends; `scripts/setup.*` falls back to `qwen3:8b` only under 16GB of RAM.
+Qwen3-32B (`qwen3:32b`, ~20GB) is the larger option for milestone runs: pass
+`OLLAMA_MODEL=qwen3:32b` / `-OllamaModel qwen3:32b` (or
+`QWEN_MODEL_REPO=Qwen/Qwen3-32B-AWQ` with `QWEN_KV_CACHE_DTYPE=fp8` for vLLM).
+On a CPU-only host it needs ~48GB of RAM (~36GB on a Mac): below that,
+qwen3:32b's ~20GB GGUF plus llama.cpp's CPU "repack" buffer (a second,
+similarly sized buffer briefly resident while loading) fails to allocate (`std::bad_alloc` /
 `ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate ...` in
 Ollama's server log) -- which looks like the chat/Legal tabs hanging or not
 responding rather than an install error. The setup scripts also set
@@ -91,9 +91,9 @@ context's memory.
 **Context window.** The Legal tab runs with a 16k-token window
 (`legal.orchestrator.max_model_len: 16384`): up to 5k tokens of evidence
 (`legal.retrieval.max_evidence_tokens`) plus the thinking analysis pass and
-the memo/draft outputs. vLLM serves 16k with an fp8 KV cache
-(`QWEN_MAX_MODEL_LEN`, `QWEN_KV_CACHE_DTYPE` in `docker-compose.yml`) so it
-still fits next to the weights on a 24GB card; under Ollama it is the
+the memo/draft outputs. vLLM serves 16k (`QWEN_MAX_MODEL_LEN` in `docker-compose.yml`; set
+`QWEN_KV_CACHE_DTYPE=fp8` with the 32B model so it still fits next to its
+weights on a 24GB card); under Ollama it is the
 `num_ctx` sent with every request. `DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`
 / `DOCSLIDES_LLM_MAX_MODEL_LEN` override it per host (`LEGAL_CONTEXT_LENGTH` /
 `-LegalContextLength` in the setup scripts).
@@ -119,12 +119,12 @@ Re-running either script is safe -- already-downloaded files are left in place.
 
 ```bash
 # macOS/Linux
-./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_MODEL=qwen3:32b / LEGAL_CONTEXT_LENGTH=16384
+./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_MODEL=qwen3:14b / LEGAL_CONTEXT_LENGTH=16384
 ```
 
 ```powershell
 # Windows
-.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaModel qwen3:32b / -LegalContextLength 16384
+.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaModel qwen3:14b / -LegalContextLength 16384
 ```
 
 When the Ollama backend is selected, the script writes `.env.local` with the
@@ -228,7 +228,7 @@ services.
 
 **No NVIDIA GPU?** Use Ollama instead of the two steps above: install it
 (https://ollama.com/download or your package manager), then
-`ollama pull qwen3:32b` (or `qwen3:14b` on a host with too little memory). No Hugging
+`ollama pull qwen3:14b` (or `qwen3:32b`, the larger option). No Hugging
 Face download needed for the chat model.
 
 ### 3. Configure
@@ -354,7 +354,6 @@ Reference `vllm serve` command (also printed by
 vllm serve <Qwen3-32B-AWQ-or-GPTQ-repo> \
   --quantization awq \
   --max-model-len 16384 \
-  --kv-cache-dtype fp8 \
   --gpu-memory-utilization 0.90 \
   --guided-decoding-backend xgrammar \
   --port 8000
@@ -366,7 +365,7 @@ vllm serve <Qwen3-32B-AWQ-or-GPTQ-repo> \
 
 ```bash
 # terminal 1
-vllm serve <repo> --quantization awq --max-model-len 16384 --kv-cache-dtype fp8 --gpu-memory-utilization 0.90 --port 8000
+vllm serve <repo> --quantization awq --max-model-len 16384 --gpu-memory-utilization 0.90 --port 8000
 
 # terminal 2
 docslides-api   # FastAPI + Gradio UI on :8456 (UI at /ui)
@@ -407,6 +406,22 @@ OOXML manipulation, and PDF scan-detection. Fixtures live in
 End-to-end OCR/translation/generation behavior requires the models from
 step 2 and a running vLLM instance, and is exercised manually via the
 Gradio UI rather than in the unit test suite.
+
+### Legal evals (100 questions + paralegal cases)
+
+The Israeli legal eval set (`legal_txt/Evals/israeli_legal_eval.zip`) runs against the bulk corpus:
+
+| Notebook | Where | What |
+|---|---|---|
+| `notebooks/colab_legal_eval_qwen_gemma.ipynb` | Google Colab, free T4 | qwen3:14b and gemma3:12b answer the same 100 questions + 5 cases. **No judging**: answers, full reasoning traces (`llm_trace/`, `reasoning_report*.md`), judge-free scores and a summary, written to Google Drive as it goes (resumable) |
+| `notebooks/kaggle_legal_eval_bulk500.ipynb` | Kaggle, 2× T4 | answer + judge + score; qwen3:14b by default (qwen3:32b for milestone runs) |
+| `notebooks/kaggle_legal_eval_dictalm.ipynb` | Kaggle, 2× T4 | the same test with DictaLM 3.0 answering |
+
+The judge is `legal.judge_model` (default `gpt-oss:20b`, overridden by `DOCSLIDES_LEGAL_JUDGE_MODEL`): a
+family other than the models under test, so neither qwen3 nor gemma3 grades its own answers. Saved answers
+can be re-judged without re-answering: `score.py prepare`, then `scripts/legal_data/eval_run.py judge`,
+then `score.py report` (see `eval_run.py`'s docstring). `scripts/legal_data/check_corpus_coverage.py`
+checks every law and section the gold answers cite against the installed corpus.
 
 ## Non-goals
 

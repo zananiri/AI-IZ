@@ -36,13 +36,13 @@ services:
       - DOCSLIDES_APP_PORT=8456
       - DOCSLIDES_LLM_BACKEND=ollama
       - DOCSLIDES_LLM_BASE_URL=http://host.docker.internal:11434
-      - DOCSLIDES_LLM_MODEL=${OLLAMA_MODEL:-qwen3:32b}
+      - DOCSLIDES_LLM_MODEL=${OLLAMA_MODEL:-qwen3:14b}
       # Legal tab: an independent deployment (see config/config.yaml's `legal:`
       # section) -- also routed to the same host Ollama instance rather than
       # config.yaml's vLLM-only default (http://vllm:8000).
       - DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
       - DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://host.docker.internal:11434
-      - DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=${OLLAMA_MODEL:-qwen3:32b}
+      - DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=${OLLAMA_MODEL:-qwen3:14b}
       # Context window (Ollama num_ctx) for the Legal tab: evidence + thinking pass. scripts/setup.*
       # write the value picked for this host's memory to .env.local; 16384 is the config default.
       - DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=${LEGAL_CONTEXT_LENGTH:-16384}

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -53,6 +54,23 @@ _MIN_OUTPUT_TOKENS = 256
 
 # How much of a malformed reply goes back to the model with the correction request.
 _MAX_ECHOED_CHARS = 8000
+
+_FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
+
+
+def _parse_json_reply(content: str):
+    """json.loads, tolerating what models that don't honor the grammar exactly (gpt-oss, some
+    Ollama builds) wrap around the object: a ```json fence, or a sentence before or after it."""
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        fenced = _FENCED_JSON_RE.search(content)
+        if fenced:
+            return json.loads(fenced.group(1))
+        start, end = content.find("{"), content.rfind("}")
+        if 0 <= start < end:
+            return json.loads(content[start:end + 1])
+        raise
 
 _RUNAWAY_NOTE = (
     "(Your previous reply to this was cut off at the length limit because it kept repeating itself. "
@@ -412,7 +430,7 @@ class QwenClient:
             content = completion.content
 
             try:
-                parsed = json.loads(content)
+                parsed = _parse_json_reply(content)
                 return schema.model_validate(parsed)
             except (json.JSONDecodeError, ValidationError) as exc:
                 last_error = SchemaValidationFailed(raw=content, errors=str(exc))

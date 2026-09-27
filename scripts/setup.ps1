@@ -27,13 +27,13 @@
 
 .PARAMETER OllamaModel
     Model tag to pull when the Ollama backend is selected (general chat model
-    + Legal tab orchestrator). Default: qwen3:32b. Only a host under 48GB of
-    RAM falls back to qwen3:14b (pass -OllamaModel qwen3:32b to force it):
-    qwen3:32b's GGUF weights are ~20GB and llama.cpp's CPU "repack" step
-    needs a similarly sized second buffer while loading -- on a 32GB machine
-    that fails with "ggml_backend_cpu_buffer_type_alloc_buffer: failed to
-    allocate ..." / "std::bad_alloc", which is exactly what makes the
-    chat/Legal tabs look like they hang or don't respond.
+    + Legal tab orchestrator). Default: qwen3:14b (~9GB); under 16GB of RAM
+    it falls back to qwen3:8b. qwen3:32b is the larger option: its GGUF
+    weights are ~20GB and llama.cpp's CPU "repack" step needs a similarly
+    sized second buffer while loading, so on a CPU-only host under ~48GB it
+    fails with "ggml_backend_cpu_buffer_type_alloc_buffer: failed to
+    allocate ..." / "std::bad_alloc" -- which makes the chat/Legal tabs look
+    like they hang or don't respond.
 
 .PARAMETER LegalContextLength
     Legal tab context window (Ollama num_ctx), written to .env.local.
@@ -51,10 +51,10 @@ param(
     [string]$ModelsDir = "./models",
     [switch]$SkipMineru,
     [switch]$SkipHeavyOcr,
-    [string]$QwenModelRepo = "Qwen/Qwen3-32B-AWQ",
+    [string]$QwenModelRepo = "Qwen/Qwen3-14B-AWQ",
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
-    [string]$OllamaModel = "qwen3:32b",
+    [string]$OllamaModel = "qwen3:14b",
     [int]$LegalContextLength = 16384
 )
 
@@ -196,22 +196,18 @@ if (-not $Backend) {
 }
 Write-Host "selected backend: $Backend"
 
-# On the Ollama (CPU/no-NVIDIA) path, qwen3:32b stays the model unless the
-# host can't load it: its ~20GB GGUF plus llama.cpp's CPU "repack" buffer
-# (another ~14-20GB, briefly resident during load) hits std::bad_alloc under
-# ~48GB of RAM -- see the header comment. That failure looks like the app
-# "not responding" rather than an install error, so such a host gets
-# qwen3:14b (~9GB) unless -OllamaModel was passed explicitly.
+# On the Ollama (CPU/no-NVIDIA) path, qwen3:14b (~9GB + the 16k context)
+# stays the model unless the host has under 16GB of RAM, which gets qwen3:8b
+# unless -OllamaModel was passed explicitly -- see the header comment.
 if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel")) {
     $TotalRamGB = 0
     try {
         $TotalRamGB = [math]::Round((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).TotalPhysicalMemory / 1GB)
     } catch {}
-    if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 48) {
-        $OllamaModel = "qwen3:14b"
-        Write-Host "[note] $TotalRamGB GB RAM detected -- qwen3:32b needs ~48GB+ to load reliably" -ForegroundColor Yellow
-        Write-Host "       under Ollama's CPU backend, so the model defaults to qwen3:14b (~9GB)." -ForegroundColor Yellow
-        Write-Host "       Pass -OllamaModel qwen3:32b to use it anyway." -ForegroundColor Yellow
+    if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 16) {
+        $OllamaModel = "qwen3:8b"
+        Write-Host "[note] $TotalRamGB GB RAM detected -- qwen3:14b needs ~16GB+ with the 16k context," -ForegroundColor Yellow
+        Write-Host "       so the model defaults to qwen3:8b. Pass -OllamaModel qwen3:14b to override." -ForegroundColor Yellow
     }
 }
 Write-Host ""
@@ -272,7 +268,7 @@ if ($Backend -eq "vllm") {
         # model on a modest host. Pin it to one resident model at a time so
         # the second call evicts the first instead of fighting it for RAM.
         # Flash attention + an 8-bit KV cache halve the context's memory, so
-        # the Legal tab's 16k window costs qwen3:32b ~2GB instead of ~4GB.
+        # the Legal tab's 16k window costs qwen3:14b ~1.3GB instead of ~2.6GB.
         $NeedsRestart = $false
         $OllamaSettings = [ordered]@{ OLLAMA_MAX_LOADED_MODELS = "1"; OLLAMA_FLASH_ATTENTION = "1"; OLLAMA_KV_CACHE_TYPE = "q8_0" }
         foreach ($name in $OllamaSettings.Keys) {

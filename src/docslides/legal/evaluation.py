@@ -152,14 +152,14 @@ async def contradiction(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalC
 
 
 def get_judge_client() -> QwenClient:
-    """The grading model: DOCSLIDES_LEGAL_JUDGE_MODEL (e.g. qwen3:14b, same server
-    as the orchestrator) when set, else the orchestrator model itself."""
+    """The grading model, on the orchestrator's server: DOCSLIDES_LEGAL_JUDGE_MODEL when set, else
+    legal.judge_model (gpt-oss:20b), else the orchestrator model itself."""
     import os
 
     from docslides.config import get_config
     from docslides.llm.client import get_legal_orchestrator_client
 
-    model = os.environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL")
+    model = os.environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL") or get_config().legal.judge_model
     if not model:
         return get_legal_orchestrator_client()
     orchestrator = get_config().legal.orchestrator

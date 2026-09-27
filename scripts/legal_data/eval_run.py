@@ -290,11 +290,26 @@ async def cmd_answer(a) -> None:
              f"{' -- ' + row['error'] if row.get('error') else ''}")
 
 
+# score.py's prompt (unmodified, from the eval set) says "Grade ONLY against the reference
+# material". gemma3:27b read that as "anything not in the reference is wrong" and scored correct
+# answers 0 for accurate extra detail (27 Sept run, ~23 of 58 zeros). This says what it means.
+JUDGE_SYSTEM = """You grade answers against a reference answer. How to read the grading instructions:
+- "Grade only against the reference" means: check the reference's key points against the answer. \
+It does not mean that everything outside the reference is wrong.
+- Accurate extra detail, additional correct citations, or naming the law and section a rule comes \
+from are NOT errors and never lower correctness. Lower it only for a key point that is missing or \
+wrong, or for a statement that contradicts the reference.
+- A citation to a different but real provision that states the same rule is not a hallucination. \
+hallucination is for an invented law, section, number or date, or one that plainly does not exist.
+- Judge meaning, not wording. The answer is usually in Hebrew."""
+
+
 async def judge_one(qwen, item: dict, thinking: bool = True, max_tokens: int = JUDGE_MAX_TOKENS) -> dict:
     with trace.collect(job_id=item["id"]):
         try:
             verdict = await qwen.complete_json(
-                [ChatMessage("user", item["prompt"])], LLMCallSite("legal_eval_judge"),
+                [ChatMessage("system", JUDGE_SYSTEM), ChatMessage("user", item["prompt"])],
+                LLMCallSite("legal_eval_judge"),
                 schema=BulkEvalJudgement,
                 sampling=eval_sampling(max_tokens, thinking),
                 enable_thinking=thinking,  # the judge's own reasoning matters just as much for calibration

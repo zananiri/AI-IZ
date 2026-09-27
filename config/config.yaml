@@ -9,7 +9,7 @@ llm:
   # vars -- see docker-compose.portable.yml and scripts/setup.*.
   backend: "vllm"
   base_url: "http://vllm:8000/v1"        # OpenAI-compatible endpoint served by vLLM
-  model: "Qwen/Qwen3-32B-AWQ"             # verify against the current model repo before deploying
+  model: "Qwen/Qwen3-14B-AWQ"             # verify against the current model repo before deploying
   api_key: "not-needed"                   # vLLM does not require a real key locally
   request_timeout_s: 600
   max_model_len: 8192
@@ -37,9 +37,10 @@ legal:
   orchestrator:
     backend: "vllm"
     base_url: "http://vllm:8000/v1"
-    # Qwen3-32B: the same weights docker-compose.yml's vLLM serves (QWEN_MODEL_REPO), so the
-    # Legal tab and the general chat share one server. Ollama tag: qwen3:32b (scripts/setup.*).
-    model: "Qwen/Qwen3-32B-AWQ"
+    # Qwen3-14B: the same weights docker-compose.yml's vLLM serves (QWEN_MODEL_REPO), so the
+    # Legal tab and the general chat share one server. Ollama tag: qwen3:14b (scripts/setup.*).
+    # Qwen3-32B (Qwen/Qwen3-32B-AWQ, qwen3:32b) is the larger option for milestone runs.
+    model: "Qwen/Qwen3-14B-AWQ"
     api_key: "not-needed"
     request_timeout_s: 900
     # Must not exceed the served --max-model-len (docker-compose.yml:
@@ -104,6 +105,10 @@ legal:
     analysis_pass: true
     analysis_max_tokens: 4096
   audit_dir: "./data/legal/audit"
+  # Evals only: the grading model (legal/evaluation.get_judge_client), on the orchestrator's Ollama.
+  # Neither family under test (qwen3, gemma3) grades itself. DOCSLIDES_LEGAL_JUDGE_MODEL overrides it;
+  # null = the orchestrator grades its own answers.
+  judge_model: "gpt-oss:20b"
   # Bulk corpus built from legal_txt/ JSONL by scripts/legal_data/vectorize.py: its own Chroma
   # store (one collection per category), separate from the signed index above.
   corpus:

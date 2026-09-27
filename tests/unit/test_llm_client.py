@@ -118,3 +118,22 @@ def test_the_judge_explains_before_its_verdict_and_the_verifier_after():
     assert judge.index("explanation") < judge.index("verdict")
     verifier = list(EntailmentVerdict.model_json_schema()["properties"])  # verdict first: see its docstring
     assert verifier.index("verdict") < verifier.index("explanation")
+
+
+def test_a_json_reply_wrapped_in_a_fence_or_prose_still_parses():
+    from docslides.llm.client import _parse_json_reply
+
+    assert _parse_json_reply('{"a": 1}') == {"a": 1}
+    assert _parse_json_reply('Here it is:\n```json\n{"a": 2}\n```') == {"a": 2}
+    assert _parse_json_reply('Verdict follows. {"a": 3} Done.') == {"a": 3}
+    with pytest.raises(ValueError):
+        _parse_json_reply("no object here")
+
+
+def test_the_judge_defaults_to_a_family_not_under_test(monkeypatch):
+    from docslides.legal.evaluation import get_judge_client
+
+    monkeypatch.delenv("DOCSLIDES_LEGAL_JUDGE_MODEL", raising=False)
+    assert get_judge_client().model == get_config().legal.judge_model == "gpt-oss:20b"
+    monkeypatch.setenv("DOCSLIDES_LEGAL_JUDGE_MODEL", "mistral-small3.2:24b")
+    assert get_judge_client().model == "mistral-small3.2:24b"

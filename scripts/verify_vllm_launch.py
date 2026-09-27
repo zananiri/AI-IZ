@@ -26,7 +26,6 @@ def build_launch_command(cfg) -> str:
         f"vllm serve {cfg.llm.model} \\\n"
         f"  --quantization {cfg.vllm_launch.quantization} \\\n"
         f"  --max-model-len {max_model_len} \\\n"
-        f"  --kv-cache-dtype fp8 \\\n"
         f"  --gpu-memory-utilization {cfg.vllm_launch.gpu_memory_utilization} \\\n"
         f"  --guided-decoding-backend {cfg.llm.guided_decoding_backend} \\\n"
         f"  --port {cfg.vllm_launch.port}"
@@ -45,7 +44,7 @@ def check_model_repo_exists(model_repo: str) -> None:
     except Exception as exc:  # noqa: BLE001
         print(
             f"[warn] Could not verify model repo '{model_repo}': {exc}\n"
-            "        Confirm the repo name against the current Qwen3-32B AWQ/GPTQ "
+            "        Confirm the repo name against the current Qwen3 AWQ/GPTQ "
             "checkpoint listings before deploying -- quantized repo names change "
             "as new checkpoints are published."
         )

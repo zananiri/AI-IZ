@@ -65,6 +65,19 @@ safely any time after (re)installing the `ingestion-mineru` extra.
    forward populates it as a real tuple on the first step -- restoring the
    pre-Cache-era behavior this vendored code was written against.
 
+5. Same vendored UnimerNet model's vision encoder
+   (mfr/unimernet/unimernet_hf/unimer_swin/modeling_unimer_swin.py) imports
+   `find_pruneable_heads_and_indices` from `transformers.pytorch_utils` at
+   module load -- removed from transformers (confirmed gone in 5.17.0,
+   `meshgrid`/`prune_linear_layer` from the same import are still there).
+   It's only used by `UnimerSwinAttention.prune_heads`, a training-time
+   method never called during inference, but the broken import still kills
+   every DOCX/PPTX/image parse (any input MinerU routes through its
+   formula-recognition model, i.e. everything but plain PDFs that stay on
+   the PyMuPDF fallback). Fix: vendor the removed function's old
+   implementation (unchanged across every transformers version that had it)
+   straight into this file, dropping it from the broken import.
+
 Usage:
     python scripts/patch_mineru.py
 """
@@ -200,12 +213,65 @@ def patch_unimernet_dynamic_cache() -> str:
     return f"[fixed] {model_path}: disabled default dynamic cache on UnimernetModel"
 
 
+UNIMER_SWIN_IMPORT_ANCHOR = (
+    "from transformers.pytorch_utils import find_pruneable_heads_and_indices, meshgrid, prune_linear_layer\n"
+)
+
+UNIMER_SWIN_PRUNEABLE_HEADS_SHIM = '''
+
+def find_pruneable_heads_and_indices(heads, n_heads, head_size, already_pruned_heads):
+    # Removed from transformers.pytorch_utils in newer transformers (5.17.0 confirmed here);
+    # vendored verbatim from when it was still there -- the implementation never changed across
+    # the versions that had it. Only used by UnimerSwinAttention.prune_heads, a training-time
+    # method this vendored code never calls during inference, but the unconditional import at
+    # module load time broke every formula-recognition call regardless.
+    mask = torch.ones(n_heads, head_size)
+    heads = set(heads) - already_pruned_heads
+    for head in heads:
+        head = head - sum(1 if h < head else 0 for h in already_pruned_heads)
+        mask[head] = 0
+    mask = mask.view(-1).contiguous().eq(1)
+    index = torch.arange(len(mask))[mask].long()
+    return heads, index
+'''
+
+
+def patch_unimer_swin_pruneable_heads() -> str:
+    try:
+        import magic_pdf
+    except ImportError:
+        return "[skip] magic_pdf not installed -- nothing to patch"
+
+    # Not imported as a module: the broken import line executes immediately on import, which
+    # would raise the very ImportError this patch fixes -- find the file by path instead.
+    model_path = (
+        Path(magic_pdf.__file__).parent
+        / "model" / "sub_modules" / "mfr" / "unimernet" / "unimernet_hf" / "unimer_swin" / "modeling_unimer_swin.py"
+    )
+    if not model_path.exists():
+        return f"[skip] modeling_unimer_swin.py not found at {model_path}"
+
+    text = model_path.read_text(encoding="utf-8")
+    if "def find_pruneable_heads_and_indices" in text:
+        return f"[ok] {model_path.name} already patched (or upstream fixed it)"
+    if UNIMER_SWIN_IMPORT_ANCHOR not in text:
+        return f"[skip] find_pruneable_heads_and_indices import not found (as expected) in {model_path.name}"
+
+    new_text = text.replace(
+        UNIMER_SWIN_IMPORT_ANCHOR,
+        UNIMER_SWIN_IMPORT_ANCHOR.replace("find_pruneable_heads_and_indices, ", "") + UNIMER_SWIN_PRUNEABLE_HEADS_SHIM,
+    )
+    model_path.write_text(new_text, encoding="utf-8")
+    return f"[fixed] {model_path}: vendored find_pruneable_heads_and_indices (removed from transformers.pytorch_utils)"
+
+
 def main() -> None:
     results = [
         patch_models_config(),
         patch_fasttext(),
         patch_unimer_mbart_cache_position(),
         patch_unimernet_dynamic_cache(),
+        patch_unimer_swin_pruneable_heads(),
     ]
     for r in results:
         print(r)

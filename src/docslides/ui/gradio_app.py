@@ -23,6 +23,7 @@ import httpx
 
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
+from docslides.legal.corpus_retrieval import corpus_stats
 
 API_BASE_URL = os.environ.get("DOCSLIDES_API_URL", "http://localhost:8456")
 
@@ -441,6 +442,16 @@ def build_legal_tab() -> None:
         f"_Research, drafting & verification: **{legal.orchestrator.model}** via **{legal.orchestrator.backend}**"
         f" · sources: **{source}**_"
     )
+    if legal.retrieval.source == "corpus":
+        stats = corpus_stats()
+        if stats:
+            per_category = " · ".join(f"{name} {count:,}" for name, count in stats["categories"].items())
+            gr.Markdown(
+                f"_Corpus: **{stats['chunks']:,}** chunks ({per_category}) from **{stats['records']:,}** source "
+                f"documents · last pulled **{(stats['built_at'] or 'unknown')[:10]}**_"
+            )
+        else:
+            gr.Markdown("_Corpus: not installed -- see scripts/legal_data/install_corpus.py_")
 
     with gr.Row():
         with gr.Column(scale=3):

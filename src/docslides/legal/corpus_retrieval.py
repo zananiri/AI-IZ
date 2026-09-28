@@ -21,6 +21,7 @@ index: those parts of the pipeline stay empty on this path.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -74,6 +75,24 @@ def law_key(name: str) -> str:
 def same_law(named: str, title: str) -> bool:
     a, b = law_key(named), law_key(title)
     return bool(a) and bool(b) and (a == b or a in b or b in a)
+
+
+def corpus_stats() -> dict | None:
+    """Total chunks/records and the build date of the installed bulk corpus (legal.corpus.vectordb_dir),
+    read from _build_info.json (written by scripts/legal_data/vectorize.py) -- no embedding model or
+    Chroma connection needed. None if the corpus isn't installed."""
+    corpus_cfg = get_config().legal.corpus
+    info_path = Path(corpus_cfg.vectordb_dir) / "_build_info.json"
+    if not info_path.exists():
+        return None
+    info = json.loads(info_path.read_text(encoding="utf-8"))
+    categories = info.get("categories", {})
+    return {
+        "chunks": sum(c.get("chunks", 0) for c in categories.values()),
+        "records": sum(c.get("records", 0) for c in categories.values()),
+        "categories": {name: c.get("chunks", 0) for name, c in categories.items()},
+        "built_at": info.get("built_at"),
+    }
 
 
 def section_numbers(sections: list[str]) -> list[str]:

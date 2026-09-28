@@ -29,6 +29,7 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from docslides.cleaning.tokens import count_tokens
@@ -272,11 +273,11 @@ _THIN_COVERAGE_NOTE = (
 _ATTACHMENT_TOKEN_BUDGET = 2000
 
 
-def _fit_attachment_to_budget(text: str) -> str:
+def _fit_to_token_budget(text: str, max_tokens: int = _ATTACHMENT_TOKEN_BUDGET) -> str:
     tokens = count_tokens(text)
-    if tokens <= _ATTACHMENT_TOKEN_BUDGET:
+    if tokens <= max_tokens:
         return text
-    ratio = _ATTACHMENT_TOKEN_BUDGET / tokens
+    ratio = max_tokens / tokens
     cut = max(1, int(len(text) * ratio * 0.95))  # extra safety margin, count_tokens is approximate
     return text[:cut] + "\n\n[... truncated for length ...]"
 
@@ -895,12 +896,14 @@ def _write_audit(entry: dict) -> Path:
     return audit.write_entry(entry)
 
 
-async def _retrieve(qwen: QwenClient, query: str, status: StatusFn, entry: dict) -> RetrievalResult:
+async def _retrieve(
+    qwen: QwenClient, query: str, status: StatusFn, entry: dict, max_issues: int = 3
+) -> RetrievalResult:
     """The evidence for the turn, from legal.retrieval.source: the bulk corpus (planned retrieval,
     legal/corpus_retrieval.py) or the signed index of drop-in law PDFs (legal/retrieval.py)."""
     if get_config().legal.retrieval.source == "corpus":
         await status("Planning the search")
-        issues = await corpus_retrieval.plan_issues(qwen, query)
+        issues = await corpus_retrieval.plan_issues(qwen, query, max_issues)
         entry["retrieval_plan"] = [i.model_dump() for i in issues]
         await status("Searching the Israeli-law corpus")
         return await asyncio.to_thread(corpus_retrieval.retrieve_corpus, query, issues)
@@ -927,7 +930,7 @@ async def _legal_turn(
     if attachment_path:
         await status("Reading the attached document")
         raw_text, _doc_lang = await extract_document_text(job_id, attachment_path)
-        attachment_text = _fit_attachment_to_budget(raw_text)
+        attachment_text = _fit_to_token_budget(raw_text)
 
     await status("Detecting the question's language")
     reply_language = await detect_reply_language(qwen, query)
@@ -1110,3 +1113,159 @@ async def _legal_turn(
     path = _write_audit(entry)
     return LegalTurnResult(output, display, footnotes, reply_language, reasons, str(path), notes,
                            retrieved_chunks=retrieved, analysis_notes=analysis_notes)
+
+
+# --- case mode -----------------------------------------------------------------------
+#
+# A case (the client's account and its documents) instead of a question: the same retrieval and
+# evidence, then one thinking call that writes a paralegal work file -- facts, chronology, legal
+# issues, deadlines, red flags, missing information, a draft deliverable and the recommended next
+# step (prompts.case_prompt). Each citation is checked structurally and for entailment like a
+# draft's, but a failed one is marked unverified rather than removed: cutting sentences out of a
+# structured work file would leave its sections incoherent. Either way the turn escalates.
+
+_CASE_QUERY_TOKEN_BUDGET = 1500  # what the search plans and embeds from -- mostly the case's opening
+_CASE_MAX_ISSUES = 4  # more than a question's 3: a case raises several; PLAN_MAX_TOKENS still fits 4
+_ESCALATE_RE = re.compile(r"^[ \t>*_-]*ESCALATE:[ \t]*(.+?)[ \t*_]*$", re.MULTILINE)
+_NO_ESCALATION = {"none", "no", "n/a", "אין", "לא"}
+# "## 4." headings and "1." / "2)" list items: structure, not figures for the numeric check.
+_ENUMERATOR_RE = re.compile(r"^([ \t]*(?:#+[ \t]*)?(?:[-*][ \t]+)?)\d{1,2}[.)][ \t]+", re.MULTILINE)
+
+
+async def run_case_turn(
+    case_text: str, job_id: str, status: StatusFn, attachment_path: str | None = None
+) -> LegalTurnResult:
+    with trace.collect(job_id) as calls:
+        result = await _case_turn(case_text, job_id, status, attachment_path)
+    result.llm_calls = calls
+    return result
+
+
+async def _verify_case_citations(qwen: QwenClient, text: str, retrieval: RetrievalResult) -> list[CitationCheck]:
+    """verify_citations without a memorandum: each cited sentence is itself the claim."""
+    grouped = retrieval.by_source_id()
+    checks = []
+    for i, citation in enumerate(parse_citations(text)):
+        problems = [] if citation.source_id in grouped else [
+            f"source {citation.source_id or '(none)'} is not in the retrieved evidence"]
+        checks.append(CitationCheck(index=i, claim_id=citation.claim_id or f"S{i + 1}", source_id=citation.source_id,
+                                    relation=citation.relation or "supports",
+                                    sentence=sentence_before(text, citation.start), structural_problems=problems))
+    sem = asyncio.Semaphore(get_config().legal.pipeline.entailment_concurrency)
+    await asyncio.gather(*(_entailment(qwen, check, check.sentence, grouped[check.source_id], sem)
+                           for check in checks if not check.structural_problems))
+    for check in checks:
+        if (check.verdict == "not_entailed" and check.relation == "supports" and not check.structural_problems
+                and _grounded(check.sentence, "\n".join(p.text for p in grouped[check.source_id]))):
+            check.verdict = "partially_entailed"
+            check.explanation = ("kept as unverified: its words and numbers are all in the cited source; "
+                                 f"the verifier said: {check.explanation}")
+    return checks
+
+
+async def _case_turn(case_text: str, job_id: str, status: StatusFn, attachment_path: str | None) -> LegalTurnResult:
+    cfg = get_config().legal.pipeline
+    qwen = get_legal_orchestrator_client()
+    entry: dict = {"job_id": job_id, "mode": "case", "query": case_text, "orchestrator_model": qwen.model,
+                   "attachment_path": attachment_path}
+
+    material = case_text.strip()
+    if attachment_path:
+        await status("Reading the case documents")
+        document_text, _doc_lang = await extract_document_text(job_id, attachment_path)
+        material = "\n\n".join(part for part in (material, document_text.strip()) if part)
+    if not material:
+        raise ValueError("The case file is empty: describe the case, or attach its documents.")
+    material = _fit_to_token_budget(material, cfg.case_material_max_tokens)
+    entry["case_material"] = material
+
+    await status("Detecting the case file's language")
+    reply_language = await detect_reply_language(qwen, (case_text.strip() or material)[:2000])
+    entry["reply_language"] = reply_language
+
+    retrieval = await _retrieve(qwen, _fit_to_token_budget(material, _CASE_QUERY_TOKEN_BUDGET), status, entry,
+                                max_issues=_CASE_MAX_ISSUES)
+    grouped = retrieval.by_source_id()
+    evidence = {source_id: parts[0].metadata for source_id, parts in grouped.items()}
+    amendment_notes = _amendment_notes(evidence)
+    evidence_text = prompts.format_evidence(grouped, amendment_notes, retrieval.indexed_law_keys)
+    retrieved = [
+        {"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "text": c.text, "distance": c.distance, "via": c.via}
+        for c in retrieval.chunks
+    ]
+    entry["retrieval"] = {
+        "best_rerank_score": retrieval.best_rerank_score,
+        "low_relevance": retrieval.low_relevance,
+        "chunks": [{"chunk_id": c.chunk_id, "source_id": c.metadata.source_id, "score": c.score}
+                   for c in retrieval.chunks],
+    }
+
+    await status(f"Writing the case work file from {len(grouped)} source(s) (thinking)")
+    today = datetime.now().astimezone().date().isoformat()  # the server's local date: deadlines count from it
+    work_file = await qwen.complete_text(
+        [
+            ChatMessage("system", prompts.case_prompt(reply_language, today)),
+            ChatMessage("user", f"<evidence_set>\n{evidence_text}\n</evidence_set>\n\n<case_file>\n{material}\n</case_file>"),
+        ],
+        LLMCallSite("legal_case_analysis"),
+        # Qwen3's recommended thinking-mode sampling, as in the analysis pass: greedy decoding loops.
+        sampling=SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=cfg.case_max_tokens, seed=0),
+        enable_thinking=True,
+    )
+    call = next((c for c in reversed(trace.current_calls() or []) if c.get("call_site") == "legal_case_analysis"), {})
+    reasoning = call.get("reasoning") or ""
+    if not work_file.strip():
+        raise RuntimeError("No work file was written -- the model used its whole output budget reasoning. "
+                           "Try again, or shorten the case file.")
+
+    reasons: list[str] = []
+    notes: list[str] = []
+    if call.get("done_reason") == "length":
+        reasons.append("The work file was cut off at the output limit: its last sections may be missing")
+    escalations = [m.group(1).strip() for m in _ESCALATE_RE.finditer(work_file)]
+    reasons.extend(e for e in escalations if e.strip(" .").lower() not in _NO_ESCALATION)
+    work_file = re.sub(r"\n{3,}", "\n\n", _ESCALATE_RE.sub("", work_file)).strip()
+
+    # The model writes source_id and relation only; law/section/effective come from the metadata.
+    work_file = expand_citations(work_file, evidence).replace('relation=""', 'relation="supports"')
+    citations = parse_citations(work_file)
+    if citations:
+        await status(f"Verifying {len(citations)} citation(s) against their sources")
+    checks = await _verify_case_citations(qwen, work_file, retrieval)
+    entry["citation_checks"] = [asdict(c) for c in checks]
+    failed = [c for c in checks if not c.ok]
+    if not citations:
+        reasons.append("The work file cites none of the retrieved sources")
+    if failed:
+        reasons.append(f"{len(failed)} citation(s) could not be verified against their sources")
+    if retrieval.low_relevance:
+        reasons.append("Retrieved sources have low relevance or thin coverage for this case")
+    stale = sorted({evidence[c.source_id].law_name + " " + evidence[c.source_id].section_number
+                    for c in checks if c.source_id in evidence and evidence[c.source_id].status != "current"})
+    if stale:
+        reasons.append("Cites provisions marked amended or repealed: " + ", ".join(stale))
+
+    # Numbers the case file itself gives are fine; computed deadline dates are flagged on purpose.
+    cited_ids = {c.source_id for c in citations}
+    ungrounded = unsupported_numbers(_ENUMERATOR_RE.sub(r"\1", strip_citations(work_file)),
+                                     [c.text for c in retrieval.chunks if c.metadata.source_id in cited_ids],
+                                     question=material)
+    entry["numeric_check"] = {"unsupported": ungrounded}
+    if ungrounded:
+        notes.append("Figures not found in the cited sources or the case file (computed deadlines included) -- "
+                     "check them: " + ", ".join(ungrounded))
+
+    display, footnotes = _footnotes(work_file, evidence, checks)
+    for note in footnotes:
+        note["amended_by"] = [n.describe() for n in amendment_notes.get(note["source_id"], [])]
+    output = {
+        "research_memorandum": None,
+        "answer_draft": work_file,
+        "escalation_flag": bool(reasons),
+        "escalation_reason": "; ".join(reasons) or None,
+        "coverage_gaps": None,
+    }
+    entry.update(output=output, footnotes=footnotes, reasoning=reasoning)
+    path = _write_audit(entry)
+    return LegalTurnResult(output, display, footnotes, reply_language, reasons, str(path), notes,
+                           retrieved_chunks=retrieved, analysis_notes=reasoning)

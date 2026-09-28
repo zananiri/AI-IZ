@@ -422,12 +422,18 @@ def _stream_legal_job(job_id: str, history: list):
                         break
 
 
-def send_legal_message(message: dict, history: list):
+LEGAL_MODE_QUESTION = "Question"
+LEGAL_MODE_CASE = "Case analysis"
+
+
+def send_legal_message(message: dict, mode: str, history: list):
     """`message` is a `gr.MultimodalTextbox` payload: `{"text": str, "files":
     [local_path, ...]}` -- an attached document (contract, filing, any file
-    the chat tab accepts) is uploaded the same way as there and its extracted
-    text is read alongside the question, applying the retrieved law to it
-    rather than treating it as a citable source."""
+    the chat tab accepts) is uploaded the same way as there. In question mode
+    its extracted text is read alongside the question, applying the retrieved
+    law to it rather than treating it as a citable source; in case mode the
+    typed text and the document together are the case file, and the answer is
+    a work file ending in a recommended next step."""
     text = (message.get("text") or "").strip()
     files = message.get("files") or []
     if not text and not files:
@@ -435,25 +441,26 @@ def send_legal_message(message: dict, history: list):
         return
 
     attachment = _upload_file(files[0]) if files else None
+    case_mode = mode == LEGAL_MODE_CASE
 
     display_message = text
     if attachment:
         display_message = f"📎 {attachment['name']}\n\n{text}" if text else f"📎 {attachment['name']}"
+    if case_mode:
+        display_message = f"🗂️ **{LEGAL_MODE_CASE}**\n\n{display_message}"
     history = history + [{"role": "user", "content": display_message}]
 
-    payload: dict = {
-        "messages": [
-            {
-                "role": "user",
-                "content": text or f"(No question -- I just attached {attachment['name'] if attachment else 'a file'}. Review it against the applicable Israeli law.)",
-            }
-        ]
-    }
+    if case_mode:
+        content = text  # empty is fine: the attached documents are then the whole case file
+    else:
+        content = text or f"(No question -- I just attached {attachment['name'] if attachment else 'a file'}. Review it against the applicable Israeli law.)"
+    payload: dict = {"messages": [{"role": "user", "content": content}]}
     if attachment:
         payload["attachment_path"] = attachment["path"]
 
+    endpoint = "legal-case" if case_mode else "legal-chat"
     with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/legal-chat", json=payload)
+        resp = client.post(f"{API_BASE_URL}/api/{endpoint}", json=payload)
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
 
@@ -487,6 +494,14 @@ def build_legal_tab() -> None:
             legal_chatbot = gr.Chatbot(label="Legal Assistant")
             legal_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
             legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
+            legal_mode = gr.Radio(
+                [LEGAL_MODE_QUESTION, LEGAL_MODE_CASE],
+                value=LEGAL_MODE_QUESTION,
+                label="Mode",
+                info="Question: a grounded answer with citations. Case analysis: describe the case and/or attach "
+                "its documents -- you get a work file (facts, chronology, legal issues, deadlines, red flags, "
+                "missing information, a draft document and the recommended next step).",
+            )
             legal_msg_box = gr.MultimodalTextbox(
                 label="Legal question",
                 placeholder="Ask a question about Israeli law in any language -- answered only from the "
@@ -503,7 +518,7 @@ def build_legal_tab() -> None:
             with gr.Accordion("Research memorandum (Pass A)", open=False):
                 memo_view = gr.JSON(value=None, label="Claims → evidence")
 
-    send_inputs = [legal_msg_box, legal_chatbot]
+    send_inputs = [legal_msg_box, legal_mode, legal_chatbot]
     send_outputs = [legal_chatbot, legal_reasoning_panel, legal_msg_box, citations_panel, legal_llm_status, memo_view]
     send = _glow_while_running(send_legal_message, send_outputs, legal_msg_box)
     legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)

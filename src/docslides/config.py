@@ -30,6 +30,8 @@ class ThinkingDefaults(BaseModel):
     # The one Legal call that thinks: free-text notes, so no JSON grammar competes with the
     # reasoning, and the reasoning is logged (llm/trace.py). See legal/pipeline.analyze_question.
     legal_analysis: bool = True
+    # Case mode's single call: the work file is free text too, so it can think the same way.
+    legal_case_analysis: bool = True
     legal_research_memo: bool = False
     legal_draft: bool = False
     legal_citation_verification: bool = False
@@ -131,6 +133,11 @@ class LegalPipelineConfig(BaseModel):
     # and is capped further to fit the orchestrator's max_model_len.
     analysis_pass: bool = True
     analysis_max_tokens: int = 4096
+    # Case mode (legal/pipeline.run_case_turn): the work file's budget covers thinking and all eight
+    # sections; the case material (typed text + attached documents) is capped so that it, the
+    # evidence and that budget fit the orchestrator's max_model_len together.
+    case_max_tokens: int = 6144
+    case_material_max_tokens: int = 3000
 
 
 class LegalCorpusConfig(BaseModel):

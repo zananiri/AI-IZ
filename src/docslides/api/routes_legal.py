@@ -10,19 +10,24 @@
     "citations" event with the footnotes (law, section, effective range,
     relation, verified or not), and a "legal_report" event with the spec
     section 9 output (research memorandum, escalation, coverage gaps).
+  * POST /api/legal-case: the same, for a case instead of a question
+    (legal/pipeline.run_case_turn) -- the answer is a paralegal work file
+    ending in a recommended next step, streamed over the same events, so
+    GET /api/legal-events/{job_id} serves both.
 """
 
 from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from docslides.api.events import Event, event_bus
-from docslides.legal.pipeline import run_legal_turn
+from docslides.legal.pipeline import LegalTurnResult, run_case_turn, run_legal_turn
 
 router = APIRouter(prefix="/api", tags=["legal"])
 
@@ -32,14 +37,17 @@ class LegalChatRequest(BaseModel):
     attachment_path: str | None = None  # server-side path from a prior /api/upload call
 
 
-async def _run_legal_turn(job_id: str, req: LegalChatRequest) -> None:
+TurnFn = Callable[..., Awaitable[LegalTurnResult]]
+
+
+async def _run_turn(job_id: str, req: LegalChatRequest, turn: TurnFn) -> None:
     try:
-        query = req.messages[-1]["content"] if req.messages else ""
+        text = req.messages[-1]["content"] if req.messages else ""
 
         async def status(message: str) -> None:
             await event_bus.publish_status(job_id, message)
 
-        result = await run_legal_turn(query, job_id, status, attachment_path=req.attachment_path)
+        result = await turn(text, job_id, status, attachment_path=req.attachment_path)
 
         if result.analysis_notes:
             await event_bus.publish(job_id, Event(kind="reasoning_delta", data={"text": result.analysis_notes}))
@@ -63,16 +71,23 @@ async def _run_legal_turn(job_id: str, req: LegalChatRequest) -> None:
         await event_bus.publish_error(job_id, str(exc))
 
 
-@router.post("/legal-chat")
-async def legal_chat(req: LegalChatRequest) -> dict:
+def _start(req: LegalChatRequest, turn: TurnFn) -> dict:
     job_id = uuid.uuid4().hex[:12]
     event_bus.create(job_id)
-
-    asyncio.create_task(_run_legal_turn(job_id, req))
+    asyncio.create_task(_run_turn(job_id, req, turn))
     return {"job_id": job_id}
+
+
+@router.post("/legal-chat")
+async def legal_chat(req: LegalChatRequest) -> dict:
+    return _start(req, run_legal_turn)
+
+
+@router.post("/legal-case")
+async def legal_case(req: LegalChatRequest) -> dict:
+    return _start(req, run_case_turn)
 
 
 @router.get("/legal-events/{job_id}")
 async def legal_events(job_id: str) -> EventSourceResponse:
     return EventSourceResponse(event_bus.stream(job_id))
-

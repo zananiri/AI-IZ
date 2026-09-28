@@ -665,3 +665,66 @@ def test_corpus_source_plans_the_search_and_answers_from_the_corpus(wire, monkey
     assert searched == [("אפשר לבטל חוזה שחתמתי בטעות?", [(LAW, ["14"])])]
     assert result.output["answer_draft"] == draft_he and not result.output["escalation_flag"]
     assert _audit(result)["retrieval_plan"][0]["sections"] == ["14"]
+
+
+# --- case mode: a work file ending in a recommended next step, instead of an answer ----------------------
+
+CASE_TEXT = "הלקוח חתם על חוזה בטעות לפני חודש ומבקש לבטלו. מה עושים?"
+
+
+def _run_case(text, job_id="case1"):
+    return asyncio.run(pipeline.run_case_turn(text, job_id, _noop_status))
+
+
+def test_a_case_gets_a_work_file_with_its_citations_verified(wire):
+    good = f"[[CITE: source_id={SOURCE} | relation=supports]]"
+    invented = "[[CITE: source_id=contracts@1973-06-01:99 | relation=supports]]"
+    work_file = (
+        "## 1. סיכום העובדות\nהלקוח חתם על חוזה בטעות.\n\n"
+        f"## 3. השאלות המשפטיות\nמי שהתקשר בחוזה עקב טעות רשאי לבטל את החוזה. {good}\n"
+        f"הביטול אפשרי בכל עת. {invented}\n\n"
+        "## 8. הצעד הבא המומלץ\n1. לשלוח הודעת ביטול לצד השני.\n\n"
+        "ESCALATE: none"
+    )
+    qwen = FakeClient(
+        "qwen",
+        json_responses={"legal_citation_verification": [{"verdict": "entailed", "explanation": "סעיף 14(א)"}]},
+        text_responses={"legal_case_analysis": [work_file]},
+    )
+    queries = wire(qwen)
+
+    result = _run_case(CASE_TEXT)
+
+    assert queries == [CASE_TEXT]  # the case file itself is what's searched
+    assert qwen.names() == ["legal_case_analysis", "legal_citation_verification"]  # the invented source isn't sent
+    system, user = next(messages for n, messages in qwen.calls if n == "legal_case_analysis")
+    assert "TASK -- case work file" in system.content and "## 8. הצעד הבא המומלץ" in system.content
+    assert f"<case_file>\n{CASE_TEXT}\n</case_file>" in user.content and SOURCE in user.content
+    assert "[[CITE" not in result.display_answer and "ESCALATE" not in result.display_answer
+    assert "[1]" in result.display_answer and "[2]" in result.display_answer
+    assert [note["verified"] for note in result.footnotes] == [True, False]
+    assert result.footnotes[0]["law"] == LAW
+    assert "not in the retrieved evidence" in result.footnotes[1]["problems"][0]
+    assert result.escalation_reasons == ["1 citation(s) could not be verified against their sources"]
+    assert not result.notes  # "## 3." and "1." are structure, not figures missing from the sources
+    assert _audit(result)["mode"] == "case"
+
+
+def test_a_case_escalation_line_becomes_a_reason_and_an_empty_case_is_refused(wire):
+    work_file = (
+        "## 3. השאלות המשפטיות\nמי שהתקשר בחוזה עקב טעות רשאי לבטל את החוזה. "
+        f"[[CITE: source_id={SOURCE} | relation=supports]]\n\n**ESCALATE: a filing deadline is close**"
+    )
+    qwen = FakeClient(
+        "qwen",
+        json_responses={"legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}]},
+        text_responses={"legal_case_analysis": [work_file]},
+    )
+    wire(qwen)
+
+    result = _run_case(CASE_TEXT)
+
+    assert result.escalation_reasons == ["a filing deadline is close"]
+    assert result.output["escalation_flag"] and "ESCALATE" not in result.output["answer_draft"]
+    with pytest.raises(ValueError, match="case file is empty"):
+        _run_case("   ", "case2")

@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api", tags=["legal"])
 
 class LegalChatRequest(BaseModel):
     messages: list[dict]  # [{"role": "user"|"assistant"|"system", "content": str}]
+    attachment_path: str | None = None  # server-side path from a prior /api/upload call
 
 
 async def _run_legal_turn(job_id: str, req: LegalChatRequest) -> None:
@@ -35,7 +36,7 @@ async def _run_legal_turn(job_id: str, req: LegalChatRequest) -> None:
         async def status(message: str) -> None:
             await event_bus.publish_status(job_id, message)
 
-        result = await run_legal_turn(query, job_id, status)
+        result = await run_legal_turn(query, job_id, status, attachment_path=req.attachment_path)
 
         await event_bus.publish(job_id, Event(kind="content_delta", data={"text": result.display_answer}))
         await event_bus.publish(job_id, Event(kind="citations", data={"citations": result.footnotes}))

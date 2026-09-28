@@ -31,6 +31,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
 from docslides.legal import amendments, audit, corpus_retrieval, prompts, script_check
@@ -76,6 +77,7 @@ from docslides.llm.schemas import (
     grounded_memorandum_schema,
 )
 from docslides.logging_setup import get_logger
+from docslides.pipeline.orchestrator import extract_document_text
 
 logger = get_logger(__name__)
 
@@ -263,6 +265,21 @@ _THIN_COVERAGE_NOTE = (
     "state it -- do not build an answer from loosely related provisions."
 )
 
+# A user-attached document (contract, filing, anything) is context to apply the retrieved law to,
+# not a citable source itself -- capped well below the evidence budget (config's max_evidence_tokens,
+# 5000 by default) since the 16k orchestrator context also has to hold the evidence, the analysis
+# pass's own output and the answer.
+_ATTACHMENT_TOKEN_BUDGET = 2000
+
+
+def _fit_attachment_to_budget(text: str) -> str:
+    tokens = count_tokens(text)
+    if tokens <= _ATTACHMENT_TOKEN_BUDGET:
+        return text
+    ratio = _ATTACHMENT_TOKEN_BUDGET / tokens
+    cut = max(1, int(len(text) * ratio * 0.95))  # extra safety margin, count_tokens is approximate
+    return text[:cut] + "\n\n[... truncated for length ...]"
+
 
 def _question_block(
     query: str,
@@ -270,12 +287,19 @@ def _question_block(
     laws_in_play: list[str] | None = None,
     missing_sections: list[str] | None = None,
     ambiguous_sections: dict[str, list[str]] | None = None,
+    attachment_text: str | None = None,
 ) -> str:
     # ״ for the ASCII quote, as in the evidence: a model that copies 'יו"ר' from the question
     # into its JSON answer unescaped cuts the answer off there (legal/chunking.py).
     if _dominant_rtl_script(query) == "he":
         query = normalize_hebrew_quotes(query)
     block = f"User's question:\n{query}"
+    if attachment_text:
+        block += (
+            "\n\nThe user also attached a document; its extracted text follows. It is not a legal source -- "
+            "apply the law in the evidence above to it, do not cite it as one.\n"
+            f"--- ATTACHED DOCUMENT START ---\n{attachment_text}\n--- ATTACHED DOCUMENT END ---"
+        )
     if thin_coverage:  # the reranker found nothing that directly answers (legal/retrieval.py)
         block += f"\n\n{_THIN_COVERAGE_NOTE}"
     if laws_in_play:  # provisions of several laws match and the question names none
@@ -884,16 +908,26 @@ async def _retrieve(qwen: QwenClient, query: str, status: StatusFn, entry: dict)
     return await asyncio.to_thread(retrieve, query)
 
 
-async def run_legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnResult:
+async def run_legal_turn(
+    query: str, job_id: str, status: StatusFn, attachment_path: str | None = None
+) -> LegalTurnResult:
     with trace.collect(job_id) as calls:
-        result = await _legal_turn(query, job_id, status)
+        result = await _legal_turn(query, job_id, status, attachment_path)
     result.llm_calls = calls
     return result
 
 
-async def _legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnResult:
+async def _legal_turn(
+    query: str, job_id: str, status: StatusFn, attachment_path: str | None = None
+) -> LegalTurnResult:
     qwen = get_legal_orchestrator_client()
-    entry: dict = {"job_id": job_id, "query": query, "orchestrator_model": qwen.model}
+    entry: dict = {"job_id": job_id, "query": query, "orchestrator_model": qwen.model, "attachment_path": attachment_path}
+
+    attachment_text = None
+    if attachment_path:
+        await status("Reading the attached document")
+        raw_text, _doc_lang = await extract_document_text(job_id, attachment_path)
+        attachment_text = _fit_attachment_to_budget(raw_text)
 
     await status("Detecting the question's language")
     reply_language = await detect_reply_language(qwen, query)
@@ -910,7 +944,8 @@ async def _legal_turn(query: str, job_id: str, status: StatusFn) -> LegalTurnRes
     ]
     question = _question_block(query, thin_coverage=retrieval.low_relevance, laws_in_play=retrieval.laws_in_play,
                                missing_sections=retrieval.missing_sections,
-                               ambiguous_sections=retrieval.ambiguous_sections)
+                               ambiguous_sections=retrieval.ambiguous_sections,
+                               attachment_text=attachment_text)
     entry["retrieval"] = {
         "query": query,
         "bundle_verification": retrieval.bundle_verification,

@@ -414,14 +414,35 @@ def _stream_legal_job(job_id: str, history: list):
                         break
 
 
-def send_legal_message(message: str, history: list):
-    message = (message or "").strip()
-    if not message:
+def send_legal_message(message: dict, history: list):
+    """`message` is a `gr.MultimodalTextbox` payload: `{"text": str, "files":
+    [local_path, ...]}` -- an attached document (contract, filing, any file
+    the chat tab accepts) is uploaded the same way as there and its extracted
+    text is read alongside the question, applying the retrieved law to it
+    rather than treating it as a citable source."""
+    text = (message.get("text") or "").strip()
+    files = message.get("files") or []
+    if not text and not files:
         yield history, gr.update(), gr.update(), gr.update(), gr.update()
         return
 
-    history = history + [{"role": "user", "content": message}]
-    payload = {"messages": [{"role": "user", "content": message}]}
+    attachment = _upload_file(files[0]) if files else None
+
+    display_message = text
+    if attachment:
+        display_message = f"📎 {attachment['name']}\n\n{text}" if text else f"📎 {attachment['name']}"
+    history = history + [{"role": "user", "content": display_message}]
+
+    payload: dict = {
+        "messages": [
+            {
+                "role": "user",
+                "content": text or f"(No question -- I just attached {attachment['name'] if attachment else 'a file'}. Review it against the applicable Israeli law.)",
+            }
+        ]
+    }
+    if attachment:
+        payload["attachment_path"] = attachment["path"]
 
     with httpx.Client(timeout=60) as client:
         resp = client.post(f"{API_BASE_URL}/api/legal-chat", json=payload)
@@ -458,11 +479,16 @@ def build_legal_tab() -> None:
             legal_chatbot = gr.Chatbot(label="Legal Assistant")
             legal_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
             with gr.Row():
-                legal_msg_box = gr.Textbox(
+                legal_msg_box = gr.MultimodalTextbox(
                     label="Legal question",
                     scale=4,
                     placeholder="Ask a question about Israeli law in any language -- answered only from the "
-                    "Israeli laws and procedural regulations in the legal corpus, in your language",
+                    "Israeli laws and procedural regulations in the legal corpus, in your language -- or attach "
+                    "a document (PDF, DOCX, PPTX, XLSX, image, or .txt) with the 📎 button to have it reviewed "
+                    "against the law",
+                    file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
+                    file_count="single",
+                    sources=["upload"],
                 )
                 legal_send_btn = gr.Button("Send", scale=1)
         with gr.Column(scale=1):

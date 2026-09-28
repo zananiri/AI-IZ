@@ -78,6 +78,17 @@ safely any time after (re)installing the `ingestion-mineru` extra.
    implementation (unchanged across every transformers version that had it)
    straight into this file, dropping it from the broken import.
 
+6. Same vendored `UnimerSwinModel.forward` calls `self.get_head_mask(...)`,
+   a method `PreTrainedModel`/`ModuleUtilsMixin` used to provide -- also
+   removed from transformers (confirmed gone in 5.17.0). Always called here
+   with `head_mask=None` (formula recognition never masks attention heads),
+   so it's dead weight at runtime, but the missing method still raised
+   `AttributeError: 'UnimerSwinModel' object has no attribute
+   'get_head_mask'` on every call, once fix #5 let the module actually
+   import. Fix: vendor `get_head_mask` and its `_convert_head_mask_to_5d`
+   helper (unchanged across every transformers version that had them) as
+   methods on `UnimerSwinPreTrainedModel`.
+
 Usage:
     python scripts/patch_mineru.py
 """
@@ -265,6 +276,62 @@ def patch_unimer_swin_pruneable_heads() -> str:
     return f"[fixed] {model_path}: vendored find_pruneable_heads_and_indices (removed from transformers.pytorch_utils)"
 
 
+UNIMER_SWIN_NO_SPLIT_MODULES_ANCHOR = '    _no_split_modules = ["UnimerSwinStage"]\n'
+
+UNIMER_SWIN_GET_HEAD_MASK_SHIM = '''
+    def get_head_mask(self, head_mask, num_hidden_layers, is_attention_chunked=False):
+        # Removed from transformers' PreTrainedModel/ModuleUtilsMixin in newer transformers
+        # (confirmed gone in 5.17.0); vendored verbatim from when it was still there -- the
+        # implementation never changed across the versions that had it. UnimerSwinModel.forward
+        # always calls this with head_mask=None (formula recognition never masks attention
+        # heads), which just takes the early-return branch below, but the missing method broke
+        # every call regardless.
+        if head_mask is not None:
+            head_mask = self._convert_head_mask_to_5d(head_mask, num_hidden_layers)
+            if is_attention_chunked is True:
+                head_mask = head_mask.unsqueeze(-1)
+        else:
+            head_mask = [None] * num_hidden_layers
+        return head_mask
+
+    def _convert_head_mask_to_5d(self, head_mask, num_hidden_layers):
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
+        head_mask = head_mask.to(dtype=self.dtype)
+        return head_mask
+'''
+
+
+def patch_unimer_swin_get_head_mask() -> str:
+    try:
+        import magic_pdf
+    except ImportError:
+        return "[skip] magic_pdf not installed -- nothing to patch"
+
+    model_path = (
+        Path(magic_pdf.__file__).parent
+        / "model" / "sub_modules" / "mfr" / "unimernet" / "unimernet_hf" / "unimer_swin" / "modeling_unimer_swin.py"
+    )
+    if not model_path.exists():
+        return f"[skip] modeling_unimer_swin.py not found at {model_path}"
+
+    text = model_path.read_text(encoding="utf-8")
+    if "def get_head_mask" in text:
+        return f"[ok] {model_path.name} already patched (or upstream fixed it)"
+    if text.count(UNIMER_SWIN_NO_SPLIT_MODULES_ANCHOR) != 1:
+        return f"[skip] UnimerSwinPreTrainedModel._no_split_modules anchor not found (as expected) in {model_path.name}"
+
+    new_text = text.replace(
+        UNIMER_SWIN_NO_SPLIT_MODULES_ANCHOR,
+        UNIMER_SWIN_NO_SPLIT_MODULES_ANCHOR + UNIMER_SWIN_GET_HEAD_MASK_SHIM,
+    )
+    model_path.write_text(new_text, encoding="utf-8")
+    return f"[fixed] {model_path}: vendored get_head_mask/_convert_head_mask_to_5d (removed from transformers.PreTrainedModel)"
+
+
 def main() -> None:
     results = [
         patch_models_config(),
@@ -272,6 +339,7 @@ def main() -> None:
         patch_unimer_mbart_cache_position(),
         patch_unimernet_dynamic_cache(),
         patch_unimer_swin_pruneable_heads(),
+        patch_unimer_swin_get_head_mask(),
     ]
     for r in results:
         print(r)

@@ -2,11 +2,14 @@
 
   * POST /api/legal-chat + GET /api/legal-events/{job_id}: runs one turn of
     the grounded Israeli-law pipeline (legal/pipeline.py) and streams it:
-    "status" per stage, the answer as "content_delta" (citation tokens
-    rendered as [n] footnote markers), a "citations" event with the
-    footnotes (law, section, effective range, relation, verified or not),
-    and a "legal_report" event with the spec section 9 output (research
-    memorandum, escalation, coverage gaps).
+    "status" per stage, Pass 0's chain-of-thought as a single "reasoning_delta"
+    (the pipeline runs each pass as one call rather than token-streamed, so
+    this arrives as one chunk rather than incrementally -- the general chat
+    tab's reasoning panel displays it the same way either way), the answer as
+    "content_delta" (citation tokens rendered as [n] footnote markers), a
+    "citations" event with the footnotes (law, section, effective range,
+    relation, verified or not), and a "legal_report" event with the spec
+    section 9 output (research memorandum, escalation, coverage gaps).
 """
 
 from __future__ import annotations
@@ -38,6 +41,8 @@ async def _run_legal_turn(job_id: str, req: LegalChatRequest) -> None:
 
         result = await run_legal_turn(query, job_id, status, attachment_path=req.attachment_path)
 
+        if result.analysis_notes:
+            await event_bus.publish(job_id, Event(kind="reasoning_delta", data={"text": result.analysis_notes}))
         await event_bus.publish(job_id, Event(kind="content_delta", data={"text": result.display_answer}))
         await event_bus.publish(job_id, Event(kind="citations", data={"citations": result.footnotes}))
         await event_bus.publish(

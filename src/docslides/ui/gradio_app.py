@@ -360,8 +360,12 @@ def _stream_legal_job(job_id: str, history: list):
     """Same SSE contract as `_stream_job`, plus "citations" (footnotes, to
     the side panel) and "legal_report" (memorandum, escalation), which
     arrives after the answer text and wraps it with the escalation banner,
-    coverage gaps and disclaimer."""
+    coverage gaps and disclaimer. "reasoning_delta" carries Pass 0's
+    chain-of-thought as one chunk (the pipeline runs each pass as a single
+    call rather than token-streaming it), shown the same reasoning panel as
+    the general chat tab."""
     content_text = ""
+    reasoning_text = ""
     status_text = "Connecting"
     llm_status = f"🔌 {status_text}..."
     started_streaming = False
@@ -382,6 +386,9 @@ def _stream_legal_job(job_id: str, history: list):
                     if event_kind == "status":
                         status_text = data["message"]
                         llm_status = f"⏳ {status_text}..."
+                    elif event_kind == "reasoning_delta":
+                        reasoning_text += data["text"]
+                        llm_status = "🧠 Thinking..."
                     elif event_kind == "content_delta":
                         started_streaming = True
                         content_text += data["text"]
@@ -405,6 +412,7 @@ def _stream_legal_job(job_id: str, history: list):
                     new_history = history + [{"role": "assistant", "content": display_text}]
                     yield (
                         gr.update(value=new_history, rtl=_is_rtl_lang(lang)),
+                        gr.update(value=reasoning_text, visible=bool(reasoning_text)),
                         gr.update(value=None),
                         gr.update(value=citations_md),
                         gr.update(value=llm_status),
@@ -423,7 +431,7 @@ def send_legal_message(message: dict, history: list):
     text = (message.get("text") or "").strip()
     files = message.get("files") or []
     if not text and not files:
-        yield history, gr.update(), gr.update(), gr.update(), gr.update()
+        yield history, gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
         return
 
     attachment = _upload_file(files[0]) if files else None
@@ -478,19 +486,17 @@ def build_legal_tab() -> None:
         with gr.Column(scale=3):
             legal_chatbot = gr.Chatbot(label="Legal Assistant")
             legal_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
-            with gr.Row():
-                legal_msg_box = gr.MultimodalTextbox(
-                    label="Legal question",
-                    scale=4,
-                    placeholder="Ask a question about Israeli law in any language -- answered only from the "
-                    "Israeli laws and procedural regulations in the legal corpus, in your language -- or attach "
-                    "a document (PDF, DOCX, PPTX, XLSX, image, or .txt) with the 📎 button to have it reviewed "
-                    "against the law",
-                    file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
-                    file_count="single",
-                    sources=["upload"],
-                )
-                legal_send_btn = gr.Button("Send", scale=1)
+            legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
+            legal_msg_box = gr.MultimodalTextbox(
+                label="Legal question",
+                placeholder="Ask a question about Israeli law in any language -- answered only from the "
+                "Israeli laws and procedural regulations in the legal corpus, in your language -- or attach "
+                "a document (PDF, DOCX, PPTX, XLSX, image, or .txt) with the 📎 button to have it reviewed "
+                "against the law",
+                file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
+                file_count="single",
+                sources=["upload"],
+            )
         with gr.Column(scale=1):
             gr.Markdown("### Citations")
             citations_panel = gr.Markdown(value="_No citations yet._")
@@ -498,9 +504,8 @@ def build_legal_tab() -> None:
                 memo_view = gr.JSON(value=None, label="Claims → evidence")
 
     send_inputs = [legal_msg_box, legal_chatbot]
-    send_outputs = [legal_chatbot, legal_msg_box, citations_panel, legal_llm_status, memo_view]
+    send_outputs = [legal_chatbot, legal_reasoning_panel, legal_msg_box, citations_panel, legal_llm_status, memo_view]
     send = _glow_while_running(send_legal_message, send_outputs, legal_msg_box)
-    legal_send_btn.click(fn=send, inputs=send_inputs, outputs=send_outputs)
     legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
 
 

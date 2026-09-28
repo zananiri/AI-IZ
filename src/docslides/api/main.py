@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
+
+# paddleocr and torch (sentence-transformers: the legal corpus's embedding/reranker) each bundle
+# their own OpenMP runtime; loading both natively in one Windows process aborts with an access
+# violation (0xC0000005) the first time a turn actually calls into both (e.g. a Legal-tab
+# attachment: OCR extraction followed by corpus retrieval) -- not on import alone. Must be set
+# before either library's native extension is imported, i.e. before the imports below.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn

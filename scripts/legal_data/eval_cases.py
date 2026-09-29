@@ -52,7 +52,11 @@ RUBRIC_SECTIONS = ["facts_summary", "chronology", "legal_issues", "deadlines", "
 
 # The 29 Sept review of the Qwen 14B / Gemma 12B work files: every case lost points for an invented
 # period or deadline, a law applied outside its scope, or a fact misread from the file; the
-# deliverable was often an outline or missing.
+# deliverable was often an outline or missing. The 29 Sept review of the Gemma 27B files: a bare
+# "state a period only when ... otherwise write 'יש לבדוק'" rule made the model hedge even on periods
+# it knew (a 14-day objection deadline); it counted from the order date, not delivery; it summed
+# 4,500 + 3,000 + 1,500 as 8,000; it asserted in a demand letter a fact the client didn't know;
+# and it covered only the main claim of each case.
 CASE_SYSTEM = """You act as a paralegal at a law firm, working under ISRAELI law. Prepare the work \
 file the task instructions describe. <reference_material> holds excerpts retrieved from an index of \
 Israeli legislation; some are relevant and some are not.
@@ -62,10 +66,19 @@ including section 7, the full text of the document the case asks for, not an out
 each one against its document. If you assume something, say so explicitly.
 - For every legal issue cite the law and section. Before relying on a law, check that it covers \
 this kind of party and transaction. Never cite a law just because it appears in <reference_material>.
-- State a period (limitation, notice, filing, appeal) only when a provision in \
-<reference_material>, or a law you are certain of, sets it -- and cite that provision. Otherwise \
-write "יש לבדוק את המועד" instead of guessing. Show every calculation: start date + period = end \
-date, counting from the date the file was received ("today").
+- In section 3, list every claim the facts support, not only the main one -- payments owed, \
+procedure, the competent court -- each with its law and section.
+- In section 4, for each deadline name the event it runs from (a dismissal, delivery of the goods, \
+publication of a notice -- often not the contract date) and the provision that sets the period, \
+then compute it: event date + period = end date, and say whether that date has passed as of the \
+date the file was received ("today"). When the case file, a provision in <reference_material> or a \
+law you are certain of gives the period, compute the date; write "יש לבדוק את המועד" only for a \
+period you cannot source, and say what must be checked. Never invent a period. Mark the most \
+urgent step.
+- Write out every sum you rely on (1,200 + 800 = 2,000) and check it.
+- What the case file says is unknown stays unknown in every section, the draft included: ask \
+about it or demand it, never assert it. Leave ID numbers out of documents addressed to the other side.
+- Answer every question the client asks in the case file.
 - Never advise anything unlawful or unethical (coordinating testimony, hiding assets, misleading \
 a court or the other side).
 - Write only in Hebrew, and start directly with section 1 -- no preamble."""
@@ -90,8 +103,9 @@ of the document the case asks for). Do not repeat the sections already written."
 
 FACTS_PROMPT = """Below are a case file and a paralegal work file prepared from it. These dates and \
 amounts in the work file do not appear in the case file: {values}.
-For each one: if it is a deadline or a sum you calculated, keep it and make sure the calculation \
-(and the provision that sets any period) is written next to it; if it is a fact the case file \
+For each one: if it is a deadline or a sum you calculated, redo the calculation from the case \
+file's own figures and dates -- correct the value everywhere it appears if it was wrong -- and \
+write the calculation (and the provision that sets any period) next to it; if it is a fact the case file \
 doesn't give, remove it or write "לא ידוע". Correct nothing else. Return the whole work file, in \
 Hebrew, with the same sections and headings.
 
@@ -105,10 +119,14 @@ Hebrew, with the same sections and headings.
 
 WORK_FILE_MAX_TOKENS = 6144  # a work file has eight sections, plus the reasoning before them
 JUDGE_MAX_TOKENS = 4096
-CASE_MAX_ISSUES = 6
+# A case raises 6-8 issues (cases_gold.json); at 6 the plan dropped case_01's notice-period issue.
+CASE_MAX_ISSUES = 8
 
-_DATE_RE = re.compile(r"(?<![\d.,/])(\d{1,2})[./](\d{1,2})(?:[./](?:\d{4}|\d{2}))?(?![\d,]|[./]\d)")
-_AMOUNT_RE = re.compile(r"(?<![\d.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*(?:₪|ש[\"״]ח|שקל)|(?<![\d.,])(\d{1,3}(?:,\d{3})+)(?![\d,])")
+# A comma after a value ends it ("3.2.2026, יוסי:", "13,000,") unless a digit follows (a thousands
+# separator). Treating any comma as part of the number hid every such date in the case file, so
+# dates copied correctly from it were reported as unsupported (case_02, case_03 on 29 Sept).
+_DATE_RE = re.compile(r"(?<![\d.,/])(\d{1,2})[./](\d{1,2})(?:[./](?:\d{4}|\d{2}))?(?!\d|,\d|[./]\d)")
+_AMOUNT_RE = re.compile(r"(?<![\d.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*(?:₪|ש[\"״]ח|שקל)|(?<![\d.,])(\d{1,3}(?:,\d{3})+)(?!\d|,\d)")
 
 
 def missing_sections(work_file: str) -> list[str]:

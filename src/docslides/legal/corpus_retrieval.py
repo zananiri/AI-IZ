@@ -41,15 +41,19 @@ logger = get_logger(__name__)
 
 PLAN_PROMPT = """List the distinct legal issues this question about ISRAELI law raises (at most \
 {max_issues}) and, for each, the Israeli statute or regulation that governs it -- its full official \
-Hebrew name -- with the section numbers you believe apply. Prefer the primary statute (a חוק or \
-פקודה) over regulations, unless the question is specifically about a regulation. If you are not \
+Hebrew name -- with the section numbers you believe apply. Write the name with no quotation marks \
+and its year as four digits after a comma, e.g. חוק המתנה, 1968 (not תשכ"ח). Prefer the \
+primary statute (a חוק or פקודה) over regulations, unless the question is specifically about a \
+regulation. If you are not \
 sure of a section number, leave sections empty rather than guess. Write each issue as a short \
 Hebrew phrase in the statute's own terms (at most ten words) -- it is searched for in the law's text.
 
 <question>{question}</question>"""
 
 # 512 cut the JSON off mid-plan for 1 of 100 questions with Qwen and 4 with Gemma 12B (29 Sept
-# eval review) -- each then retrieved on the question alone.
+# eval review) -- each then retrieved on the question alone. The four-digit year in PLAN_PROMPT:
+# Gemma 27B wrote Hebrew years with an ASCII quote (תשי"ד), which ends the JSON string, so 39 of
+# 105 plans in the 29 Sept 27B run lost the rest of the law's name and every section number.
 PLAN_MAX_TOKENS = 1024
 FETCH_K = 24  # dense candidates per query per category, before dedupe and reranking
 RERANK_POOL = 40  # candidates the cross-encoder scores

@@ -57,3 +57,11 @@ def test_missing_sections_and_values_the_case_file_does_not_hold():
     assert eval_cases.missing_sections(WORK_FILE) == ["7. טיוטת מסמך", "8. המלצה לצעד הבא"]
     case_text = "תאריך קבלת התיק: 20.9.2026. פוטרה ב-10.9.2026. שכרה 14,000 ש\"ח."
     assert eval_cases.unsupported_values(WORK_FILE, case_text) == ["10.12", "50,000"]
+
+
+def test_a_value_followed_by_a_comma_is_still_found_in_the_case_file():
+    # case_02 on 29 Sept: every "3.2.2026, יוסי:" date was missed in the case file, so the work
+    # file's correct copies of them were reported as unsupported.
+    case_text = "- 3.2.2026, יוסי: נזילה.\n- 20.3.2026, אבי: בוצע. פיקדון 13,000, ערבות 19,500 ש\"ח."
+    work_file = "| 3.2.2026 | נזילה |\n| 20.3.2026 | תיקון |\nפיקדון 13,000, ניכויים 8,000 ש\"ח."
+    assert eval_cases.unsupported_values(work_file, case_text) == ["8,000"]

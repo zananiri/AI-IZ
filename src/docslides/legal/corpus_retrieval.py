@@ -377,7 +377,8 @@ def _roomiest_gpu() -> str:
 def warm_up_retrieval() -> str:
     """Loads the embedder, the reranker and the BM25 indexes before the first question, so it isn't
     charged for them -- and moves retrieval to the CPU (legal.retrieval.device) when the GPU hasn't
-    room for it beside the LLM. Returns the device retrieval now runs on ("auto" = library default)."""
+    room for it beside the LLM. Raises if the reranker can't load even there: an eval must not run
+    on embedding distance alone. Returns the device retrieval now runs on ("auto" = library default)."""
     from docslides.legal.corpus_lexical import lexical_index
     from docslides.legal.retrieval import _reranker
 
@@ -388,7 +389,7 @@ def warm_up_retrieval() -> str:
 
     def load(device: str | None) -> None:
         embed_texts(retrieval.embedding_model, ["warm up"], device=device)
-        if retrieval.reranker_model and _reranker(retrieval.reranker_model, device) is None and device != "cpu":
+        if retrieval.reranker_model and _reranker(retrieval.reranker_model, device) is None:
             _reranker.cache_clear()  # don't keep the failed load
             raise RuntimeError(f"reranker did not load on {device or 'the default device'}")
 

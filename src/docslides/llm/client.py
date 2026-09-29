@@ -78,6 +78,12 @@ _RUNAWAY_NOTE = (
 )
 
 
+class LLMTimeoutError(RuntimeError):
+    """A model call ran past request_timeout_s. The message names the model, the step
+    and the setting to change: httpx's own ReadTimeout has an empty message, which is
+    all the chat and Legal tabs used to show."""
+
+
 class SchemaValidationFailed(Exception):
     def __init__(self, raw: str, errors: str):
         super().__init__(f"LLM JSON output failed schema validation: {errors}")
@@ -241,9 +247,12 @@ class QwenClient:
         # (Modelfile PARAMETER names), "think" toggles reasoning directly
         # (no chat-template-string juggling), and structured output is a
         # top-level "format" field holding the raw JSON Schema dict.
+        # A model with no thinking mode (supports_thinking: false, e.g. Gemma 3) gets no "think" field at
+        # all: some Ollama versions reject even "think": false for it with HTTP 400, and the streamed
+        # chat path has no retry to fall back on.
         payload = {
             **common,
-            "think": thinking,
+            **({"think": thinking} if self._llm_cfg.supports_thinking else {}),
             "options": {
                 "temperature": sampling.temperature,
                 "top_p": sampling.top_p,
@@ -369,6 +378,10 @@ class QwenClient:
                     raise
                 completion = await self._post_completion(payload)
             return completion
+        except httpx.TimeoutException as exc:
+            timeout = self._timeout_error(call_site)
+            error = f"{type(exc).__name__}: {timeout}"
+            raise timeout from exc
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             raise
@@ -484,18 +497,44 @@ class QwenClient:
         sampling: SamplingParams | None = None,
         enable_thinking: bool | None = None,
     ) -> AsyncIterator[StreamDelta]:
-        """Stream a chat turn, yielding separate reasoning/content deltas."""
-        payload = self._build_payload(
-            messages, call_site, sampling, enable_thinking, guided_json_schema=None, stream=True
+        """Stream a chat turn, yielding separate reasoning/content deltas. Like the
+        non-streamed calls: the output budget is fitted to the context window, a
+        server that rejects thinking is asked again without it, and a timeout
+        says which model and step were too slow."""
+        sampling = self._fit_context(
+            messages, sampling or SamplingParams(**self._llm_cfg.default_sampling.model_dump())
         )
-        async with self._client.stream("POST", self._chat_path, json=payload) as resp:
-            resp.raise_for_status()
-            if self._backend == "vllm":
-                async for delta in self._stream_vllm(resp):
-                    yield delta
-            else:
-                async for delta in self._stream_ollama(resp):
-                    yield delta
+        thinking = self._enable_thinking(call_site, enable_thinking)
+        payload = self._build_payload(messages, call_site, sampling, thinking, guided_json_schema=None, stream=True)
+        try:
+            for attempt in (1, 2):
+                async with self._client.stream("POST", self._chat_path, json=payload) as resp:
+                    if resp.status_code == 400 and attempt == 1 and thinking:
+                        body = (await resp.aread()).decode("utf-8", "replace")
+                        logger.warning("llm_thinking_unsupported", call_site=call_site.name, error=body[:300])
+                        payload = self._build_payload(messages, call_site, sampling, False, guided_json_schema=None,
+                                                      stream=True)
+                        continue
+                    if resp.is_error:
+                        await resp.aread()  # so the error carries the server's message
+                    resp.raise_for_status()
+                    if self._backend == "vllm":
+                        async for delta in self._stream_vllm(resp):
+                            yield delta
+                    else:
+                        async for delta in self._stream_ollama(resp):
+                            yield delta
+                    return
+        except httpx.TimeoutException as exc:
+            raise self._timeout_error(call_site) from exc
+
+    def _timeout_error(self, call_site: LLMCallSite) -> LLMTimeoutError:
+        return LLMTimeoutError(
+            f"{self._llm_cfg.model} ({self._backend}) did not finish the '{call_site.name}' step within "
+            f"{self._llm_cfg.request_timeout_s:g} s. The model is too slow for this machine: on a CPU without a "
+            "supported GPU use a smaller model (e.g. gemma3:12b-it-qat), or raise the limit with "
+            "DOCSLIDES_LLM_REQUEST_TIMEOUT_S / DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S."
+        )
 
     @staticmethod
     async def _stream_vllm(resp: httpx.Response) -> AsyncIterator[StreamDelta]:

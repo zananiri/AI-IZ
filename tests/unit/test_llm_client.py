@@ -48,6 +48,29 @@ def test_payload_carries_top_k_seed_thinking_and_context(ollama):
     assert plain["think"] is False and "top_k" not in plain["options"]
 
 
+def test_a_model_without_thinking_gets_no_think_field(ollama):
+    # Gemma 3: some Ollama versions answer HTTP 400 even to "think": false, and the streamed chat
+    # path (the General tab) had no retry without it.
+    gemma = QwenClient(ollama._llm_cfg.model_copy(update={"model": "gemma3:27b-it-qat", "supports_thinking": False}))
+    for site in ("legal_analysis", "chat_general"):
+        payload = gemma._build_payload([ChatMessage("user", "hi")], LLMCallSite(site), SamplingParams(), None, None,
+                                       stream=True)
+        assert "think" not in payload
+
+
+def test_a_timeout_names_the_model_the_step_and_the_setting(ollama, monkeypatch):
+    import httpx
+
+    from docslides.llm.client import LLMTimeoutError
+
+    async def slow(payload):
+        raise httpx.ReadTimeout("")
+
+    monkeypatch.setattr(ollama, "_post_completion", slow)
+    with pytest.raises(LLMTimeoutError, match=r"qwen3:8b .*'legal_research_memo'.*REQUEST_TIMEOUT_S"):
+        asyncio.run(ollama.complete_text([ChatMessage("user", "q")], LLMCallSite("legal_research_memo")))
+
+
 def test_max_tokens_is_capped_to_fit_the_context(ollama):
     long_prompt = [ChatMessage("user", "א" * 12000)]  # ~6000 tokens by the pessimistic estimate
     assert 256 <= ollama._fit_context(long_prompt, SamplingParams(max_tokens=4096)).max_tokens < 4096
@@ -59,8 +82,10 @@ def test_context_window_can_be_set_per_host_from_the_environment(monkeypatch):
 
     monkeypatch.setenv("DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN", "20480")
     monkeypatch.setenv("DOCSLIDES_LLM_MAX_MODEL_LEN", "12288")
+    monkeypatch.setenv("DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S", "3600")
     raw = _apply_env_overrides({"llm": {"max_model_len": 8192}, "legal": {"orchestrator": {"max_model_len": 16384}}})
     assert raw["llm"]["max_model_len"] == "12288"
+    assert raw["legal"]["orchestrator"]["request_timeout_s"] == "3600"
     assert raw["legal"]["orchestrator"]["max_model_len"] == "20480"
     orchestrator = type(get_config().legal.orchestrator).model_validate(
         {**get_config().legal.orchestrator.model_dump(), **raw["legal"]["orchestrator"]})

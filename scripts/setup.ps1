@@ -202,6 +202,16 @@ Write-Host "selected backend: $Backend"
 # context) stays the model unless the host has under 24GB of RAM (then
 # gemma3:12b-it-qat) or under 12GB (gemma3:4b-it-qat), unless -OllamaModel was
 # passed explicitly -- see the header comment.
+# Without a GPU Ollama can use (an NVIDIA or AMD Radeon card), everything runs on the CPU:
+# gemma3:27b-it-qat then writes ~1 token/s on a laptop CPU and a Legal answer's longer calls
+# (6k-token prompts) run past any sensible timeout, so the CPU-only default is gemma3:12b-it-qat.
+$CpuOnly = $false
+if ($Backend -eq "ollama") {
+    try {
+        $gpuNames = (Get-CimInstance Win32_VideoController -ErrorAction Stop | Select-Object -ExpandProperty Name) -join " "
+        $CpuOnly = -not ($gpuNames -match "NVIDIA|Radeon")
+    } catch {}
+}
 if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel")) {
     $TotalRamGB = 0
     try {
@@ -209,14 +219,17 @@ if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel"
     } catch {}
     if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 12) {
         $OllamaModel = "gemma3:4b-it-qat"
-    } elseif ($TotalRamGB -gt 0 -and $TotalRamGB -lt 24) {
+    } elseif (($TotalRamGB -gt 0 -and $TotalRamGB -lt 24) -or $CpuOnly) {
         $OllamaModel = "gemma3:12b-it-qat"
     }
     if ($OllamaModel -ne "gemma3:27b-it-qat") {
-        Write-Host "[note] $TotalRamGB GB RAM detected -- gemma3:27b-it-qat needs ~24GB+ with the 16k context," -ForegroundColor Yellow
+        $why = if ($CpuOnly) { "no NVIDIA/AMD GPU detected (CPU only)" } else { "$TotalRamGB GB RAM detected" }
+        Write-Host "[note] $why -- gemma3:27b-it-qat is too slow or too large here," -ForegroundColor Yellow
         Write-Host "       so the model defaults to $OllamaModel. Pass -OllamaModel gemma3:27b-it-qat to override." -ForegroundColor Yellow
     }
 }
+# One model call may take this long (seconds). config.yaml's limits (600/900) are sized for a GPU.
+$RequestTimeoutS = if ($CpuOnly) { 3600 } else { 900 }
 # Gemma 3 has no thinking mode: every call goes out with thinking off.
 $SupportsThinking = if ($OllamaModel -like "gemma*") { "false" } else { "true" }
 Write-Host ""
@@ -332,11 +345,14 @@ DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OllamaModel
 DOCSLIDES_LLM_SUPPORTS_THINKING=$SupportsThinking
+DOCSLIDES_LLM_MAX_MODEL_LEN=$LegalContextLength
+DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$RequestTimeoutS
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
 DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SupportsThinking
 DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LegalContextLength
+DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
 
 "@
     [System.IO.File]::WriteAllText((Join-Path $RepoRoot ".env.local"), $EnvLocal, (New-Object System.Text.UTF8Encoding $false))

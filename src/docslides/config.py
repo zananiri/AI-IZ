@@ -388,7 +388,9 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 # everything else (languages, OCR routing, sampling defaults, ...). The Legal
 # tab's orchestrator is an independent deployment (see LegalConfig) with its
 # own override set, so it can be pointed at Ollama separately from -- or
-# together with -- the general `llm:` section. *_MAX_MODEL_LEN sets the context
+# together with -- the general `llm:` section. *_REQUEST_TIMEOUT_S sets how long
+# one model call may take (a CPU-only host needs far more than config.yaml's
+# GPU-sized limits). *_MAX_MODEL_LEN sets the context
 # window (Ollama's num_ctx; under vLLM it must not exceed the served
 # --max-model-len), so a host can match it to its memory.
 _LLM_ENV_OVERRIDES = {
@@ -397,6 +399,7 @@ _LLM_ENV_OVERRIDES = {
     "DOCSLIDES_LLM_MODEL": "model",
     "DOCSLIDES_LLM_MAX_MODEL_LEN": "max_model_len",
     "DOCSLIDES_LLM_SUPPORTS_THINKING": "supports_thinking",
+    "DOCSLIDES_LLM_REQUEST_TIMEOUT_S": "request_timeout_s",
 }
 _LEGAL_ORCHESTRATOR_ENV_OVERRIDES = {
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND": "backend",
@@ -404,6 +407,7 @@ _LEGAL_ORCHESTRATOR_ENV_OVERRIDES = {
     "DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL": "model",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN": "max_model_len",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING": "supports_thinking",
+    "DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S": "request_timeout_s",
 }
 
 

@@ -128,6 +128,15 @@ if [ "$BACKEND" = "vllm" ]; then
 else
   echo "== [5/7] Ollama path: installing Ollama + pulling the model =="
   LEGAL_CONTEXT_LENGTH="${LEGAL_CONTEXT_LENGTH:-16384}"
+  # Linux without an NVIDIA or AMD (ROCm, /dev/kfd) GPU runs the model on the CPU, where
+  # gemma3:27b-it-qat writes ~1 token/s and a Legal answer's longer calls outrun any sensible
+  # timeout: default to gemma3:12b-it-qat there. Macs use Metal and keep the 27B.
+  CPU_ONLY=false
+  if [ "$OS_NAME" != "Darwin" ] && [ ! -e /dev/kfd ]; then
+    CPU_ONLY=true
+  fi
+  REQUEST_TIMEOUT_S=900
+  [ "$CPU_ONLY" = true ] && REQUEST_TIMEOUT_S=3600
   if [ -z "${OLLAMA_MODEL:-}" ]; then
     OLLAMA_MODEL="gemma3:27b-it-qat"
     TOTAL_RAM_GB=0
@@ -138,11 +147,12 @@ else
     fi
     if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 12 ]; then
       OLLAMA_MODEL="gemma3:4b-it-qat"
-    elif [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 24 ]; then
+    elif { [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 24 ]; } || [ "$CPU_ONLY" = true ]; then
       OLLAMA_MODEL="gemma3:12b-it-qat"
     fi
     if [ "$OLLAMA_MODEL" != "gemma3:27b-it-qat" ]; then
-      echo "[note] ${TOTAL_RAM_GB}GB RAM detected -- gemma3:27b-it-qat needs ~24GB+ with the 16k context,"
+      if [ "$CPU_ONLY" = true ]; then WHY="no NVIDIA/AMD GPU detected (CPU only)"; else WHY="${TOTAL_RAM_GB}GB RAM detected"; fi
+      echo "[note] $WHY -- gemma3:27b-it-qat is too slow or too large here,"
       echo "       so the Ollama model defaults to $OLLAMA_MODEL. Set OLLAMA_MODEL=gemma3:27b-it-qat to override."
     fi
   fi
@@ -220,11 +230,14 @@ DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OLLAMA_MODEL
 DOCSLIDES_LLM_SUPPORTS_THINKING=$SUPPORTS_THINKING
+DOCSLIDES_LLM_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
+DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OLLAMA_MODEL
 DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SUPPORTS_THINKING
 DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
+DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 EOF
   echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL, legal context=$LEGAL_CONTEXT_LENGTH)"
 fi

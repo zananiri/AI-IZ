@@ -1,0 +1,55 @@
+{
+ "total": 770,
+ "by_split": {
+  "test": 388,
+  "robustness": 75,
+  "reserve": 115,
+  "dev": 192
+ },
+ "by_split_and_category": {
+  "test": {
+   "abstention": 33,
+   "citation_grounding": 20,
+   "comparison": 27,
+   "computation": 27,
+   "interpretation": 27,
+   "issue_spotting": 33,
+   "mcq_bar": 40,
+   "multi_hop": 20,
+   "rule_application": 47,
+   "rule_conclusion": 47,
+   "rule_recall": 40,
+   "temporal_amendment": 27
+  },
+  "dev": {
+   "abstention": 17,
+   "citation_grounding": 10,
+   "comparison": 13,
+   "computation": 13,
+   "interpretation": 13,
+   "issue_spotting": 17,
+   "mcq_bar": 20,
+   "multi_hop": 10,
+   "rule_application": 23,
+   "rule_conclusion": 23,
+   "rule_recall": 20,
+   "temporal_amendment": 13
+  },
+  "robustness": {
+   "rule_conclusion": 9,
+   "rule_recall": 66
+  },
+  "reserve": {
+   "citation_grounding": 5,
+   "mcq_bar": 20,
+   "rule_conclusion": 40,
+   "rule_recall": 50
+  }
+ },
+ "by_source": {
+  "v1": 500,
+  "v2_paraphrase": 75,
+  "v2_new": 195
+ },
+ "scored_core": 580
+}

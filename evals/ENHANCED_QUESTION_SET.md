@@ -95,3 +95,10 @@ least two traps and one must-not.
 - Hallucination-Free? Assessing the Reliability of Leading AI Legal Research Tools (Magesh et al., Stanford, 2024/2025): https://arxiv.org/abs/2405.20362
 - CRAG – Comprehensive RAG Benchmark (Meta, 2024): https://arxiv.org/abs/2406.04744
 - Ragas metrics (faithfulness, context precision/recall): https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/
+
+## Status (29 Sept 2026)
+
+Built: `legal_txt/Evals/israeli_legal_eval_v2` (see its README). 580 scored items (388 test, 192 dev) instead of
+600: multi-hop has 30 new items rather than 40, and temporal has 20 new rather than 30, because only items whose
+rule the author was sure of were written. Plus 75 paraphrases (robustness) and 115 reserve v1 items.
+Next: run `notebooks/kaggle_legal_eval_v2_verify.ipynb`, then the lawyer review, then the first test run.

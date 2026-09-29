@@ -105,16 +105,11 @@ TASK -- Pass A, research memorandum. Before any prose is drafted, produce the st
 
 
 def draft_prompt(reply_language: str) -> str:
-    quote_rule = (
-        "Write ״ instead, in abbreviations (יו״ר, התשפ״ו, ש״ח) and around quoted words (במקום ״90 ימים״)."
-        if reply_language == "he"
-        else "Use single quotes ('...') around quoted words, and ״ inside Hebrew abbreviations (התשפ״ו)."
-    )
     return (
         _BASE_RULES
         + f"""
 
-TASK -- Pass B, draft. Write `answer_draft` in {language_name(reply_language)} (ISO 639-1 '{reply_language}'), regardless of the language of the evidence.
+TASK -- Pass B, draft. Write the answer in {language_name(reply_language)} (ISO 639-1 '{reply_language}'), regardless of the language of the evidence, as plain text: not JSON, no code fence, no heading, no preamble.
 - Use only claim IDs established in the validated research memorandum. Do not introduce any legal proposition that isn't in its governing_law.
 - Immediately after each sentence expressing a claim, attach a citation token -- including contrary-authority citations where they matter to the analysis; don't bury caveats. Write it exactly in this short form, with NO quotation marks anywhere inside it:
   [[CITE: claim_id=C1 | source_id=<source_id exactly as in the evidence> | relation=supports]]
@@ -124,9 +119,8 @@ TASK -- Pass B, draft. Write `answer_draft` in {language_name(reply_language)} (
 - Don't write law names or section numbers in the sentences: the citation tokens carry them. (Only when the question is ambiguous between laws, name each law once, at the start of its own paragraph.)
 - Each sentence that carries a citation must itself state the rule it cites -- its number, date, body or condition. Never cite a lead-in or a fragment (״לפי החוקים הבאים:״, ״ובנוסף,״), and never refer the reader to a paragraph by its number alone (״לפי פסקה (1) או (2)״) -- say what that paragraph provides.
 - Use the provision's own operative words for who does what, and on whose behalf.
-- Never type the ASCII double quote character (") inside answer_draft: it ends the JSON string and cuts the answer off. {quote_rule}
 - Phrase conclusions as findings about what the sources say, never as directives telling the user what to do. Write every word of the answer in the answer language -- never mix in English phrases.
-- Set escalation_flag / escalation_reason per the escalation rules above; put what the evidence does not cover in coverage_gaps."""
+- After the answer, if an escalation rule above applies, add one line: ESCALATE: <the reason>. If the evidence leaves part of the question uncovered, add one line: GAPS: <what it does not cover>. Leave out either line when it doesn't apply."""
     )
 
 

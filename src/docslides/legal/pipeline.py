@@ -482,7 +482,7 @@ async def _entailment(
                     ChatMessage("system", prompts.ENTAILMENT_PROMPT),
                     ChatMessage(
                         "user",
-                        f"Claim ({check.claim_id}): {_hebrew_safe(claim_text)}\n\nDraft sentence: {check.sentence}\n\n"
+                        f"Claim ({check.claim_id}): {_hebrew_safe(claim_text)}\n\nDraft sentence: {_hebrew_safe(check.sentence)}\n\n"
                         f"Asserted relation: {check.relation}\n\n<evidence source_id=\"{check.source_id}\">\n"
                         f"{source_text}\n</evidence>",
                     ),
@@ -589,6 +589,11 @@ class DraftUnavailable(Exception):
 
 _DRAFT_OPENING_RE = re.compile(r'^\s*\{\s*"answer_draft"\s*:\s*"')
 _JSON_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f"}
+# The draft's closing lines (prompts.draft_prompt): ESCALATE: <reason> and GAPS: <what the evidence doesn't cover>.
+_DRAFT_TRAILER_RE = re.compile(r"^[ \t>*_-]*(ESCALATE|GAPS):[ \t]*(.*?)[ \t*_]*$", re.MULTILINE)
+_DRAFT_FENCE_RE = re.compile(r"^\s*```[a-z]*\s*\n(.*?)\n\s*```\s*$", re.DOTALL)
+_NO_ESCALATION = {"none", "no", "n/a", "אין", "לא"}
+_LENGTH_REASON = "The draft ran past its length limit; it was kept up to its last complete citation"
 
 
 def _unterminated_json_string(body: str) -> str:
@@ -617,14 +622,10 @@ def _unterminated_json_string(body: str) -> str:
     return "".join(out)
 
 
-def _salvage_draft(raw: str) -> LegalDraft | None:
+def _up_to_last_citation(text: str) -> str | None:
     """A draft cut off at max_tokens -- typically a loop repeating its sentences until the
     limit -- kept up to its last complete citation token, each repeated sentence once.
-    What survives goes through the same verification as any draft, and the turn escalates."""
-    match = _DRAFT_OPENING_RE.match(raw)
-    if not match:
-        return None
-    text = _unterminated_json_string(raw[match.end() :])
+    None when nothing cited survives."""
     end = text.rfind("]]")
     if end == -1:
         return None
@@ -636,12 +637,45 @@ def _salvage_draft(raw: str) -> LegalDraft | None:
         seen.add(key)
         kept.append(piece)
     text = "".join(kept).strip()
-    if not parse_citations(text):
+    return text if parse_citations(text) else None
+
+
+def _parse_draft(raw: str, truncated: bool = False) -> LegalDraft | None:
+    """The drafter's plain-text reply -> LegalDraft: the answer, with its closing ESCALATE:/GAPS:
+    lines taken out as the escalation reason and the coverage gaps. None when it holds no answer.
+
+    The draft is plain text, not grammar-constrained JSON: Hebrew abbreviations are routinely
+    written with an ASCII double quote (תשל"ג, ש"ח -- gemma3:12b did so in 29 of 100 eval
+    answers), and inside a JSON string that quote ends the string -- the grammar then closes
+    the object and the answer is cut off mid-word, before its first citation. A reply that is
+    JSON anyway (a model's habit) is read as the old draft object."""
+    text = raw.strip()
+    fenced = _DRAFT_FENCE_RE.match(text)
+    if fenced:
+        text = fenced.group(1).strip()
+    if _DRAFT_OPENING_RE.match(text):
+        try:
+            return LegalDraft.model_validate(json.loads(text))
+        except (json.JSONDecodeError, ValueError):
+            text = _unterminated_json_string(text[_DRAFT_OPENING_RE.match(text).end() :])
+    escalations, gaps = [], []
+    for match in _DRAFT_TRAILER_RE.finditer(text):
+        value = match.group(2).strip()
+        if value and value.strip(" .").lower() not in _NO_ESCALATION:
+            (escalations if match.group(1) == "ESCALATE" else gaps).append(value)
+    text = re.sub(r"\n{3,}", "\n\n", _DRAFT_TRAILER_RE.sub("", text)).strip()
+    if truncated:
+        kept = _up_to_last_citation(text)
+        if kept is not None:
+            text = kept
+        escalations.append(_LENGTH_REASON)
+    if not text:
         return None
     return LegalDraft(
         answer_draft=text,
-        escalation_flag=True,
-        escalation_reason="The draft ran past its length limit; it was kept up to its last complete citation",
+        escalation_flag=bool(escalations),
+        escalation_reason="; ".join(escalations) or None,
+        coverage_gaps="; ".join(gaps) or None,
     )
 
 
@@ -675,33 +709,30 @@ async def draft_answer(
     sampling = SamplingParams(temperature=0.0, max_tokens=2048)  # same memo, same draft
     for attempt in range(1 + max_revisions):
         try:
-            draft = await qwen.complete_json(
-                messages,
-                LLMCallSite("legal_draft"),
-                schema=LegalDraft,
-                sampling=sampling,
-                salvage=_salvage_draft,
-            )
-        except Exception as exc:  # noqa: BLE001 -- malformed after every retry and not salvageable
+            as_written = await qwen.complete_text(messages, LLMCallSite("legal_draft"), sampling=sampling)
+            call = next((c for c in reversed(trace.current_calls() or []) if c.get("call_site") == "legal_draft"), {})
+            draft = _parse_draft(as_written, truncated=call.get("done_reason") == "length")
+            if draft is None:
+                raise ValueError("the draft is empty")
+        except Exception as exc:  # noqa: BLE001 -- no draft this attempt
             attempts_log.append({"attempt": attempt + 1, "draft": None, "error": f"{type(exc).__name__}: {exc}"})
             if previous is not None:
                 return previous
             raise DraftUnavailable(f"{type(exc).__name__}: {exc}") from exc
-        as_written = draft.model_dump_json()  # short-form tokens, for the revision turn
         repaired_text, repaired = _repair_source_ids(draft.answer_draft, memo, evidence)
         draft.answer_draft = expand_citations(repaired_text, evidence)
         checks = await verify_citations(qwen, draft.answer_draft, memo, retrieval, evidence)
         failures = _citation_failures(checks)
         no_citations = not checks and bool(memo.supporting_authority)
         if no_citations:
-            failures.append("the draft contains no [[CITE]] tokens although the memorandum has supporting authority")
-        # A draft that stops after a lead-in ("... בכל אחד מהחוקים:") was most likely cut off by an
-        # ASCII double quote inside a Hebrew word. At temperature 0 the redraft repeats the same text,
-        # so it is sampled differently -- and told why.
+            failures.append("the draft contains no [[CITE]] tokens although the memorandum has supporting authority: "
+                            "end every sentence that states a rule with its citation token")
+        # A draft that stops after a lead-in ("... בכל אחד מהחוקים:") or cites nothing: at temperature 0
+        # the redraft repeats the same text, so it is sampled differently -- and told why.
         cut_off = no_citations or bool(re.search(r"[:,]\s*$", strip_citations(draft.answer_draft)))
-        if cut_off:
-            failures.append("the draft stops mid-answer: it was probably cut off by an ASCII double-quote character "
-                            "inside a word -- write ״ instead, and finish every sentence with its citation token")
+        if cut_off and not no_citations:
+            failures.append("the draft stops mid-answer, after a lead-in: finish every sentence, each with its "
+                            "citation token")
         uncovered = [law for law in _uncovered_laws(laws_in_play or [], [c.source_id for c in checks], evidence)
                      if law in memo_laws]
         attempts_log.append({"attempt": attempt + 1, "draft": draft.model_dump(), "repaired_source_ids": repaired,
@@ -720,12 +751,13 @@ async def draft_answer(
         ]
         messages = [
             *messages[:2],
-            ChatMessage("assistant", as_written),
+            ChatMessage("assistant", as_written),  # short-form tokens, as the model wrote them
             ChatMessage(
                 "user",
                 "The draft failed verification. Revise it: fix each problem below, and if no source the memorandum "
                 "lists actually states a sentence's proposition, remove that proposition rather than cite loosely. "
-                "Do not add claims the memorandum doesn't establish.\n- "
+                "Do not add claims the memorandum doesn't establish. Reply with the whole revised answer, in the "
+                "same format.\n- "
                 + "\n- ".join(_hebrew_safe(p) for p in problems),
             ),
         ]
@@ -1127,7 +1159,6 @@ async def _legal_turn(
 _CASE_QUERY_TOKEN_BUDGET = 1500  # what the search plans and embeds from -- mostly the case's opening
 _CASE_MAX_ISSUES = 4  # more than a question's 3: a case raises several; PLAN_MAX_TOKENS still fits 4
 _ESCALATE_RE = re.compile(r"^[ \t>*_-]*ESCALATE:[ \t]*(.+?)[ \t*_]*$", re.MULTILINE)
-_NO_ESCALATION = {"none", "no", "n/a", "אין", "לא"}
 # "## 4." headings and "1." / "2)" list items: structure, not figures for the numeric check.
 _ENUMERATOR_RE = re.compile(r"^([ \t]*(?:#+[ \t]*)?(?:[-*][ \t]+)?)\d{1,2}[.)][ \t]+", re.MULTILINE)
 

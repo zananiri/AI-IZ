@@ -198,8 +198,9 @@ def grounded_memorandum_schema(source_ids: list[str]) -> type[GroundedMemorandum
 
 
 class LegalDraft(BaseModel):
-    """Legal tab Pass B (Qwen): prose in the reply language with inline
-    [[CITE: ...]] tokens referencing Pass A claim IDs only."""
+    """Legal tab Pass B: prose in the reply language with inline
+    [[CITE: ...]] tokens referencing Pass A claim IDs only. The model writes it
+    as plain text, not JSON (legal/pipeline._parse_draft builds this from it)."""
 
     answer_draft: str
     escalation_flag: bool

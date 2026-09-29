@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from docslides.config import get_config
 from docslides.legal import pipeline
+from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.citations import format_citation
 from docslides.legal.models import ChunkMetadata
 from docslides.legal.retrieval import RetrievalResult, RetrievedLegalChunk
@@ -43,7 +44,7 @@ class FakeClient:
         self.json_responses = {k: list(v) for k, v in (json_responses or {}).items()}
         self.text_responses = {k: list(v) for k, v in (text_responses or {}).items()}
         self.calls = []
-        self.samplings = []  # (call site, SamplingParams) per JSON call
+        self.samplings = []  # (call site, SamplingParams) per call
 
     async def complete_json(self, messages, call_site, schema, sampling=None, **_):
         self.calls.append((call_site.name, messages))
@@ -55,7 +56,10 @@ class FakeClient:
 
     async def complete_text(self, messages, call_site, sampling=None, **_):
         self.calls.append((call_site.name, messages))
+        self.samplings.append((call_site.name, sampling))
         queue = self.text_responses.get(call_site.name)
+        if not queue and call_site.name == "legal_draft" and self.json_responses.get("legal_draft"):
+            return _draft_text(self.json_responses["legal_draft"].pop(0))  # scripted as the draft's fields
         if not queue:
             if call_site.name == "legal_analysis":  # Pass 0 is optional: no notes unless scripted
                 return ""
@@ -64,6 +68,16 @@ class FakeClient:
 
     def names(self):
         return [name for name, _ in self.calls]
+
+
+def _draft_text(fields: dict) -> str:
+    """A draft scripted as LegalDraft fields, as the drafter writes it: the answer, then its closing lines."""
+    text = fields["answer_draft"]
+    if fields.get("escalation_flag"):
+        text += f"\nESCALATE: {fields.get('escalation_reason') or 'flagged'}"
+    if fields.get("coverage_gaps"):
+        text += f"\nGAPS: {fields['coverage_gaps']}"
+    return text
 
 
 def _retrieval() -> RetrievalResult:
@@ -388,7 +402,7 @@ def test_an_answer_leaving_out_a_law_in_play_says_so_up_front(wire, monkeypatch)
     result = _run("מה קובע סעיף 25?")
 
     memo_calls = [messages for name, messages in qwen.calls if name == "legal_research_memo"]
-    assert len(memo_calls) == 3 and f"no claim cites {LAW2}" in memo_calls[1][-1].content
+    assert len(memo_calls) == 3 and f"no claim cites {normalize_hebrew_quotes(LAW2)}" in memo_calls[1][-1].content
     assert qwen.names().count("legal_draft") == 1  # the memorandum has nothing on LAW2 to cite
     assert result.output["answer_draft"].startswith("השאלה אינה חד־משמעית")
     assert f"אינה עוסקת ב{LAW2}" in result.output["answer_draft"].split("\n\n")[0]
@@ -415,7 +429,7 @@ def test_a_draft_citing_one_law_of_two_the_memo_covers_is_revised(wire, monkeypa
     result = _run("מה קובע סעיף 25?")
 
     revision = [messages for name, messages in qwen.calls if name == "legal_draft"][1][-1].content
-    assert f"the memorandum has claims for {LAW2}" in revision
+    assert f"the memorandum has claims for {normalize_hebrew_quotes(LAW2)}" in revision
     assert result.output["answer_draft"] == both and not result.output["escalation_flag"]
 
 
@@ -502,12 +516,24 @@ def test_a_draft_that_cannot_be_generated_escalates_instead_of_failing_the_turn(
 
 def test_a_draft_cut_off_in_a_loop_keeps_each_sentence_once_up_to_its_last_citation():
     short = f"[[CITE: claim_id=C1 | source_id={SOURCE} | relation=supports]]"
-    raw = '{"answer_draft": "ניתן לבטל את החוזה. ' + short + " ניתן לבטל את החוזה. " + short + " ניתן לב"
-    draft = pipeline._salvage_draft(raw)
+    raw = f"ניתן לבטל את החוזה. {short} ניתן לבטל את החוזה. {short} ניתן לב"
+    draft = pipeline._parse_draft(raw, truncated=True)
     assert draft.answer_draft == f"ניתן לבטל את החוזה. {short}"
     assert draft.escalation_flag and "length limit" in draft.escalation_reason
-    assert pipeline._salvage_draft('{"answer_draft": "nothing cited yet') is None
-    assert pipeline._salvage_draft("not json at all") is None
+    assert pipeline._parse_draft("", truncated=True) is None
+
+
+def test_the_draft_is_plain_text_so_an_ascii_quote_in_a_hebrew_word_cannot_cut_it_off():
+    short = f"[[CITE: claim_id=C1 | source_id={SOURCE} | relation=supports]]"
+    answer = f'לפי חוק החוזים, התשל"ג-1973, הצד הטועה רשאי לבטל את החוזה. {short}'
+    draft = pipeline._parse_draft(f"{answer}\nESCALATE: none\nGAPS: המועד לביטול\n")
+    assert draft.answer_draft == answer and not draft.escalation_flag
+    assert draft.coverage_gaps == "המועד לביטול"
+    flagged = pipeline._parse_draft(f"```\n{answer}\n\n**ESCALATE: a filing deadline**\n```")
+    assert flagged.answer_draft == answer and flagged.escalation_reason == "a filing deadline"
+    as_json = pipeline._parse_draft('{"answer_draft": "ניתן לבטל.", "escalation_flag": false}')
+    assert as_json.answer_draft == "ניתן לבטל." and not as_json.escalation_flag
+    assert pipeline._parse_draft("  \n") is None
 
 
 def test_a_named_section_several_laws_have_is_flagged_up_front(wire, monkeypatch):
@@ -600,8 +626,9 @@ def test_a_draft_cut_off_after_a_lead_in_is_redrafted_with_different_sampling(wi
 
     temperatures = [s.temperature for name, s in qwen.samplings if name == "legal_draft"]
     assert temperatures == [0.0, 0.7]
-    revision = [m for n, m in qwen.calls if n == "legal_draft"][1][-1].content
-    assert "cut off" in revision
+    revision = [m for n, m in qwen.calls if n == "legal_draft"][1]
+    assert revision[-2].content == "להלן מה שקובע החוק:"  # the draft as written, not JSON
+    assert "no [[CITE]] tokens" in revision[-1].content
     assert result.output["answer_draft"] == f"הצד הטועה רשאי לבטל את החוזה. {CITE}"
     assert _audit(result)["draft_attempts"][0]["cut_off"] is True
 

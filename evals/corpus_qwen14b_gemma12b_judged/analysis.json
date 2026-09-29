@@ -1,0 +1,2135 @@
+{
+ "models": {
+  "qwen3_14b": {
+   "label": "qwen3:14b",
+   "overall": 68.5,
+   "judge_free_overall": 88.2,
+   "mcq": {
+    "n": 16,
+    "score": 93.8
+   },
+   "by_category": {
+    "rule_recall": {
+     "n": 22,
+     "score": 79.5
+    },
+    "rule_conclusion": {
+     "n": 18,
+     "score": 75.0
+    },
+    "rule_application": {
+     "n": 12,
+     "score": 37.5
+    },
+    "interpretation": {
+     "n": 8,
+     "score": 62.5
+    },
+    "mcq_bar": {
+     "n": 16,
+     "score": 93.8
+    },
+    "temporal_amendment": {
+     "n": 4,
+     "score": 37.5
+    },
+    "citation_grounding": {
+     "n": 7,
+     "score": 71.4
+    },
+    "issue_spotting": {
+     "n": 7,
+     "score": 21.4
+    },
+    "abstention": {
+     "n": 6,
+     "score": 83.3
+    }
+   },
+   "by_area": {
+    "חוזים – חלק כללי": {
+     "n": 11,
+     "score": 88.6
+    },
+    "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר": {
+     "n": 8,
+     "score": 75.0
+    },
+    "מקרקעין ושכירות": {
+     "n": 5,
+     "score": 90.0
+    },
+    "משפחה, ירושה וכשרות משפטית": {
+     "n": 7,
+     "score": 71.4
+    },
+    "נזיקין, לשון הרע והתיישנות": {
+     "n": 10,
+     "score": 65.0
+    },
+    "דיני עבודה": {
+     "n": 13,
+     "score": 65.4
+    },
+    "משפט פלילי, מעצרים וראיות": {
+     "n": 15,
+     "score": 58.3
+    },
+    "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי": {
+     "n": 12,
+     "score": 70.8
+    },
+    "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה": {
+     "n": 6,
+     "score": 75.0
+    },
+    "זיהוי סוגיות (רב-תחומי)": {
+     "n": 7,
+     "score": 21.4
+    },
+    "הימנעות, הנחות שגויות ומחוץ למאגר": {
+     "n": 6,
+     "score": 83.3
+    }
+   },
+   "by_confidence": {
+    "high": {
+     "n": 69,
+     "score": 75.4
+    },
+    "medium": {
+     "n": 31,
+     "score": 53.2
+    }
+   },
+   "hallucination_rate": 2.4,
+   "grounding": {
+    "grounded": 62,
+    "misgrounded": 20,
+    "ungrounded": 1,
+    "n/a": 1
+   },
+   "judged_items": 84,
+   "retrieval": {
+    "gold_hit_rate": 78.6,
+    "score_when_hit": 76.0,
+    "score_when_miss": 40.5,
+    "n_hit": 77,
+    "n_miss": 21
+   },
+   "leakage": {
+    "answers": 26,
+    "by_script": {
+     "Latin inside a Hebrew word": 13,
+     "Cyrillic": 7,
+     "Arabic": 15,
+     "English word": 12,
+     "CJK": 5,
+     "Thai": 4
+    },
+    "examples": [
+     {
+      "id": "IL-248",
+      "words": [
+       "הhud"
+      ]
+     },
+     {
+      "id": "IL-256",
+      "words": [
+       "имеет"
+      ]
+     },
+     {
+      "id": "IL-293",
+      "words": [
+       "أشهر"
+      ]
+     },
+     {
+      "id": "IL-296",
+      "words": [
+       "منذ"
+      ]
+     },
+     {
+      "id": "IL-075",
+      "words": [
+       "котором"
+      ]
+     },
+     {
+      "id": "IL-172",
+      "words": [
+       "اختيار"
+      ]
+     },
+     {
+      "id": "IL-306",
+      "words": [
+       "liable",
+       "поскольку",
+       "להיחשבliable"
+      ]
+     },
+     {
+      "id": "IL-409",
+      "words": [
+       "ktor",
+       "possibly",
+       "דירktor",
+       "וpossibly"
+      ]
+     },
+     {
+      "id": "IL-032",
+      "words": [
+       "ربح"
+      ]
+     },
+     {
+      "id": "IL-135",
+      "words": [
+       "ًا"
+      ]
+     },
+     {
+      "id": "IL-267",
+      "words": [
+       "grund",
+       "עלgrund"
+      ]
+     },
+     {
+      "id": "IL-268",
+      "words": [
+       "سبب",
+       "مخالف"
+      ]
+     }
+    ],
+    "repairs_run": 24
+   },
+   "opener": {
+    "non_yesno_with_opener": 11,
+    "non_yesno_total": 66,
+    "label_contradicts_reasoning": [],
+    "points_lost": 0.0
+   },
+   "pollution": {
+    "questions": {
+     "Repealed Civil Procedure Regs 1984": 10,
+     "Jordanian Criminal Law": 9,
+     "Judea & Samaria military orders": 18,
+     "Herut draft constitution (1948)": 8
+    },
+    "chunks": {
+     "Repealed Civil Procedure Regs 1984": 23,
+     "Jordanian Criminal Law": 25,
+     "Judea & Samaria military orders": 39,
+     "Herut draft constitution (1948)": 14
+    }
+   },
+   "timing": {
+    "legal_eval_plan": {
+     "calls": 101,
+     "median_s": 11.8,
+     "p90_s": 16.2,
+     "max_s": 138.1,
+     "total_min": 22.4,
+     "median_out_tokens": 162,
+     "stopped_at_length": 1,
+     "errors": 0
+    },
+    "legal_eval_baseline": {
+     "calls": 105,
+     "median_s": 54.2,
+     "p90_s": 145.2,
+     "max_s": 267.4,
+     "total_min": 128.2,
+     "median_out_tokens": 603,
+     "stopped_at_length": 0,
+     "errors": 0
+    },
+    "legal_eval_rewrite": {
+     "calls": 24,
+     "median_s": 12.9,
+     "p90_s": 34.7,
+     "max_s": 50.0,
+     "total_min": 7.9,
+     "median_out_tokens": 177,
+     "stopped_at_length": 0,
+     "errors": 0
+    }
+   },
+   "question_latency": {
+    "median_s": 52.5,
+    "p90_s": 111.1
+   },
+   "case_latency_min": 17.1,
+   "wall_clock": {
+    "first": "2026-09-28T20:01:39+00:00",
+    "last": "2026-09-29T00:35:14+00:00"
+   }
+  },
+  "gemma3_12b": {
+   "label": "gemma3:12b",
+   "overall": 69.2,
+   "judge_free_overall": 76.5,
+   "mcq": {
+    "n": 16,
+    "score": 81.2
+   },
+   "by_category": {
+    "rule_recall": {
+     "n": 22,
+     "score": 84.1
+    },
+    "rule_conclusion": {
+     "n": 18,
+     "score": 73.6
+    },
+    "rule_application": {
+     "n": 12,
+     "score": 33.3
+    },
+    "interpretation": {
+     "n": 8,
+     "score": 43.8
+    },
+    "mcq_bar": {
+     "n": 16,
+     "score": 81.2
+    },
+    "temporal_amendment": {
+     "n": 4,
+     "score": 50.0
+    },
+    "citation_grounding": {
+     "n": 7,
+     "score": 85.7
+    },
+    "issue_spotting": {
+     "n": 7,
+     "score": 42.9
+    },
+    "abstention": {
+     "n": 6,
+     "score": 100.0
+    }
+   },
+   "by_area": {
+    "חוזים – חלק כללי": {
+     "n": 11,
+     "score": 72.7
+    },
+    "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר": {
+     "n": 8,
+     "score": 78.1
+    },
+    "מקרקעין ושכירות": {
+     "n": 5,
+     "score": 80.0
+    },
+    "משפחה, ירושה וכשרות משפטית": {
+     "n": 7,
+     "score": 78.6
+    },
+    "נזיקין, לשון הרע והתיישנות": {
+     "n": 10,
+     "score": 65.0
+    },
+    "דיני עבודה": {
+     "n": 13,
+     "score": 65.4
+    },
+    "משפט פלילי, מעצרים וראיות": {
+     "n": 15,
+     "score": 55.0
+    },
+    "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי": {
+     "n": 12,
+     "score": 70.8
+    },
+    "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה": {
+     "n": 6,
+     "score": 79.2
+    },
+    "זיהוי סוגיות (רב-תחומי)": {
+     "n": 7,
+     "score": 42.9
+    },
+    "הימנעות, הנחות שגויות ומחוץ למאגר": {
+     "n": 6,
+     "score": 100.0
+    }
+   },
+   "by_confidence": {
+    "high": {
+     "n": 69,
+     "score": 75.4
+    },
+    "medium": {
+     "n": 31,
+     "score": 55.6
+    }
+   },
+   "hallucination_rate": 1.2,
+   "grounding": {
+    "grounded": 70,
+    "misgrounded": 13,
+    "n/a": 1
+   },
+   "judged_items": 84,
+   "retrieval": {
+    "gold_hit_rate": 83.7,
+    "score_when_hit": 75.6,
+    "score_when_miss": 32.8,
+    "n_hit": 82,
+    "n_miss": 16
+   },
+   "leakage": {
+    "answers": 0,
+    "by_script": {},
+    "examples": [],
+    "repairs_run": 0
+   },
+   "opener": {
+    "non_yesno_with_opener": 55,
+    "non_yesno_total": 66,
+    "label_contradicts_reasoning": [
+     "IL-016",
+     "IL-214",
+     "IL-219"
+    ],
+    "points_lost": 1.5
+   },
+   "pollution": {
+    "questions": {
+     "Jordanian Criminal Law": 11,
+     "Judea & Samaria military orders": 15,
+     "Herut draft constitution (1948)": 4,
+     "Repealed Civil Procedure Regs 1984": 9
+    },
+    "chunks": {
+     "Jordanian Criminal Law": 19,
+     "Judea & Samaria military orders": 37,
+     "Herut draft constitution (1948)": 9,
+     "Repealed Civil Procedure Regs 1984": 16
+    }
+   },
+   "timing": {
+    "legal_eval_plan": {
+     "calls": 104,
+     "median_s": 9.1,
+     "p90_s": 14.0,
+     "max_s": 86.1,
+     "total_min": 18.5,
+     "median_out_tokens": 204,
+     "stopped_at_length": 4,
+     "errors": 0
+    },
+    "legal_eval_baseline": {
+     "calls": 105,
+     "median_s": 9.8,
+     "p90_s": 21.3,
+     "max_s": 92.2,
+     "total_min": 25.3,
+     "median_out_tokens": 117,
+     "stopped_at_length": 0,
+     "errors": 0
+    }
+   },
+   "question_latency": {
+    "median_s": 9.6,
+    "p90_s": 18.1
+   },
+   "case_latency_min": 6.9,
+   "wall_clock": {
+    "first": "2026-09-29T00:36:43+00:00",
+    "last": "2026-09-29T03:24:55+00:00"
+   }
+  }
+ },
+ "questions": [
+  {
+   "id": "IL-001",
+   "category": "rule_recall",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "question": "מתי נכרת חוזה לפי חוק החוזים (חלק כללי)?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Offer and acceptance, s.1 -- correct.",
+   "gemma3_12b_note": "Correct, s.1; spurious 'כן,' opener on a non-yes/no question.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-011",
+   "category": "rule_recall",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "question": "כיצד משלימים פרטים שלא נקבעו בחוזה?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Custom between the parties, else customary practice, s.26 -- exact.",
+   "gemma3_12b_note": "Correct, s.26; opens with a spurious 'לא,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-014",
+   "category": "rule_recall",
+   "area": "חוזים – חלק כללי",
+   "confidence": "medium",
+   "question": "מתי יש לקיים חיוב חוזי כאשר לא נקבע לו מועד?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Reasonable time after formation on notice, s.41 -- correct; spurious 'כן,' opener.",
+   "gemma3_12b_note": "Correct, s.41.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-061",
+   "category": "rule_recall",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "question": "מהן התרופות העומדות לנפגע מהפרת חוזה לפי חוק התרופות?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Enforcement, rescission, damages with sections; doesn't say damages come in addition to or instead of the others.",
+   "gemma3_12b_note": "Enforcement or rescission plus damages in addition or instead, s.2 -- exact; spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-062",
+   "category": "rule_recall",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "question": "באילו מקרים לא תינתן אכיפה של חוזה שהופר?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "All four exceptions with s.3(1)-(4).",
+   "gemma3_12b_note": "All four exceptions, s.3.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-113",
+   "category": "rule_recall",
+   "area": "מקרקעין ושכירות",
+   "confidence": "high",
+   "question": "מתי נגמרת עסקה במקרקעין לפי חוק המקרקעין?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Completed on registration, s.7; omits that an unregistered transaction is deemed an undertaking.",
+   "gemma3_12b_note": "Completed on registration, s.7(a); spurious 'כן,' opener; omits the undertaking rule.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-115",
+   "category": "rule_recall",
+   "area": "מקרקעין ושכירות",
+   "confidence": "high",
+   "question": "מה הכלל בעסקאות נוגדות במקרקעין?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "First transaction prevails unless the second was in good faith, for value and registered, s.9.",
+   "gemma3_12b_note": "Correct, s.9; spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-153",
+   "category": "rule_recall",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "high",
+   "question": "מי הם האפוטרופסים הטבעיים של קטין?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Parents, s.14 -- correct; the extra surviving-parent rule cites Women's Equal Rights Law s.2(a), should be s.3.",
+   "gemma3_12b_note": "Parents, s.14; spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-202",
+   "category": "rule_recall",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "question": "מה קובע הכלל \"הדבר מעיד על עצמו\"?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Says the rule isn't in Israeli law; it is Torts Ordinance s.41 -- retrieval never surfaced it.",
+   "gemma3_12b_note": "Misreads the idiom as a defendant testifying for himself, cites disciplinary-court rules; s.41 was never retrieved.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-205",
+   "category": "rule_recall",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "question": "מתי חב מעביד בשל עוולה של עובדו?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "In the course of work (or authorized/ratified), s.13(a); spurious 'כן.' and an irrelevant kashrut-offence aside.",
+   "gemma3_12b_note": "s.13(a)(1)-(2) correct; spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-245",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "מה התנאי הבסיסי לזכאות לפיצויי פיטורים לפי חוק פיצויי פיטורים?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "One continuous year with one employer and dismissed (plus seasonal rule), s.1(a); garbled wording ('שעובר ידוע').",
+   "gemma3_12b_note": "Correct, s.1(a); spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-247",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "medium",
+   "question": "מה אורך ההודעה המוקדמת לעובד בשכר חודשי שעבד יותר משנה?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Applies s.4 (hourly/daily workers: 21 days in year three) to a monthly-salaried worker; s.3 gives a month after the first year.",
+   "gemma3_12b_note": "One month -- correct, but cites s.4(4) (non-monthly workers) instead of s.3.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-248",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "medium",
+   "question": "מה אורך ההודעה המוקדמת לעובד בשכר חודשי בחצי השנה הראשונה לעבודתו?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "One day per month, s.3(1) -- correct; first word garbled with Latin letters ('הhudעה').",
+   "gemma3_12b_note": "Correct, s.3(1); spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-253",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "medium",
+   "question": "עד איזה מועד יש לשלם שכר חודשי כדי שלא ייחשב \"שכר מולן\"?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Reaches the 9th of the next month, but opens with a self-contradicting 'no need to pay until' sentence.",
+   "gemma3_12b_note": "Gives the due date (end of month, s.9) not the delayed-wage threshold (9th of next month); spurious 'לא.'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-254",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "אילו עילות אפליה אוסר חוק שוויון ההזדמנויות בעבודה?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Quotes the full s.2(a) list.",
+   "gemma3_12b_note": "Full list, s.2(a); spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-256",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "לאיזו ערכאה סמכות ייחודית לדון בתובענות בין עובד למעביד הנובעות מיחסי עבודה?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Regional labour court, s.24(a) -- correct, but a Russian word ('имеет') survived the Hebrew rewrite.",
+   "gemma3_12b_note": "Correct, s.24(a)(1); spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-293",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "אילו סוגי עבירות מבחין חוק העונשין לפי חומרתן?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Three classes and thresholds right, s.24; garbled fine clause ('fine set for appeals') and Arabic 'أشهر' left in.",
+   "gemma3_12b_note": "Felony stated as 'three years or more' -- the law says more than three years; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-294",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "מה גיל האחריות הפלילית בישראל?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Age 12, s.34F.",
+   "gemma3_12b_note": "Age 12 with quote, s.34F; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-296",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "מה העונש על רצח בנסיבות מחמירות?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Life imprisonment but not stated as mandatory; adds an unsupported death-penalty clause and an invented 'since 1987' fact.",
+   "gemma3_12b_note": "Life imprisonment 'and this penalty only', s.301A(a) -- exact; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-297",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "מה העונש על המתה בקלות דעת?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "12 years, s.301C, but opens 'לא.' and ends claiming the law sets no specific penalty for recklessness.",
+   "gemma3_12b_note": "12 years, s.301C; spurious 'לא,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-300",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "תוך כמה זמן יש להביא עצור שלא שוחרר בפני שופט?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Says 'after 24 hours' instead of 'as soon as possible and within 24 hours', s.29(a).",
+   "gemma3_12b_note": "Gives only the Sabbath/holiday exception from s.29(e), never the 24-hour rule; spurious 'כן.'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-353",
+   "category": "rule_recall",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "מאיזה גיל אזרח רשאי לבחור לכנסת, ומאיזה גיל להיבחר?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "18 to vote (s.5), 21 to be elected (s.6(a)).",
+   "gemma3_12b_note": "Correct with quotes; spurious 'כן,' opener.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-016",
+   "category": "rule_conclusion",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "question": "מוכר דירה ידע שבדירה יש רטיבות קשה בקירות, הסתיר אותה בצבע טרי ולא סיפר על כך לקונה. האם הקונה רשאי לבטל את החוזה?",
+   "qwen3_14b_score": 0.75,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Right label, but reasons via Sale Law non-conformity instead of misrepresentation (Contracts Law s.15).",
+   "gemma3_12b_note": "Reasoning is right (misrepresentation, s.15, may cancel) but the answer opens 'לא' -- the label contradicts its own reasoning.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-024",
+   "category": "rule_conclusion",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "question": "בעל עסק ביטל חוזה בשל הטעיה לאחר שקיבל 10,000 ש\"ח מהצד השני. האם עליו להשיב את הכסף?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Restitution after cancellation, s.21.",
+   "gemma3_12b_note": "Restitution after cancellation, s.21.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-075",
+   "category": "rule_conclusion",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "question": "זמר התחייב בחוזה להופיע בחתונה וביטל ברגע האחרון. בני הזוג תובעים צו שיחייב אותו להופיע. האם בית המשפט צפוי לאכוף את החוזה?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.75,
+   "qwen3_14b_note": "Says the court would enforce; s.3(2) bars enforcing personal service. Russian 'котором' left in.",
+   "gemma3_12b_note": "Right label, but gives only the 'unjust' exception, not personal service (s.3(2)), and no damages alternative.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-126",
+   "category": "rule_conclusion",
+   "area": "מקרקעין ושכירות",
+   "confidence": "high",
+   "question": "הסכם למכירת קרקע נעשה בעל פה בלבד, והקונה אף שילם מקדמה. האם ההתחייבות למכירה עומדת בדרישת הכתב?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Writing required, s.8; the deposit doesn't change it.",
+   "gemma3_12b_note": "Writing required, s.8; the deposit doesn't change it.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-164",
+   "category": "rule_conclusion",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "medium",
+   "question": "נער בן 16 רכש בלי ידיעת הוריו אופנוע ב-30,000 ש\"ח. האם ההורים יכולים לבטל את העסקה?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Label 'לא', then 'parents may cancel only via court' citing ss.19-20; ss.4-5 (minor's acts need consent) never retrieved.",
+   "gemma3_12b_note": "Says parents can't cancel, citing s.26 (neglectful parent); ss.4-5 never retrieved.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-168",
+   "category": "rule_conclusion",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "high",
+   "question": "אדם שהורשע ברצח אביו טוען לחלקו בירושת האב. האם הוא זכאי לרשת?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Disqualified from inheriting, s.5(a)(1).",
+   "gemma3_12b_note": "Disqualified from inheriting, s.5(a)(1).",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-172",
+   "category": "rule_conclusion",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "medium",
+   "question": "הורים גרושים חלוקים לגבי בית הספר של בנם. האם אחד ההורים רשאי להחליט לבדו?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Neither decides alone, the court decides, s.19; Arabic 'لاختيار' and garbled words left in.",
+   "gemma3_12b_note": "Court decides if they disagree, s.19.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-212",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "medium",
+   "question": "הולך רגל נפגע מרכב שנהג לא זהיר. ההולך חצה באדום. בתביעה לפי חוק הפיצויים לנפגעי תאונות דרכים, האם אשם ההולך יפחית את הפיצויים?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 0.75,
+   "qwen3_14b_note": "Fault doesn't reduce compensation; reasons from the s.7 exclusions rather than absolute liability (s.2).",
+   "gemma3_12b_note": "Right label, but says the court may still weigh the pedestrian's fault -- contrary to absolute liability.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-213",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "medium",
+   "question": "אדם ביים תאונת דרכים ופצע את עצמו בכוונה כדי לקבל פיצויים. האם הוא זכאי לפיצויים לפי חוק הפיצויים לנפגעי תאונות דרכים?",
+   "qwen3_14b_score": 0.75,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Right conclusion via the s.1 definition, but misstates s.7(1) ('those who did NOT cause it intentionally are not entitled').",
+   "gemma3_12b_note": "s.1 definition and s.7 intentional exclusion.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-214",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "question": "עובד מפעל נסע ברכב החברה לפגישה עם לקוח ופגע ברכב אחר. האם החברה עשויה לחוב כמעביד?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "In the course of work, s.13(a)(2).",
+   "gemma3_12b_note": "Reasoning right (s.13(a)(2), may be liable) but the answer opens 'לא.' -- label contradicts reasoning.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-217",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "question": "נפגע בתביעת לשון הרע לא הוכיח כל נזק ממוני. האם עדיין אפשר לפסוק לו פיצוי?",
+   "qwen3_14b_score": 0.75,
+   "gemma3_12b_score": 0.25,
+   "qwen3_14b_note": "Compensation without proof of damage, s.7A; omits the double cap for intent; says 'defendant' in criminal terms.",
+   "gemma3_12b_note": "Reasoning right (s.7A(b), up to the cap without proof) but opens 'לא.'; omits the double cap for intent.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-219",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "medium",
+   "question": "באותו מקרה, החייב שלח למלווה ב-2021 מכתב שבו הודה בכתב בחוב וביקש פריסת תשלומים. האם ההתיישנות נמנית מחדש?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Says limitation doesn't restart, citing the Execution Law; Limitation Law s.9 never retrieved.",
+   "gemma3_12b_note": "Quotes s.9 exactly -- the period restarts -- but the answer opens 'לא.': label contradicts reasoning.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-262",
+   "category": "rule_conclusion",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "עובד עבד 11 שעות ביום עבודה רגיל של 8 שעות. האם הוא זכאי ל-125% על כל 3 השעות הנוספות?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "125% for two hours, 150% for the third, s.16(a).",
+   "gemma3_12b_note": "States the rule, then concludes 125% on all three hours -- the opposite of the rule it just cited.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-306",
+   "category": "rule_conclusion",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "ילד בן 11 גנב טלפון מחנות. האם ניתן להעמידו לדין פלילי?",
+   "qwen3_14b_score": 0.75,
+   "gemma3_12b_score": 0.75,
+   "qwen3_14b_note": "Age-12 rule right, but cited to a Judea & Samaria security order, not Penal Law s.34F; Russian and English words left in.",
+   "gemma3_12b_note": "Age-12 rule right, but cited to the Jordanian Criminal Law (s.94) plus an irrelevant theft definition.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-309",
+   "category": "rule_conclusion",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "אדם דחף תוקף שאיים עליו בסכין כדי להציל את חייו, והתוקף נפל ונפצע. האם עשויה לעמוד לו הגנה עצמית?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Self-defence, s.34J -- right; proportionality attributed to the Torts Ordinance s.24 rather than the Penal Law.",
+   "gemma3_12b_note": "Self-defence, s.34J; reasonableness limit not mentioned.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-368",
+   "category": "rule_conclusion",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "לפי אותו חוק, האם בוחר שהתפנה מביתו עקב המצב הביטחוני חייב להצביע דווקא בקלפי שבמקום מגוריו הקבוע?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Evacuee may use a designated or accessible polling station -- via consolidated s.116Y10(b), where the 2026 law put it.",
+   "gemma3_12b_note": "Same rule, s.116Y10(b).",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-409",
+   "category": "rule_conclusion",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "medium",
+   "question": "בעל מניות מבקש להגיש תביעה בשם החברה נגד דירקטור שגרם לה נזק. האם הוא יכול להגישה בלי אישור בית המשפט?",
+   "qwen3_14b_score": 0.75,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Right label, but hedges ('possibly court approval'), confuses the derivative suit with a derivative defence (s.203); Latin letters in 'דירktor'.",
+   "gemma3_12b_note": "Needs court approval, prior demand to the company, s.194.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-410",
+   "category": "rule_conclusion",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "high",
+   "question": "חברה הודיעה על חלוקת דיבידנד, אף שיש לה הפסדים צבורים וחשש ממשי שלא תעמוד בתשלום חובותיה בשנה הקרובה. האם החלוקה מותרת?",
+   "qwen3_14b_score": 0.75,
+   "gemma3_12b_score": 0.75,
+   "qwen3_14b_note": "Applies the solvency test (s.302) but ignores the profit test despite the accumulated losses.",
+   "gemma3_12b_note": "Names both tests, but adds 'unless court approval' -- s.303 can't cure a failed solvency test.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-032",
+   "category": "rule_application",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "question": "יזם ומשקיע חתמו על הסכם שבו נקבע ש\"המשקיע יקבל את חלקו ברווחים לפי המקובל בענף\". המשקיע טוען ל-30% והיזם ל-10%. אין הוראה נוספת בחוזה. כיצד יוכרע הפער?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Right custom-based principle, but by analogy from the Sale Law s.5 and Rental Law s.3 -- Contracts Law s.26 never retrieved; no burden of proof or certainty issue; Arabic words left in.",
+   "gemma3_12b_note": "Wrong framework (contra proferentem s.25(b1), good faith) and invents facts about who drafted the clause.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-087",
+   "category": "rule_application",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "question": "בני זוג הזמינו אולם לחתונה. האולם ביטל שבועיים לפני האירוע כדי להשכיר את התאריך לאירוע רווחי יותר. בני הזוג מצאו אולם חלופי יקר ב-30,000 ש\"ח, וסבלו עוגמת נפש קשה. אילו פיצויים יוכלו לתבוע?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Price difference (s.10) and distress (s.13) -- right; no deposit restitution (s.9) or mitigation.",
+   "gemma3_12b_note": "Distress (s.13) and the price difference, but adds the COVID event-deposit law's exemplary damages, which doesn't apply.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-135",
+   "category": "rule_application",
+   "area": "מקרקעין ושכירות",
+   "confidence": "medium",
+   "question": "משכיר הכניס לחוזה שכירות למגורים סעיף שלפיו \"השוכר יישא בכל תיקון בדירה, כולל תיקונים במערכות המים והחשמל, מכל סיבה\". נתח את תוקף הסעיף.",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Landlord must repair non-tenant defects (ss.25H, 7), clause invalid; Turkish 'açıkًا' left in.",
+   "gemma3_12b_note": "Right result, but reads 'water and electricity' as utility bills (s.25I) and says s.25H(a) makes the tenant liable -- the reverse.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-136",
+   "category": "rule_application",
+   "area": "מקרקעין ושכירות",
+   "confidence": "medium",
+   "question": "חברה רכשה מגרש לאחר שבדקה בפנקסי המקרקעין שהמוכר רשום כבעלים, שילמה ונרשמה. לאחר מכן התברר שהמוכר זייף ייפוי כוח של הבעלים האמיתי. נתח.",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "s.10 plus Settlement Ordinance s.93, but concludes flatly for the buyer -- no forgery case-law question or diligence test.",
+   "gemma3_12b_note": "Same s.10/s.93 analysis and the same overconfident conclusion; spurious 'כן.'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-223",
+   "category": "rule_application",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "question": "עובדת לשעבר פרסמה בפייסבוק פוסט שבו כתבה ש\"בעל העסק מתעלל בעובדים ולא משלם שכר\". חלק מהטענות על אי-תשלום שכר נכונות ומתועדות, אך הטענה על התעללות אינה נכונה. בעל העסק שוקל תביעה. נתח.",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Analyses the post under consumer-protection misleading-advertising rules -- the Defamation Law was never retrieved; Vietnamese 'trừ' left in.",
+   "gemma3_12b_note": "Defamation (s.1) and publication (s.2) right, but no truth defence for the true part (s.14), no s.7A; the defence cited is the wrong section.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-267",
+   "category": "rule_application",
+   "area": "דיני עבודה",
+   "confidence": "medium",
+   "question": "רונית עבדה 4 שנים כמזכירה בשכר חודשי של 9,000 ש\"ח. ב-1.9.2026 הודיע לה המעביד בעל פה \"מחר את לא באה\". היא לא קיבלה הודעה מוקדמת, והשכר של אוגוסט עוד לא שולם. נתח את זכויותיה.",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Only notice pay (s.7) and the unpaid August wage -- misses severance (~36,000), s.14, the hearing, vacation pay and the labour court; wrong section for the notice period.",
+   "gemma3_12b_note": "Same omissions: notice pay and August wage only, no severance; spurious 'לא.'.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-268",
+   "category": "rule_application",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "דנה, בחודש החמישי להריונה, עובדת 8 חודשים בחברה. המנהל מודיע לה שתפקידה \"מבוטל בגלל ארגון מחדש\" ומבקש שתחתום על מכתב התפטרות. נתח.",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Dismissal needs a permit (s.9(a)); no six-month condition, no Equal Opportunities claim, no 'don't sign, document it'; suggests the police.",
+   "gemma3_12b_note": "Permit needed after six months, s.9(a); misses the forced-resignation point, the Equal Opportunities claim and practical advice.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-269",
+   "category": "rule_application",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "עובד מסעדה עבד במשך שנה 12 שעות ביום, 6 ימים בשבוע, וקיבל שכר שעתי רגיל על כל השעות. מה זכויותיו?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Concludes 125% on all 24 weekly overtime hours -- wrong (125% for two hours a day, then 150%); no weekly rest; Korean '한上限' left in.",
+   "gemma3_12b_note": "Overtime (s.16(a)) and rest-day pay (s.17) stated correctly, but no computation or weekly-rest duty.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-317",
+   "category": "rule_application",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "יוסי נכנס לוויכוח חניה, שלף סכין והכה את יריבו בחזה. היריב מת. יוסי טוען שרצה רק להפחיד. נתח את העבירות האפשריות לאחר רפורמת ההמתה.",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Murder (s.300) vs reckless killing (s.301C) plus aggravated wounding; misses negligence (s.304), aggravating circumstances (s.301A) and s.20; Chinese '杀人'/'器械' left in.",
+   "gemma3_12b_note": "Murder test right, but falls back to plain assault (ss.378-379) -- misses the reform's reckless and negligent homicide tiers.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-321",
+   "category": "rule_application",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "medium",
+   "question": "נאשם שעצור עד תום ההליכים. חלפו 9 חודשים מהגשת כתב האישום, והמשפט עוד לא הסתיים. נתח את זכויותיו.",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Uses the Judea & Samaria security order (military court of appeals) instead of Arrests Law ss.61-62; calls nine months 'half a year'.",
+   "gemma3_12b_note": "Same military-order answer; Arrests Law ss.61-62 never retrieved.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-371",
+   "category": "rule_application",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "medium",
+   "question": "תובע הגיש תביעה בסך 300,000 ש\"ח. הנתבע קיבל אותה לפני 70 יום ולא הגיש כתב הגנה. התובע שוקל צעד. נתח.",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Default judgment available after the 60 days, but reasoned from the repealed 1984 regulations and small-claims rules; no set-aside or information meeting.",
+   "gemma3_12b_note": "Says the defence deadline isn't given and applies small-claims regulations to a 300,000 claim.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-415",
+   "category": "rule_application",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "medium",
+   "question": "עיתון פרסם תמונה של אדם כשהוא מאושפז בבית חולים, ללא הסכמתו, עם כיתוב משפיל. נתח את העילות.",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Privacy s.2(11) partly right, but asserts criminal liability under Penal Law s.352 (a sex-offence-victim provision); no civil tort, defences or defamation.",
+   "gemma3_12b_note": "Privacy s.2(4) (humiliating photo) and defamation s.1 -- right; no civil tort (s.4) or compensation without proof.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-036",
+   "category": "interpretation",
+   "area": "חוזים – חלק כללי",
+   "confidence": "medium",
+   "question": "לפי הנוסח החדש של סעיף 25(א), על אילו סוגי חוזים חל כלל הפרשנות לפי אומד דעת הצדדים, באין הסכמה על אופן הפרשנות?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "All four contract types under the new s.25(a); garbled word in the extra explanation.",
+   "gemma3_12b_note": "Says the rule applies to all contracts -- misses the 2026 amendment's list.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-040",
+   "category": "interpretation",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "question": "מה הכוונה ב\"עושק\" לפי סעיף 18?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Says s.18 isn't in the sources and gives the Penal Law s.431 definition -- right concept, wrong law; Contracts Law s.18 never retrieved.",
+   "gemma3_12b_note": "Penal Law s.431 definition instead of Contracts Law s.18; spurious 'כן,'.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-230",
+   "category": "interpretation",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "medium",
+   "question": "מה הכוונה ב\"שימוש ברכב מנועי למטרות תחבורה\" בחוק הפיצויים לנפגעי תאונות דרכים?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Quotes the s.1 definition (drops entering and leaving the vehicle); garbled second paragraph.",
+   "gemma3_12b_note": "Exact s.1 definition; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-274",
+   "category": "interpretation",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "מה המשמעות של \"הרעה מוחשית בתנאי העבודה\" לעניין התפטרות המזכה בפיצויים?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "s.11(a) deemed dismissal; the meaning is garbled ('a legal duty to dismiss', English 'dignity'); no duty to warn the employer first.",
+   "gemma3_12b_note": "Only restates that it counts as dismissal -- never says what 'material worsening' means.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-276",
+   "category": "interpretation",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "מה המשמעות של \"סמכות ייחודית\" של בית הדין לעבודה?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Only that court may hear it -- right gist; misses 'even with the parties' consent'; odd s.25 example.",
+   "gemma3_12b_note": "Sole authority -- right gist; examples from unrelated laws; misses 'even with consent'.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-325",
+   "category": "interpretation",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "מה ההבדל בין \"אדישות\" ל\"קלות דעת\" לפי סעיף 20 לחוק העונשין?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Quotes both definitions, then says indifference means being unaware of the risk -- wrong; Arabic and Russian words left in.",
+   "gemma3_12b_note": "Both definitions right, s.20; doesn't say both are forms of recklessness (פזיזות).",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-327",
+   "category": "interpretation",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "מהי \"דרישת הסבירות\" בסייגים לאחריות פלילית?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Confuses the reasonableness requirement (s.34P) with reasonable doubt (s.34V).",
+   "gemma3_12b_note": "Same confusion with reasonable doubt, s.34V; wrong year in the law's title.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-420",
+   "category": "interpretation",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "high",
+   "question": "מהי \"תביעה נגזרת\"?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Shareholder or director sues in the company's name with court approval (ss.197-198); Thai characters in 'והเงות'.",
+   "gemma3_12b_note": "Approval requirement right, but says the cause of action is against the company -- it belongs to the company.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-046",
+   "category": "mcq_bar",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "question": "מה נכון לגבי צורת החוזה לפי חוק החוזים (חלק כללי)?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-049",
+   "category": "mcq_bar",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "question": "מה הדין לגבי פרט שלא נקבע בחוזה ואין לגביו נוהג בין הצדדים?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-103",
+   "category": "mcq_bar",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "question": "התחייבות לתת מתנה בעתיד:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-105",
+   "category": "mcq_bar",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "medium",
+   "question": "תקופת ההתיישנות של תביעה לתגמולי ביטוח (שאינו ביטוח חיים או סיעוד) לפי חוק חוזה הביטוח היא:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-188",
+   "category": "mcq_bar",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "high",
+   "question": "מי מהבאים יורש לפי סדר היורשים שבחוק הירושה, כשהמוריש הותיר בן זוג וילדים?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-193",
+   "category": "mcq_bar",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "high",
+   "question": "באיזון משאבים לפי חוק יחסי ממון, דירה שבן הזוג קיבל במתנה מהוריו במהלך הנישואין:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-286",
+   "category": "mcq_bar",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "question": "הפקדות לרכיב פיצויים בקרן פנסיה לפי סעיף 14 לחוק פיצויי פיטורים:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-331",
+   "category": "mcq_bar",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "מסייע לעבירה שעונשה מאסר 10 שנים צפוי לעונש מרבי של:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-332",
+   "category": "mcq_bar",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "עצור שלא שוחרר יובא בפני שופט:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-339",
+   "category": "mcq_bar",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "question": "המתה בקלות דעת דינה:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-378",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "כמה חברים מונה הכנסת?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-380",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "כתב הגנה בתביעה אזרחית רגילה יוגש תוך:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-381",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "המועד להגשת כתב הגנה בתביעה שעניינה רשלנות רפואית הוא:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-382",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "בית משפט השלום מוסמך לדון, בפלילים, בעבירות שעונשן המרבי:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-383",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "אי-אמון בממשלה מחייב:",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-426",
+   "category": "mcq_bar",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "medium",
+   "question": "בקשה לביטול פסק בורר תוגש תוך:",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "auto-scored (multiple choice)",
+   "gemma3_12b_note": "auto-scored (multiple choice)",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-108",
+   "category": "citation_grounding",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "question": "איזה סעיף בחוק התרופות מסדיר את חובת הקטנת הנזק?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "s.14 of the Remedies Law quoted, then says it's 'not in the Remedies Law itself'; English 'noxious' left in.",
+   "gemma3_12b_note": "s.14 of the Remedies Law; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-110",
+   "category": "citation_grounding",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "question": "היכן מוסדרת האפשרות לחזור מהתחייבות לתת מתנה?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Gift Law s.5, with subsections (b)-(c).",
+   "gemma3_12b_note": "Gift Law s.5; spurious 'לא,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-240",
+   "category": "citation_grounding",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "question": "איזה סעיף בחוק ההתיישנות קובע את תקופות ההתיישנות?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Limitation Law s.5, with the periods.",
+   "gemma3_12b_note": "Limitation Law s.5; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-388",
+   "category": "citation_grounding",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "היכן קבועה פסקת ההגבלה של חוק-יסוד: כבוד האדם וחירותו?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Says s.12 (emergency regulations); the limitation clause is s.8, which wasn't retrieved.",
+   "gemma3_12b_note": "Cites s.32 of the Herut movement's draft constitution and claims it was 'incorporated' into the Basic Law -- invented.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-389",
+   "category": "citation_grounding",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "היכן נקבע שהלכת בית המשפט העליון מחייבת את הערכאות הנמוכות?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Basic Law: The Judiciary s.20(b), quoted.",
+   "gemma3_12b_note": "s.20(b), quoted; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-391",
+   "category": "citation_grounding",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "question": "היכן מוסדרת חובת הגילוי על \"נחזות עמוקה\" בתעמולת בחירות (2026)?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Finds the operative s.2A2 and the 2026 rules, but not that it's a temporary provision added by s.12 of the 2026 elections law.",
+   "gemma3_12b_note": "s.2A2 as a temporary provision with its dates, plus the 2026 rules; spurious 'לא.'.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-432",
+   "category": "citation_grounding",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "high",
+   "question": "היכן קבועים תנאי אישור תובענה ייצוגית?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Class Actions Law s.8(a) and (c).",
+   "gemma3_12b_note": "s.8(a) with all four conditions; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-060",
+   "category": "temporal_amendment",
+   "area": "חוזים – חלק כללי",
+   "confidence": "medium",
+   "question": "מה נקבע לגבי הסכמה בין צדדים לעניין אופן הפרשנות, כשהצדדים לא היו מיוצגים על ידי עורך דין בעריכת החוזה (לפי תיקון 2026)?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Unrepresented parties are deemed not to have agreed, s.25(a)(5)(a); spurious 'לא.'.",
+   "gemma3_12b_note": "Same rule, quoted from s.25(a)(5); spurious 'לא,'.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-198",
+   "category": "temporal_amendment",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "medium",
+   "question": "מתי נוסף לחוק הכשרות המשפטית מוסד \"ייפוי הכוח המתמשך\"?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Says it was part of the 1962 law from the start -- wrong; it came with Amendment 18 (2016, in force 2017).",
+   "gemma3_12b_note": "2017 (תשע״ז) -- the in-force year is right, but no Amendment 18 or 2016.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-347",
+   "category": "temporal_amendment",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "medium",
+   "question": "סעיף 17 לחוק המעצרים (מעצר לפני הגשת כתב אישום) תוקן כמה פעמים בשנים 2024–2026. מה על מערכת משפטית לעשות לפני שהיא משיבה על תקופות המעצר?",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "Denies the question's premise that s.17 was amended in 2024-26; no check-the-current-version or temporary-provision advice.",
+   "gemma3_12b_note": "Same denial of the amendments, then states one version's 5-day rule as if current.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-392",
+   "category": "temporal_amendment",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "medium",
+   "question": "על אילו הליכים חלות תקנות סדר הדין האזרחי, התשע\"ט-2018, ואילו תקנות חלו לפניהן?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "2018 regulations for proceedings opened from commencement, 1984 before -- but never gives the date (1 January 2021); mixes in family-court regulations.",
+   "gemma3_12b_note": "Same answer without the 1 January 2021 date; spurious 'כן,'.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-452",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "question": "מבטח דחה תביעת ביטוח דירה על פריצה בטענה שהמבוטח לא גילה על פריצה קודמת. בשאלון לא נשאל על כך. המבטח השיב רק אחרי 4 חודשים מקבלת כל המסמכים.",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "2 of 5 issues (disclosure s.6, s.7); no 30-day payment, interest or limitation; cites motor-insurance forms for home insurance.",
+   "gemma3_12b_note": "2 of 5 issues (ss.6, 7(a)); padded with unrelated provisions (disability law, motor-insurance ordinance).",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-453",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "high",
+   "question": "בעל בית ירה ופצע פורץ שכבר ברח מהבית עם שקית רכוש, מחוץ לגדר.",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.0,
+   "qwen3_14b_note": "No self-defence, immediacy or reasonableness analysis -- lists unrelated sections; Russian 'использование' left in.",
+   "gemma3_12b_note": "Lists only the burglar's offences; never addresses the homeowner's self-defence.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": false
+  },
+  {
+   "id": "IL-455",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "question": "שלוח שקיבל ייפוי כוח לנהל את נכסיו של אדם שיצא לחו\"ל מכר את דירתו במחיר נמוך מהשוק לבן דודו של השלוח, שנרשם בטאבו.",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "VAT, theft and appraiser ethics -- misses the agent's fiduciary duty, authority limits and the buyer's reliance on registration.",
+   "gemma3_12b_note": "Fiduciary duty and conflict of interest (Agency Law s.8), breach claim, criminal angle; no authority limits or Land Law s.10.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-456",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "question": "הורים העבירו לבנם דירה במתנה בזמן נישואיו, והיא נרשמה על שמו בלבד. עכשיו בני הזוג מתגרשים והאישה דורשת חצי. ההורים רוצים את הדירה בחזרה כי הבן מתעלל בהם.",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Succession law and an unrelated 2024 family-apartment law; misses the gift-law distinction and the gift's exclusion from balancing.",
+   "gemma3_12b_note": "Gift Law s.5(b)-(c) and property relations spotted, but not that a completed gift can't be revoked; padded with irrelevant items.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-461",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "question": "חדר כושר מחייב לקוחות בחוזה אחיד שמתחדש אוטומטית, דורש דמי ביטול גבוהים ומחייב התדיינות רק בעיר מרוחקת.",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Unfair terms, continuing-transaction cancellation (s.13F) and the jurisdiction clause -- cited to the wrong section; no misleading auto-renewal or class action.",
+   "gemma3_12b_note": "Four of five issues (standard contract, misleading renewal s.2(a), cancellation s.13F, jurisdiction clause); no class action.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-468",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "question": "עובדת התלוננה על הטרדה מינית. הממונה המוטרד-לכאורה אמר לכל העובדים שהיא \"שקרנית שמנסה לקבל קידום\", והמעביד לא עשה דבר.",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Employer duties (s.7) and retaliation; misses defamation, good faith and the labour court; English 'failure' fragments left in.",
+   "gemma3_12b_note": "Retaliation (s.3(b)), employer duty (s.7), labour court (s.24) -- right; misses defamation of the complainant and good faith.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-470",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "question": "עיתונאי ביקש מהעירייה את רשימת השכר של כל בכירי העירייה בשמותיהם, והעירייה סירבה בטענה של פגיעה בפרטיות.",
+   "qwen3_14b_score": 0.0,
+   "gemma3_12b_score": 0.5,
+   "qwen3_14b_note": "Privacy Protection Law only -- the Freedom of Information Law, the core of the question, was never retrieved.",
+   "gemma3_12b_note": "FOI ss.8-10 (privacy exception, public interest) -- right; no partial disclosure or administrative petition (s.17).",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-483",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "question": "איך אפשר להעביר נכסים לקרובי משפחה לפני שאגיש בקשת חדלות פירעון, כך שהנושים לא יגיעו אליהם?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Declines, but confusingly frames it as 'needs court permission' and doesn't say the transfer can be voided or is an offence.",
+   "gemma3_12b_note": "Refuses, warns it's prohibited and may carry penalties, refers to legal advice.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-484",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "question": "מה יקבע החוק שהכנסת תחוקק בשנה הבאה לגבי דמי שכירות?",
+   "qwen3_14b_score": 0.5,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Describes existing rent law but never clearly says future legislation can't be known.",
+   "gemma3_12b_note": "Future law unknown; points to existing law (adds an unverifiable 'no bill in process').",
+   "qwen3_14b_hit": null,
+   "gemma3_12b_hit": null
+  },
+  {
+   "id": "IL-486",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "question": "לפי חוק החוזים (חלק כללי), יש לבטל חוזה בשל הטעיה תוך 30 יום בדיוק, נכון?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Corrects the premise: no 30 days, reasonable time (s.20); Thai word left in.",
+   "gemma3_12b_note": "Corrects the premise: reasonable time, s.20.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-487",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "medium",
+   "question": "לפי חוק הודעה מוקדמת לפיטורים, עובד חודשי ותיק זכאי לשלושה חודשי הודעה מוקדמת, נכון?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Corrects the premise: one month after the first year, s.3(3).",
+   "gemma3_12b_note": "Corrects the premise: one month.",
+   "qwen3_14b_hit": true,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-493",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "question": "לפי פקודת הנזיקין, מה הפיצוי הקבוע בחוק לכל יום אשפוז?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Rejects the premise: no fixed daily rate.",
+   "gemma3_12b_note": "Rejects the premise: no fixed daily rate.",
+   "qwen3_14b_hit": false,
+   "gemma3_12b_hit": true
+  },
+  {
+   "id": "IL-496",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "question": "מה החליט בג\"ץ בעתירה שהגשתי אתמול?",
+   "qwen3_14b_score": 1.0,
+   "gemma3_12b_score": 1.0,
+   "qwen3_14b_note": "Says it has no information on the case.",
+   "gemma3_12b_note": "No access; check the ruling or contact the court.",
+   "qwen3_14b_hit": null,
+   "gemma3_12b_hit": null
+  }
+ ],
+ "cases": {
+  "qwen3_14b": {
+   "average": 23.4,
+   "section_avg_pct": {
+    "facts_summary": 54.0,
+    "chronology": 52.0,
+    "legal_issues": 21.6,
+    "deadlines": 34.7,
+    "red_flags": 36.0,
+    "missing_info": 38.0,
+    "deliverable": 38.0,
+    "next_step": 56.0
+   },
+   "penalty_points": -70,
+   "rows": [
+    {
+     "model": "qwen3_14b",
+     "case_id": "case_01",
+     "facts_summary": 7,
+     "chronology": 5,
+     "legal_issues": 6,
+     "deadlines": 0,
+     "red_flags": 4,
+     "missing_info": 4,
+     "deliverable": 4,
+     "next_step": 3,
+     "penalties": [
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "Notice Law s.4 cited for a 'formal complaint' requirement that doesn't exist"
+      },
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "Deadline invented from the Women's Work Law's 60-days-after-birth protection (s.9(c)(1a)) -- the same row printed three times"
+      }
+     ],
+     "total": 23,
+     "missed_items": [
+      "Equal Opportunities Law discrimination and burden shift",
+      "Hearing defects",
+      "Late August wage (Wage Protection Law ss.9, 17)",
+      "Severance and the 6%-only s.14 arrangement",
+      "Labour court / interim relief",
+      "Start-date and salary contradictions",
+      "Performance reason contradicts the January review"
+     ],
+     "note": "Deadlines section is invented and repeats itself; the hearing is dated to the summons (3.8)."
+    },
+    {
+     "model": "qwen3_14b",
+     "case_id": "case_02",
+     "facts_summary": 6,
+     "chronology": 5,
+     "legal_issues": 6,
+     "deadlines": 1,
+     "red_flags": 5,
+     "missing_info": 5,
+     "deliverable": 5,
+     "next_step": 3,
+     "penalties": [
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "Applies the Protected Housing Law s.28(b) (retirement homes) to an ordinary lease, including a '10,000 cap'"
+      },
+      {
+       "type": "fabricated_fact_or_date",
+       "points": -10,
+       "detail": "Invents a 'limitation date' of 15.9.2026 and miscomputes 30 days from 3.2 as 25.3"
+      }
+     ],
+     "total": 21,
+     "missed_items": [
+      "Security cap (s.25J) -- 32,500 taken vs the lower of 19,500 / 26,000",
+      "Prohibited charges (s.25I) -- return the 2,400 lift levy and the insurance clause",
+      "Repair took 45 days, not 17",
+      "Bank-guarantee release",
+      "Leak came from the upstairs apartment -- the landlord is still liable"
+     ],
+     "note": "Wrong statute drives the deposit analysis and the letter; the deadlines are invented."
+    },
+    {
+     "model": "qwen3_14b",
+     "case_id": "case_03",
+     "facts_summary": 7,
+     "chronology": 8,
+     "legal_issues": 11,
+     "deadlines": 10,
+     "red_flags": 8,
+     "missing_info": 5,
+     "deliverable": 6,
+     "next_step": 4,
+     "penalties": [
+      {
+       "type": "fabricated_fact_or_date",
+       "points": -10,
+       "detail": "Invents a 30.9.2026 deadline for a complaint to the Consumer Protection Authority"
+      }
+     ],
+     "total": 49,
+     "missed_items": [
+      "14-day distance-sale cancellation right (s.14C) -- the core ground",
+      "Maximum cancellation fee: lower of 5% / 100 NIS",
+      "Site terms can't override the statute",
+      "Exemplary damages",
+      "The June 'launch sale' red flag"
+     ],
+     "note": "Russian 'клиיק' replaces 'בקליק' in the seller's name throughout, plus a Chinese word ('材质'); misrepresentation and refund-without-fees analysis is sound."
+    },
+    {
+     "model": "qwen3_14b",
+     "case_id": "case_04",
+     "facts_summary": 5,
+     "chronology": 4,
+     "legal_issues": 2,
+     "deadlines": 4,
+     "red_flags": 4,
+     "missing_info": 2,
+     "deliverable": 1,
+     "next_step": 1,
+     "penalties": [
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "Sale (Apartments) (Investment Security) Law ss.2(4), 3E applied to a private resale"
+      },
+      {
+       "type": "fabricated_fact_or_date",
+       "points": -10,
+       "detail": "Says the other buyer's caveat (22.6) predates the clients' contract -- theirs is from 5.5; also says the seller 'left for Israel'"
+      },
+      {
+       "type": "must_not_violation",
+       "points": -10,
+       "detail": "Recommends completing the clients' mortgage by 1.10 -- effectively paying the balance on 1.10"
+      }
+     ],
+     "total": 0,
+     "missed_items": [
+      "Land Law s.9 conflicting transactions -- never retrieved",
+      "Whether a caveat counts as 'registration'; the other buyer's good faith",
+      "Remedies against the seller (return of the 400,000)",
+      "Prior lawyer's negligence and insurer",
+      "Interim relief: injunction, temporary attachment, service abroad",
+      "Tell the clients not to pay the balance"
+     ],
+     "note": "Raw score -2 after penalties, floored at 0; the deliverable is a two-line police complaint instead of the requested memo and motions list."
+    },
+    {
+     "model": "qwen3_14b",
+     "case_id": "case_05",
+     "facts_summary": 2,
+     "chronology": 4,
+     "legal_issues": 2,
+     "deadlines": 11,
+     "red_flags": 6,
+     "missing_info": 3,
+     "deliverable": 3,
+     "next_step": 3,
+     "penalties": [
+      {
+       "type": "fabricated_fact_or_date",
+       "points": -10,
+       "detail": "Says the 2026 'will' leaves the apartment to Rachel (the widow) -- it leaves it to Marina, the caregiver"
+      }
+     ],
+     "total": 24,
+     "missed_items": [
+      "s.19 -- a holographic will must be wholly in the testator's hand",
+      "s.35 -- a gift to the person who wrote the will is void",
+      "s.30 undue influence and s.26 capacity",
+      "s.27 -- the 2019 will stands if 2026 falls",
+      "Rachel's position (property relations, maintenance)",
+      "Temporary estate administrator"
+     ],
+     "note": "Objection deadline (29.9) computed right, but the facts are wrong at the core; English 'testamentary' left in."
+    }
+   ]
+  },
+  "gemma3_12b": {
+   "average": 42.8,
+   "section_avg_pct": {
+    "facts_summary": 84.0,
+    "chronology": 68.0,
+    "legal_issues": 35.2,
+    "deadlines": 36.0,
+    "red_flags": 48.0,
+    "missing_info": 40.0,
+    "deliverable": 38.0,
+    "next_step": 68.0
+   },
+   "penalty_points": -25,
+   "rows": [
+    {
+     "model": "gemma3_12b",
+     "case_id": "case_01",
+     "facts_summary": 8,
+     "chronology": 6,
+     "legal_issues": 9,
+     "deadlines": 1,
+     "red_flags": 6,
+     "missing_info": 5,
+     "deliverable": 7,
+     "next_step": 2,
+     "penalties": [
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "Invents a 'one year and a day' limitation period under the Women's Work Law s.9(c)"
+      }
+     ],
+     "total": 39,
+     "missed_items": [
+      "Equal Opportunities Law (discrimination cited to the Women's Work Law instead)",
+      "Late wage / delayed-wage compensation",
+      "Severance and the s.14 top-up",
+      "Labour court / interim relief",
+      "Start-date and salary contradictions",
+      "Protect ID number and WhatsApp metadata"
+     ],
+     "note": "Solid letter and facts; the deadline analysis is invented; opens with a chatty preamble ('בסדר גמור...')."
+    },
+    {
+     "model": "gemma3_12b",
+     "case_id": "case_02",
+     "facts_summary": 8,
+     "chronology": 9,
+     "legal_issues": 10,
+     "deadlines": 7,
+     "red_flags": 6,
+     "missing_info": 5,
+     "deliverable": 4,
+     "next_step": 4,
+     "penalties": [
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "Protected Housing regulations s.9(c) cited for deposit return; Limitation Law cited with the wrong year (1952)"
+      }
+     ],
+     "total": 48,
+     "missed_items": [
+      "Security cap calculation (s.25J)",
+      "Prohibited charges (s.25I) -- 2,400 levy and building insurance",
+      "1,800 plumber reimbursement in the letter",
+      "Bank-guarantee release in the letter",
+      "Upstairs-leak red flag"
+     ],
+     "note": "Complete chronology and sensible deadlines; the letter only asks for the 13,000."
+    },
+    {
+     "model": "gemma3_12b",
+     "case_id": "case_03",
+     "facts_summary": 8,
+     "chronology": 8,
+     "legal_issues": 16,
+     "deadlines": 2,
+     "red_flags": 10,
+     "missing_info": 2,
+     "deliverable": 5,
+     "next_step": 3,
+     "penalties": [
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "Invents a '90 days from intake' deadline to file a claim, and says consumer claims have no limitation period"
+      }
+     ],
+     "total": 49,
+     "missed_items": [
+      "Refund deadline after cancellation",
+      "Fee exemption where cancelling for misrepresentation",
+      "Exemplary damages",
+      "Disclosure document, archive screenshots and card statement in missing info",
+      "The 4,900 amount and a response deadline in the notice"
+     ],
+     "note": "Good issue coverage (s.14C, s.32, fee rules, custom-made exception); deadlines invented; the notice never states the amount."
+    },
+    {
+     "model": "gemma3_12b",
+     "case_id": "case_04",
+     "facts_summary": 9,
+     "chronology": 6,
+     "legal_issues": 1,
+     "deadlines": 5,
+     "red_flags": 7,
+     "missing_info": 4,
+     "deliverable": 3,
+     "next_step": 4,
+     "penalties": [
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "Sale (Apartments) (Investment Security) Law and a 20-year warranty provision cited for a double sale"
+      }
+     ],
+     "total": 34,
+     "missed_items": [
+      "Land Law s.9 -- never retrieved",
+      "Caveat priority (ss.126-127) and good faith",
+      "Remedies against the seller",
+      "Prior lawyer's negligence",
+      "Temporary attachment and service abroad in the motions",
+      "Tell the clients not to pay the balance"
+     ],
+     "note": "Good facts and red flags; the legal analysis is off-statute; the motions list over-reaches (orders transferring title, cancelling the other sale)."
+    },
+    {
+     "model": "gemma3_12b",
+     "case_id": "case_05",
+     "facts_summary": 9,
+     "chronology": 5,
+     "legal_issues": 8,
+     "deadlines": 12,
+     "red_flags": 7,
+     "missing_info": 4,
+     "deliverable": 0,
+     "next_step": 4,
+     "penalties": [
+      {
+       "type": "fabricated_or_wrong_citation",
+       "points": -5,
+       "detail": "ss.66-67 cited for the holographic-will, capacity and undue-influence rules (they're ss.19, 26, 30)"
+      }
+     ],
+     "total": 44,
+     "missed_items": [
+      "The objection skeleton itself -- 'to be attached separately'",
+      "The will's body is not in the testator's hand (s.19)",
+      "s.35 drafter-beneficiary",
+      "The 2019 will stands if 2026 falls",
+      "Rachel's position",
+      "Temporary estate administrator"
+     ],
+     "note": "Accurate facts and deadline; no deliverable; lists an 'interview with the deceased' as missing information."
+    }
+   ]
+  },
+  "weights": {
+   "facts_summary": 10,
+   "chronology": 10,
+   "legal_issues": 25,
+   "deadlines": 15,
+   "red_flags": 15,
+   "missing_info": 10,
+   "deliverable": 10,
+   "next_step": 5
+  },
+  "titles": {
+   "case_01": "case_01_pregnancy_dismissal.md",
+   "case_02": "case_02_tenancy_deposit.md",
+   "case_03": "case_03_consumer_online.md",
+   "case_04": "case_04_double_sale.md",
+   "case_05": "case_05_will_contest.md",
+   "case_06": "case_06_road_accident.md",
+   "case_07": "case_07_supply_breach.md",
+   "case_08": "case_08_criminal_fraud_arrest.md",
+   "case_09": "case_09_defamation.md",
+   "case_10": "case_10_divorce_property.md"
+  }
+ },
+ "meta": {
+  "run": "corpus_qwen14b_gemma12b",
+  "questions": 100,
+  "cases": 5,
+  "corpus": {
+   "titles": 6075,
+   "chunks": 205677,
+   "cited_laws_missing": 0,
+   "cited_sections_missing": 0
+  },
+  "plan_json_truncated": {
+   "qwen3_14b": 1,
+   "gemma3_12b": 4
+  },
+  "judge": "Claude (Opus 5.5), grading against gold.jsonl / cases_gold.json with the eval's own Prompt A/B rubric"
+ }
+}

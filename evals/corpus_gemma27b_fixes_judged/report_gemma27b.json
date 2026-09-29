@@ -1,0 +1,975 @@
+{
+ "overall": 0.7575,
+ "rows": [
+  {
+   "id": "IL-001",
+   "category": "rule_recall",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-011",
+   "category": "rule_recall",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-014",
+   "category": "rule_recall",
+   "area": "חוזים – חלק כללי",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-016",
+   "category": "rule_conclusion",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-024",
+   "category": "rule_conclusion",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-032",
+   "category": "rule_application",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-036",
+   "category": "interpretation",
+   "area": "חוזים – חלק כללי",
+   "confidence": "medium",
+   "score": 0.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": true
+  },
+  {
+   "id": "IL-040",
+   "category": "interpretation",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-046",
+   "category": "mcq_bar",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-049",
+   "category": "mcq_bar",
+   "area": "חוזים – חלק כללי",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-060",
+   "category": "temporal_amendment",
+   "area": "חוזים – חלק כללי",
+   "confidence": "medium",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": true
+  },
+  {
+   "id": "IL-061",
+   "category": "rule_recall",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-062",
+   "category": "rule_recall",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-075",
+   "category": "rule_conclusion",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-087",
+   "category": "rule_application",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "misgrounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-103",
+   "category": "mcq_bar",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-105",
+   "category": "mcq_bar",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "medium",
+   "score": 1.0
+  },
+  {
+   "id": "IL-108",
+   "category": "citation_grounding",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-110",
+   "category": "citation_grounding",
+   "area": "תרופות, מכר, מתנה, שליחות, ערבות, ביטוח, חוזים אחידים, עשיית עושר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-113",
+   "category": "rule_recall",
+   "area": "מקרקעין ושכירות",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-115",
+   "category": "rule_recall",
+   "area": "מקרקעין ושכירות",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-126",
+   "category": "rule_conclusion",
+   "area": "מקרקעין ושכירות",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-135",
+   "category": "rule_application",
+   "area": "מקרקעין ושכירות",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-136",
+   "category": "rule_application",
+   "area": "מקרקעין ושכירות",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-153",
+   "category": "rule_recall",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-164",
+   "category": "rule_conclusion",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "medium",
+   "label_correct": 0.0,
+   "score": 0.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-168",
+   "category": "rule_conclusion",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-172",
+   "category": "rule_conclusion",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "medium",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-188",
+   "category": "mcq_bar",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-193",
+   "category": "mcq_bar",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-198",
+   "category": "temporal_amendment",
+   "area": "משפחה, ירושה וכשרות משפטית",
+   "confidence": "medium",
+   "score": 0.0,
+   "grounding": "grounded",
+   "hallucination": true,
+   "needs_review": false
+  },
+  {
+   "id": "IL-202",
+   "category": "rule_recall",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-205",
+   "category": "rule_recall",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-212",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "medium",
+   "label_correct": 0.0,
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-213",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "medium",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-214",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-217",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 0.75,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-219",
+   "category": "rule_conclusion",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "medium",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-223",
+   "category": "rule_application",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "score": 0.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-230",
+   "category": "interpretation",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "medium",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-240",
+   "category": "citation_grounding",
+   "area": "נזיקין, לשון הרע והתיישנות",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-245",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-247",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "misgrounded",
+   "hallucination": false,
+   "needs_review": true
+  },
+  {
+   "id": "IL-248",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "medium",
+   "score": 1.0,
+   "grounding": "misgrounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-253",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "medium",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-254",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-256",
+   "category": "rule_recall",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-262",
+   "category": "rule_conclusion",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-267",
+   "category": "rule_application",
+   "area": "דיני עבודה",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-268",
+   "category": "rule_application",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-269",
+   "category": "rule_application",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-274",
+   "category": "interpretation",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-276",
+   "category": "interpretation",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-286",
+   "category": "mcq_bar",
+   "area": "דיני עבודה",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-293",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-294",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-296",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-297",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-300",
+   "category": "rule_recall",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-306",
+   "category": "rule_conclusion",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "misgrounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-309",
+   "category": "rule_conclusion",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-317",
+   "category": "rule_application",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-321",
+   "category": "rule_application",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "medium",
+   "score": 0.0,
+   "grounding": "misgrounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-325",
+   "category": "interpretation",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-327",
+   "category": "interpretation",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 0.0,
+   "grounding": "misgrounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-331",
+   "category": "mcq_bar",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-332",
+   "category": "mcq_bar",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-339",
+   "category": "mcq_bar",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-347",
+   "category": "temporal_amendment",
+   "area": "משפט פלילי, מעצרים וראיות",
+   "confidence": "medium",
+   "score": 0.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-353",
+   "category": "rule_recall",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-368",
+   "category": "rule_conclusion",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-371",
+   "category": "rule_application",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-378",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-380",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-381",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 1.0
+  },
+  {
+   "id": "IL-382",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 0.0
+  },
+  {
+   "id": "IL-383",
+   "category": "mcq_bar",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 0.0
+  },
+  {
+   "id": "IL-388",
+   "category": "citation_grounding",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 0.0,
+   "grounding": "misgrounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-389",
+   "category": "citation_grounding",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-391",
+   "category": "citation_grounding",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-392",
+   "category": "temporal_amendment",
+   "area": "משפט חוקתי, מינהלי, בתי משפט וסדר דין אזרחי",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-409",
+   "category": "rule_conclusion",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "medium",
+   "label_correct": 0.0,
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-410",
+   "category": "rule_conclusion",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "high",
+   "label_correct": 1.0,
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-415",
+   "category": "rule_application",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-420",
+   "category": "interpretation",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-426",
+   "category": "mcq_bar",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "medium",
+   "score": 1.0
+  },
+  {
+   "id": "IL-432",
+   "category": "citation_grounding",
+   "area": "חברות, צרכנות, פרטיות, ייצוגיות, בוררות ואתיקה",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-452",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-453",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "high",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-455",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-456",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-461",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-468",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-470",
+   "category": "issue_spotting",
+   "area": "זיהוי סוגיות (רב-תחומי)",
+   "confidence": "medium",
+   "score": 0.5,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-483",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-484",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-486",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-487",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "medium",
+   "score": 1.0,
+   "grounding": "misgrounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-493",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "grounded",
+   "hallucination": false,
+   "needs_review": false
+  },
+  {
+   "id": "IL-496",
+   "category": "abstention",
+   "area": "הימנעות, הנחות שגויות ומחוץ למאגר",
+   "confidence": "high",
+   "score": 1.0,
+   "grounding": "n/a",
+   "hallucination": false,
+   "needs_review": false
+  }
+ ]
+}

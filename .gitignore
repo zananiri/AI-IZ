@@ -26,3 +26,7 @@ legal_txt/_sample/
 # the fetch above + scripts/legal_data/vectorize.py. Install locally with install_corpus.py, or
 # upload as a private Kaggle Dataset for notebooks that need it as an input (see notebooks/).
 legal_txt/chroma_bkp/
+
+# The bulk corpus archives (1.3 GB) live in the Kaggle dataset, not in git
+legal_txt/Legal_Corpus/
+*.log

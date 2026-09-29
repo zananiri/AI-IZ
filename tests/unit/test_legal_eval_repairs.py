@@ -29,15 +29,16 @@ class _Verdict:
         return eval_run.LabelVerdict(answer=self.answer)
 
 
-def test_the_label_follows_the_explanation_read_without_it():
+def test_a_missing_label_is_added_but_one_the_model_wrote_is_kept():
+    # The 29 Sept 27B runs: swapping the model's own label broke more answers than it fixed.
     checker = _Verdict("no")
-    text, repair = asyncio.run(eval_run.check_label(checker, "האם מותר?", "כן. המעסיק אינו רשאי לפטר, סעיף 9."))
-    assert (text, repair) == ("לא. המעסיק אינו רשאי לפטר, סעיף 9.", "label_fixed")
-    assert "כן." not in checker.calls[0]  # the label under test isn't shown to the checker
+    assert asyncio.run(eval_run.check_label(checker, "האם מותר?", "כן. המעסיק אינו רשאי לפטר, סעיף 9.")) == (
+        "כן. המעסיק אינו רשאי לפטר, סעיף 9.", None)
+    assert checker.calls == []  # no call needed when the answer has a label
 
     assert asyncio.run(eval_run.check_label(_Verdict("no"), "ש", "לא ניתן לפטר.")) == ("לא ניתן לפטר.", None)
     assert asyncio.run(eval_run.check_label(_Verdict("yes"), "ש", "המעסיק רשאי.")) == ("כן. המעסיק רשאי.", "label_added")
-    assert asyncio.run(eval_run.check_label(_Verdict("unclear"), "ש", "כן. אולי.")) == ("כן. אולי.", None)
+    assert asyncio.run(eval_run.check_label(_Verdict("unclear"), "ש", "אולי.")) == ("אולי.", None)
 
 
 WORK_FILE = """## 1. תקציר עובדתי

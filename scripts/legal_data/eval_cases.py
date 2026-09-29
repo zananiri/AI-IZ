@@ -122,6 +122,8 @@ JUDGE_MAX_TOKENS = 4096
 # A case raises 6-8 issues (cases_gold.json); at 6 the plan dropped case_01's notice-period issue.
 CASE_MAX_ISSUES = 8
 
+_PROMPT_TAG_RE = re.compile(r"</?(?:work_file|case_file)>")
+
 # A comma after a value ends it ("3.2.2026, יוסי:", "13,000,") unless a digit follows (a thousands
 # separator). Treating any comma as part of the number hid every such date in the case file, so
 # dates copied correctly from it were reported as unsupported (case_02, case_03 on 29 Sept).
@@ -219,6 +221,8 @@ async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
                                                          work_file=text))],
                 LLMCallSite("legal_eval_repair"), sampling=sampling, enable_thinking=False,
             )).strip()
+            # The prompt's own tags, echoed back (case_03 on 29 Sept ended with "</work_file>").
+            revised = _PROMPT_TAG_RE.sub("", revised).strip()
             # A revision that dropped sections or much of the text is worse than the unchecked file.
             if revised and len(revised) >= 0.7 * len(text) and \
                     len(missing_sections(revised)) <= len(missing_sections(text)):

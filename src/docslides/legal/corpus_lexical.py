@@ -19,7 +19,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-from docslides.legal.keyword import terms
+from docslides.legal.keyword import query_groups, terms
 from docslides.legal_data.hebrew import normalize_for_index
 from docslides.logging_setup import get_logger
 
@@ -55,13 +55,20 @@ class CorpusLexicalIndex:
         return cls(ids, vocabulary, matrix.tocsc())
 
     def search(self, query: str, k: int) -> list[tuple[str, float]]:
-        """(chunk_id, BM25 score) of the best `k` chunks sharing any term with `query`."""
+        """(chunk_id, BM25 score) of the best `k` chunks sharing any term with `query`. Each query
+        word counts once, by the best-matching of its forms (keyword.query_groups)."""
         import numpy as np
 
-        columns = sorted({self.vocabulary[t] for t in terms(normalize_for_index(query)) if t in self.vocabulary})
-        if not columns or k <= 0:
+        groups = [sorted({self.vocabulary[t] for t in group if t in self.vocabulary})
+                  for group in query_groups(normalize_for_index(query))]
+        groups = [g for g in dict.fromkeys(tuple(g) for g in groups) if g]
+        if not groups or k <= 0:
             return []
-        scores = np.asarray(self.weights[:, columns].sum(axis=1)).ravel()
+        scores = np.zeros(self.weights.shape[0], dtype=np.float32)
+        for columns in groups:
+            block = self.weights[:, list(columns)]
+            best = block.max(axis=1) if len(columns) > 1 else block
+            scores += np.asarray(best.toarray()).ravel()
         nonzero = int(np.count_nonzero(scores))
         if not nonzero:
             return []

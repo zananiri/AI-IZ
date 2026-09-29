@@ -41,8 +41,9 @@ logger = get_logger(__name__)
 
 PLAN_PROMPT = """List the distinct legal issues this question about ISRAELI law raises (at most \
 {max_issues}) and, for each, the Israeli statute or regulation that governs it -- its full official \
-Hebrew name -- with the section numbers you believe apply. Write the name with no quotation marks \
-and its year as four digits after a comma, e.g. חוק המתנה, 1968 (not תשכ"ח). Prefer the \
+Hebrew name -- with the section numbers you believe apply. Write the name with no quotation marks; \
+add its year only if you are sure of it, as four digits after a comma, e.g. חוק המתנה, 1968 \
+(not תשכ"ח). Prefer the \
 primary statute (a חוק or פקודה) over regulations, unless the question is specifically about a \
 regulation. If you are not \
 sure of a section number, leave sections empty rather than guess. Write each issue as a short \
@@ -59,7 +60,12 @@ FETCH_K = 24  # dense candidates per query per category, before dedupe and reran
 RERANK_POOL = 40  # candidates the cross-encoder scores
 LOOKUP_K = 5  # hits per direct section lookup (filtered to the section number, then to the law)
 MAX_PER_SECTION = 2  # chunks one section may contribute (a long section splits into parts)
-MAX_LOOKUP_SLOTS = 3  # context slots reserved for sections the plan named
+# Sections the plan names are looked up and join the rerank pool, but no context slot is reserved
+# for them: the plan's law names and section numbers are the model's guesses. In the 29 Sept 27B
+# case-fixes run, three reserved slots went to "חוק הירושה ss.8, 12, 86", "חוק המכר ss.2-5" (read as
+# the Sale (Apartments) Law) and the like, pushing the governing sections out of cases 04 and 05;
+# on the questions, plans with and without section numbers retrieved the governing section
+# equally often (88.6%). The reranker, which reads the text, decides.
 LEXICAL_K = 24  # BM25 candidates for the question, per category (legal/corpus_lexical.py)
 LEXICAL_ISSUE_K = 8  # ... and for each "law + issue" of the plan
 OUT_OF_SCOPE_MARGIN = 2  # over-fetch factor, so hits dropped by in_scope don't thin the pool
@@ -87,6 +93,33 @@ def law_key(name: str) -> str:
 def same_law(named: str, title: str) -> bool:
     a, b = law_key(named), law_key(title)
     return bool(a) and bool(b) and (a == b or a in b or b in a)
+
+
+def named_law_hits(named: str, hits: list[dict]) -> list[dict]:
+    """The hits from the law a plan names: those whose title is that very law when any is, else
+    those that share its name (same_law). "חוק המכר" is part of "חוק המכר (דירות)"'s name, so the
+    loose match alone sent a plan's Sale Law lookups to the Sale (Apartments) Law."""
+    key = law_key(named)
+    exact = [h for h in hits if key and law_key(h["meta"].get("title", "")) == key]
+    return exact or [h for h in hits if same_law(named, h["meta"].get("title", ""))]
+
+
+def pick_hits(ranked: list[dict], issue_count: int, top_k: int, per_issue_slot: bool = False) -> list[dict]:
+    """The `top_k` hits for the context, best rerank score first. With per_issue_slot (issue
+    spotting, case files) each issue first gets its own best hit -- from its own search, q<i> or
+    k<i> -- so one issue's many good matches can't crowd another's out."""
+    picked: list[dict] = []
+    if per_issue_slot:
+        for qi in range(1, issue_count + 1):
+            best = next((h for h in ranked if {f"q{qi}", f"k{qi}"} & h["sources"]), None)
+            if best is not None and best not in picked and len(picked) < top_k:
+                picked.append(best)
+    for hit in ranked:
+        if len(picked) >= top_k:
+            break
+        if hit not in picked:
+            picked.append(hit)
+    return picked[:top_k]
 
 
 @lru_cache(maxsize=4)
@@ -186,14 +219,16 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
     1. dense search on the question itself and on each "law + issue" the plan names, and (with
        legal.retrieval.corpus_lexical) BM25 on the same texts -- exact terms of art;
     2. a direct lookup of every section the plan names (filtered to that section number,
-       then to the named law) -- the step that surfaces, say, section 15 of the Contracts Law
-       for a fact pattern about misrepresentation, which the question's wording alone doesn't;
+       then to the named law, exactly when the corpus has it -- named_law_hits) -- the step
+       that can surface, say, section 15 of the Contracts Law for a fact pattern about
+       misrepresentation, which the question's wording alone doesn't;
     3. records `in_scope` rules out are dropped (West Bank orders, drafts, repealed law the plan
        doesn't name), the rest fused by reciprocal rank;
     4. at most MAX_PER_SECTION chunks per section, then the cross-encoder
-       (legal.retrieval.reranker_model) reranks the pool against the question and the issues;
-    5. up to MAX_LOOKUP_SLOTS slots go to the looked-up sections (and, for issue spotting, one
-       to each issue's best hit) whatever their rerank score; the rest go by rerank score.
+       (legal.retrieval.reranker_model) reranks the pool -- looked-up sections always included --
+       against the question and the issues (not the plan's law names);
+    5. pick_hits: by rerank score, after (for issue spotting and case files) one slot for each
+       issue's best hit. Looked-up sections get no slot of their own: they compete.
 
     Falls back to plain embedding order when the reranker can't be loaded."""
     from docslides.legal.corpus_lexical import lexical_index
@@ -236,8 +271,7 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
         for li, (law, number) in enumerate(lookups):
             vector = vectors[len(queries) + li]
             result = collection.query(vector, LOOKUP_K, where={"section_number": number})
-            add_all([h for h in _hits_from(result, category, f"l{li}") if same_law(law, h["meta"].get("title", ""))],
-                    LOOKUP_K)
+            add_all(named_law_hits(law, _hits_from(result, category, f"l{li}")), LOOKUP_K)
         lexical = lexical_index(corpus_cfg.vectordb_dir, category) if legal_cfg.retrieval.corpus_lexical else None
         if lexical is not None:
             for qi, text in enumerate(queries):
@@ -260,27 +294,15 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
     head += [h for h in lookup_hits if h not in head]
     reranker = _reranker(legal_cfg.retrieval.reranker_model, device) if legal_cfg.retrieval.reranker_model else None
     if reranker is not None and head:
-        rerank_query = query_text + "\n" + "; ".join(f"{i.issue} – {i.law}" for i in issues)
+        # The question and the issues, not the plan's law names: those are guesses, and a wrong
+        # one ("חוק המכר" for a double sale of land) lifted every excerpt that mentions it.
+        rerank_query = query_text + "\n" + "; ".join(i.issue for i in issues)
         for hit, score in zip(head, reranker.predict([(rerank_query, h["text"]) for h in head])):
             hit["score"] = float(score)
         ranked = sorted(head, key=lambda h: -h["score"])
     else:
         ranked = head
-
-    picked: list[dict] = []
-    for hit in sorted(lookup_hits, key=lambda h: -h.get("score", h["fused"]))[:MAX_LOOKUP_SLOTS]:
-        picked.append(hit)
-    if per_issue_slot:
-        for qi in range(1, len(queries)):
-            best = next((h for h in ranked if {f"q{qi}", f"k{qi}"} & h["sources"]), None)
-            if best is not None and best not in picked and len(picked) < top_k:
-                picked.append(best)
-    for hit in ranked:
-        if len(picked) >= top_k:
-            break
-        if hit not in picked:
-            picked.append(hit)
-    return picked[:top_k]
+    return pick_hits(ranked, len(issues), top_k, per_issue_slot)
 
 
 def _ymd_to_iso(value) -> str:

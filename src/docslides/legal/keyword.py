@@ -45,16 +45,31 @@ def _variants(token: str) -> set[str]:
     return forms
 
 
-def terms(text: str) -> list[str]:
-    """Index terms of `text`: every word with its prefix-stripped forms."""
+def term_groups(text: str) -> list[set[str]]:
+    """One set per word of `text`: the word and its prefix-stripped forms."""
     text = join_spaced_section_numbers(_POINTS_RE.sub("", text))
     text = _QUOTES_RE.sub("", text).replace("־", " ").lower()
-    out: list[str] = []
+    groups = []
     for token in _TOKEN_RE.findall(text):
         if token in _STOPWORDS:
             continue
-        out.extend(_variants(token) - _STOPWORDS)
-    return out
+        forms = _variants(token) - _STOPWORDS
+        if forms:
+            groups.append(forms)
+    return groups
+
+
+def terms(text: str) -> list[str]:
+    """Index terms of `text`: every word with its prefix-stripped forms."""
+    return [form for group in term_groups(text) for form in group]
+
+
+def query_groups(query: str) -> list[frozenset[str]]:
+    """The distinct words of a query, each as the set of its forms. A query word scores once, by
+    its best-matching form: summing over the forms counted "ביטול" twice (as ביטול and as יטול, a
+    ב that isn't a prefix), so any word that happens to start with a prefix letter outweighed
+    a rarer term of art."""
+    return list(dict.fromkeys(frozenset(group) for group in term_groups(query)))
 
 
 class KeywordIndex:
@@ -70,17 +85,16 @@ class KeywordIndex:
         self.idf = {term: math.log(1 + (n - count + 0.5) / (count + 0.5)) for term, count in df.items()}
 
     def search(self, query: str, k: int) -> list[tuple[str, float]]:
-        """(chunk_id, BM25 score) of the best `k` chunks with any query term."""
-        query_terms = set(terms(query))
+        """(chunk_id, BM25 score) of the best `k` chunks with any query term; each query word
+        counts once, by its best-matching form (query_groups)."""
+        groups = query_groups(query)
         scored = []
         for i, tf in enumerate(self.tf):
             score = 0.0
-            for term in query_terms:
-                freq = tf.get(term)
-                if not freq:
-                    continue
-                norm = freq + _K1 * (1 - _B + _B * self.lengths[i] / (self.avg_length or 1.0))
-                score += self.idf[term] * freq * (_K1 + 1) / norm
+            norm_base = _K1 * (1 - _B + _B * self.lengths[i] / (self.avg_length or 1.0))
+            for group in groups:
+                score += max((self.idf[term] * tf[term] * (_K1 + 1) / (tf[term] + norm_base)
+                              for term in group if tf.get(term)), default=0.0)
             if score > 0:
                 scored.append((self.ids[i], score))
         scored.sort(key=lambda item: item[1], reverse=True)

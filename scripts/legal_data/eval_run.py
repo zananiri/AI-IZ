@@ -37,7 +37,8 @@ Bank orders, drafts, repealed law), keeps at most two chunks per section and rer
 legal.retrieval.reranker_model; (3) the answer call (ANSWER_SYSTEM); (4) an empty answer is
 retried without thinking, one containing other scripts is rewritten into Hebrew (legal_eval_rewrite,
 up to two passes), a כן/לא opener the instructions didn't ask for is dropped, and a rule_conclusion
-label is checked against its own explanation (legal_eval_label_check). The plan and any repairs
+answer with no label gets the one its explanation supports (legal_eval_label_check; a label the
+model wrote is kept). The plan and any repairs
 are recorded on the answers.jsonl row.
 
 Reasoning: every LLM call is written in full -- prompt, reasoning ("thinking"), output, timing --
@@ -246,10 +247,16 @@ class LabelVerdict(BaseModel):
 
 
 async def check_label(qwen, question: str, text: str) -> tuple[str, str | None]:
-    """A rule_conclusion answer whose first word is the label its explanation supports. The
-    explanation is read without the label; a wrong label is swapped, a missing one added.
-    Returns (answer, repair or None)."""
+    """A rule_conclusion answer that opens with a label: one the model wrote is kept, a missing one
+    is added from what the explanation (read on its own) supports. Returns (answer, repair or None).
+
+    Swapping a label the model wrote was dropped: over the two 29 Sept Gemma 27B runs the checker
+    fixed 2 labels (IL-219, IL-164) and broke 3 (IL-212, IL-409 twice) -- it misreads negated
+    questions ("can he file without approval?" / "cannot file without approval" -> "yes")."""
     label, explanation = split_yes_no_opener(text)
+    first_words = re.findall(r"[א-ת]+", text[:40])  # how score.py reads the label
+    if label is not None or first_words[:1] in (["כן"], ["לא"]):
+        return text, None
     try:
         verdict = await qwen.complete_json(
             [ChatMessage("user", LABEL_CHECK_PROMPT.format(question=question, explanation=explanation.strip()))],
@@ -261,10 +268,7 @@ async def check_label(qwen, question: str, text: str) -> tuple[str, str | None]:
     if verdict.answer == "unclear":
         return text, None
     wanted = "כן" if verdict.answer == "yes" else "לא"
-    first_words = re.findall(r"[א-ת]+", text[:40])  # how score.py reads the label
-    if label == wanted or (label is None and first_words[:1] == [wanted]):
-        return text, None
-    return f"{wanted}. {explanation.lstrip()}", ("label_fixed" if label else "label_added")
+    return f"{wanted}. {explanation.lstrip()}", "label_added"
 
 
 async def plan_issues(qwen, q: dict, max_issues: int) -> list[EvalIssue]:

@@ -74,3 +74,24 @@ def test_a_plan_that_fails_leaves_retrieval_on_the_question_alone():
             raise RuntimeError("server down")
 
     assert asyncio.run(corpus_retrieval.plan_issues(Broken(), "שאלה")) == []
+
+
+def test_a_named_law_matches_itself_before_laws_that_share_its_name():
+    def hit(title):
+        return {"meta": {"title": title}}
+
+    sale, apartments = hit("חוק המכר, תשכ״ח–1968"), hit("חוק המכר (דירות), תשל״ג–1973")
+    assert corpus_retrieval.named_law_hits("חוק המכר, 1973", [apartments, sale]) == [sale]
+    # with no exact match, a law sharing the name still counts
+    assert corpus_retrieval.named_law_hits("חוק המכר (דירות)", [apartments]) == [apartments]
+    assert corpus_retrieval.named_law_hits("חוק הירושה", [sale]) == []
+
+
+def test_looked_up_sections_get_no_reserved_slot_but_each_issue_can():
+    def hit(name, *sources):
+        return {"id": name, "sources": set(sources)}
+
+    # ranked best-first by the reranker; "guess" came only from the plan's section lookup
+    ranked = [hit("q0-best", "q0"), hit("q0-next", "q0"), hit("issue2", "q2"), hit("guess", "l0"), hit("issue1", "k1")]
+    assert [h["id"] for h in corpus_retrieval.pick_hits(ranked, 2, 2)] == ["q0-best", "q0-next"]
+    assert [h["id"] for h in corpus_retrieval.pick_hits(ranked, 2, 3, per_issue_slot=True)] == ["issue1", "issue2", "q0-best"]

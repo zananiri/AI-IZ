@@ -49,6 +49,23 @@ def test_no_hits_is_thin_coverage_and_rulings_map_to_the_court():
     assert meta.section_number == "1/20" and meta.effective_date_start == "2020-01-02"
 
 
+def test_out_of_scope_records_are_dropped_and_repealed_law_needs_its_name_and_year():
+    def meta(title, status="in_force"):
+        return {"title": title, "status": status}
+
+    assert not corpus_retrieval.in_scope(meta("צו בדבר הוראות ביטחון [נוסח משולב] (יהודה והשומרון) (מס׳ 1651), התש״ע–2009"), [])
+    assert not corpus_retrieval.in_scope(meta("צו בדבר הגנה על עדים (יהודה ושומרון) (מס׳ 2025), התשפ״א–2021"), [])
+    assert not corpus_retrieval.in_scope(meta("החוק הפלילי הירדני, חוק מס׳ 16 לשנת 1960"), [])
+    assert not corpus_retrieval.in_scope(meta("הצעת תנועת החירות לחוקת יסוד למדינת ישראל"), [])
+    assert corpus_retrieval.in_scope(meta("חוק להסדרת ההתיישבות ביהודה והשומרון, התשע״ז–2017"), [])  # a Knesset law
+
+    old = meta("תקנות סדר הדין האזרחי, התשמ״ד–1984", status="repealed")
+    assert not corpus_retrieval.in_scope(old, [])
+    assert not corpus_retrieval.in_scope(old, ["תקנות סדר הדין האזרחי"])  # the 2018 regulations share the name
+    assert not corpus_retrieval.in_scope(old, ["תקנות סדר הדין האזרחי, התשע״ט-2018"])
+    assert corpus_retrieval.in_scope(old, ['תקנות סדר הדין האזרחי, התשמ"ד-1984'])
+
+
 def test_a_plan_that_fails_leaves_retrieval_on_the_question_alone():
     import asyncio
 

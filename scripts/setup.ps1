@@ -27,13 +27,15 @@
 
 .PARAMETER OllamaModel
     Model tag to pull when the Ollama backend is selected (general chat model
-    + Legal tab orchestrator). Default: qwen3:14b (~9GB); under 16GB of RAM
-    it falls back to qwen3:8b. qwen3:32b is the larger option: its GGUF
-    weights are ~20GB and llama.cpp's CPU "repack" step needs a similarly
-    sized second buffer while loading, so on a CPU-only host under ~48GB it
-    fails with "ggml_backend_cpu_buffer_type_alloc_buffer: failed to
-    allocate ..." / "std::bad_alloc" -- which makes the chat/Legal tabs look
-    like they hang or don't respond.
+    + Legal tab orchestrator). Default: gemma3:27b-it-qat (~18GB, 4-bit
+    quantization-aware, multimodal; ~22GB resident with the 16k context).
+    Under 24GB of RAM it falls back to gemma3:12b-it-qat (~9GB), under 12GB
+    to gemma3:4b-it-qat. Gemma 3 has no thinking mode, so a gemma3 tag also
+    writes *_SUPPORTS_THINKING=false. qwen3:14b / qwen3:32b still work
+    (thinking on); qwen3:32b's llama.cpp CPU "repack" step needs a second
+    ~20GB buffer while loading, so on a CPU-only host under ~48GB it fails
+    with "std::bad_alloc" -- which makes the chat/Legal tabs look like they
+    hang.
 
 .PARAMETER LegalContextLength
     Legal tab context window (Ollama num_ctx), written to .env.local.
@@ -45,7 +47,7 @@
 .EXAMPLE
     .\scripts\setup.ps1 -ModelsDir D:\models -SkipMineru
 .EXAMPLE
-    .\scripts\setup.ps1 -ForceBackend ollama -OllamaModel qwen3:14b
+    .\scripts\setup.ps1 -ForceBackend ollama -OllamaModel gemma3:12b-it-qat
 #>
 param(
     [string]$ModelsDir = "./models",
@@ -54,7 +56,7 @@ param(
     [string]$QwenModelRepo = "Qwen/Qwen3-14B-AWQ",
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
-    [string]$OllamaModel = "qwen3:14b",
+    [string]$OllamaModel = "gemma3:27b-it-qat",
     [int]$LegalContextLength = 16384
 )
 
@@ -196,20 +198,27 @@ if (-not $Backend) {
 }
 Write-Host "selected backend: $Backend"
 
-# On the Ollama (CPU/no-NVIDIA) path, qwen3:14b (~9GB + the 16k context)
-# stays the model unless the host has under 16GB of RAM, which gets qwen3:8b
-# unless -OllamaModel was passed explicitly -- see the header comment.
+# On the Ollama (CPU/no-NVIDIA) path, gemma3:27b-it-qat (~18GB + the 16k
+# context) stays the model unless the host has under 24GB of RAM (then
+# gemma3:12b-it-qat) or under 12GB (gemma3:4b-it-qat), unless -OllamaModel was
+# passed explicitly -- see the header comment.
 if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel")) {
     $TotalRamGB = 0
     try {
         $TotalRamGB = [math]::Round((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).TotalPhysicalMemory / 1GB)
     } catch {}
-    if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 16) {
-        $OllamaModel = "qwen3:8b"
-        Write-Host "[note] $TotalRamGB GB RAM detected -- qwen3:14b needs ~16GB+ with the 16k context," -ForegroundColor Yellow
-        Write-Host "       so the model defaults to qwen3:8b. Pass -OllamaModel qwen3:14b to override." -ForegroundColor Yellow
+    if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 12) {
+        $OllamaModel = "gemma3:4b-it-qat"
+    } elseif ($TotalRamGB -gt 0 -and $TotalRamGB -lt 24) {
+        $OllamaModel = "gemma3:12b-it-qat"
+    }
+    if ($OllamaModel -ne "gemma3:27b-it-qat") {
+        Write-Host "[note] $TotalRamGB GB RAM detected -- gemma3:27b-it-qat needs ~24GB+ with the 16k context," -ForegroundColor Yellow
+        Write-Host "       so the model defaults to $OllamaModel. Pass -OllamaModel gemma3:27b-it-qat to override." -ForegroundColor Yellow
     }
 }
+# Gemma 3 has no thinking mode: every call goes out with thinking off.
+$SupportsThinking = if ($OllamaModel -like "gemma*") { "false" } else { "true" }
 Write-Host ""
 
 # ---------------------------------------------------------------------------
@@ -305,7 +314,7 @@ if ($Backend -eq "vllm") {
         ollama pull $OllamaModel
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[warn] 'ollama pull $OllamaModel' failed. Check the exact tag at" -ForegroundColor Yellow
-            Write-Host "       https://ollama.com/library/qwen3 and retry: ollama pull <tag>" -ForegroundColor Yellow
+            Write-Host "       https://ollama.com/library/$(($OllamaModel -split ':')[0]) and retry: ollama pull <tag>" -ForegroundColor Yellow
             $Skipped.Add("ollama pull $OllamaModel")
         }
     }
@@ -322,9 +331,11 @@ if ($Backend -eq "vllm") {
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OllamaModel
+DOCSLIDES_LLM_SUPPORTS_THINKING=$SupportsThinking
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
+DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SupportsThinking
 DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LegalContextLength
 
 "@

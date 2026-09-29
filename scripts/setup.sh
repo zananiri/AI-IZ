@@ -16,13 +16,16 @@
 #   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-14B-AWQ
 #                        (Qwen/Qwen3-32B-AWQ for the larger model)
 #   OLLAMA_MODEL         Ollama path model tag (general + Legal orchestrator).
-#                        default: qwen3:14b (~9GB). qwen3:32b is the larger
-#                        option; it needs ~48GB RAM on a CPU-only host (its
-#                        ~20GB GGUF plus llama.cpp's CPU "repack" buffer,
-#                        briefly resident while loading, hits std::bad_alloc
-#                        below that -- which looks like the app "not
-#                        responding") or ~36GB on a Mac. Under 16GB of RAM
-#                        the default falls back to qwen3:8b.
+#                        default: gemma3:27b-it-qat (~18GB, 4-bit
+#                        quantization-aware, multimodal; ~22GB resident with
+#                        the 16k context). Under 24GB of RAM the default falls
+#                        back to gemma3:12b-it-qat (~9GB), under 12GB to
+#                        gemma3:4b-it-qat. Gemma 3 has no thinking mode, so a
+#                        gemma3 tag also writes *_SUPPORTS_THINKING=false.
+#                        qwen3:14b / qwen3:32b still work (thinking on); 32b
+#                        needs ~48GB RAM on a CPU-only host (llama.cpp's CPU
+#                        "repack" buffer, briefly resident while loading, hits
+#                        std::bad_alloc below that).
 #   LEGAL_CONTEXT_LENGTH Legal tab context window (Ollama num_ctx). default:
 #                        16384 -- the evidence budget plus the thinking pass
 #                        (config/config.yaml legal.orchestrator.max_model_len).
@@ -126,19 +129,27 @@ else
   echo "== [5/7] Ollama path: installing Ollama + pulling the model =="
   LEGAL_CONTEXT_LENGTH="${LEGAL_CONTEXT_LENGTH:-16384}"
   if [ -z "${OLLAMA_MODEL:-}" ]; then
-    OLLAMA_MODEL="qwen3:14b"
+    OLLAMA_MODEL="gemma3:27b-it-qat"
     TOTAL_RAM_GB=0
     if [ "$OS_NAME" = "Darwin" ]; then
       TOTAL_RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
     elif command -v free >/dev/null 2>&1; then
       TOTAL_RAM_GB=$(( $(free -b | awk '/^Mem:/{print $2}') / 1073741824 ))
     fi
-    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 16 ]; then
-      OLLAMA_MODEL="qwen3:8b"
-      echo "[note] ${TOTAL_RAM_GB}GB RAM detected -- qwen3:14b needs ~16GB+ with the 16k context,"
-      echo "       so the Ollama model defaults to qwen3:8b. Set OLLAMA_MODEL=qwen3:14b to override."
+    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 12 ]; then
+      OLLAMA_MODEL="gemma3:4b-it-qat"
+    elif [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 24 ]; then
+      OLLAMA_MODEL="gemma3:12b-it-qat"
+    fi
+    if [ "$OLLAMA_MODEL" != "gemma3:27b-it-qat" ]; then
+      echo "[note] ${TOTAL_RAM_GB}GB RAM detected -- gemma3:27b-it-qat needs ~24GB+ with the 16k context,"
+      echo "       so the Ollama model defaults to $OLLAMA_MODEL. Set OLLAMA_MODEL=gemma3:27b-it-qat to override."
     fi
   fi
+  case "$OLLAMA_MODEL" in
+    gemma*) SUPPORTS_THINKING=false ;;  # Gemma 3 has no thinking mode
+    *) SUPPORTS_THINKING=true ;;
+  esac
   if ! command -v ollama >/dev/null 2>&1; then
     if [ "$OS_NAME" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
       brew install ollama || SKIPPED+=("ollama (brew)")
@@ -195,7 +206,7 @@ else
     echo "Pulling $OLLAMA_MODEL (this is a large download, comparable to the vLLM weights)..."
     ollama pull "$OLLAMA_MODEL" || {
       echo "[warn] 'ollama pull $OLLAMA_MODEL' failed. Check the exact tag at"
-      echo "       https://ollama.com/library/qwen3 and retry: ollama pull <tag>"
+      echo "       https://ollama.com/library/${OLLAMA_MODEL%%:*} and retry: ollama pull <tag>"
       SKIPPED+=("ollama pull $OLLAMA_MODEL")
     }
   fi
@@ -208,9 +219,11 @@ else
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OLLAMA_MODEL
+DOCSLIDES_LLM_SUPPORTS_THINKING=$SUPPORTS_THINKING
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
 DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OLLAMA_MODEL
+DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SUPPORTS_THINKING
 DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
 EOF
   echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL, legal context=$LEGAL_CONTEXT_LENGTH)"

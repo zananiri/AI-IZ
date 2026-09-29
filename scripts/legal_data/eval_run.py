@@ -32,10 +32,13 @@ of law).
 
 Per question: (1) the answering model lists the issues and the laws/sections it believes
 govern them (legal_eval_plan, thinking off); (2) retrieve_planned searches on the question and on
-each issue, looks the named sections up directly, keeps at most two chunks per section and reranks
-with legal.retrieval.reranker_model; (3) the answer call (ANSWER_SYSTEM); (4) an empty answer is
-retried without thinking, and one containing other scripts is rewritten into Hebrew
-(legal_eval_rewrite). The plan and any repairs are recorded on the answers.jsonl row.
+each issue (dense + BM25), looks the named sections up directly, drops out-of-scope records (West
+Bank orders, drafts, repealed law), keeps at most two chunks per section and reranks with
+legal.retrieval.reranker_model; (3) the answer call (ANSWER_SYSTEM); (4) an empty answer is
+retried without thinking, one containing other scripts is rewritten into Hebrew (legal_eval_rewrite,
+up to two passes), a כן/לא opener the instructions didn't ask for is dropped, and a rule_conclusion
+label is checked against its own explanation (legal_eval_label_check). The plan and any repairs
+are recorded on the answers.jsonl row.
 
 Reasoning: every LLM call is written in full -- prompt, reasoning ("thinking"), output, timing --
 to <logging.llm_trace_dir>/<date>.jsonl (llm/trace.py), with job_id set to the question id, as
@@ -53,6 +56,9 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
@@ -60,7 +66,9 @@ from docslides.config import get_config
 from docslides.legal.corpus_retrieval import (  # shared with the Legal tab's corpus path
     PLAN_MAX_TOKENS,
     PLAN_PROMPT,
+    in_scope,
     retrieve_planned,
+    warm_up_retrieval,
 )
 from docslides.legal.evaluation import get_judge_client
 from docslides.legal_data.hebrew import normalize_for_embedding
@@ -73,16 +81,6 @@ from docslides.llm.client import (
 )
 from docslides.llm.schemas import BulkEvalJudgement, EvalIssue, EvalRetrievalPlan
 from docslides.rag.embedding import embed_texts
-
-# Kept as-is for eval_cases.py (the paralegal cases), which imports it.
-RAG_SYSTEM = """You are a legal assistant answering questions about ISRAELI law.
-
-Answer using the excerpts under <context> below, which come from an index of Israeli legislation \
-and regulations. Follow the question's own <instructions>. Cite the law and section your answer \
-relies on. If <context> is empty, thin, or about something else, or if the question assumes a law, \
-section, case or fact that does not exist, say so plainly rather than inventing an answer -- do not \
-state a specific rule, number or date you cannot support from <context> or from law you are certain \
-of. Answer in the language the question is written in."""
 
 ANSWER_SYSTEM = """You are a legal assistant answering questions about ISRAELI law, in Hebrew.
 
@@ -97,8 +95,9 @@ section numbers exactly as they appear in <context>; when a provision's text is 
 it over your memory. Never invent a section, subsection, number or date.
 - When <context> shows that a section was changed or added by an amending law (תיקון), cite that \
 amending law as well.
-- Follow the question's <instructions> exactly. In a yes/no answer the first word (כן or לא) answers \
-the question as asked, and the explanation must agree with it.
+- Follow the question's <instructions> exactly. Open with כן or לא only when the <instructions> ask \
+for a yes/no answer; then that first word answers the question exactly as asked, and the explanation \
+must agree with it. Every other answer opens directly with the rule or the analysis.
 - If the question assumes a law, amendment, section or fact that does not exist or is wrong, say so \
 plainly and give the correct rule. If a request asks for help deceiving, threatening, hiding assets \
 or otherwise evading the law, refuse and briefly name the lawful alternative. If the answer depends \
@@ -117,6 +116,26 @@ as they are. Return only the rewritten answer.
 <answer>
 {answer}
 </answer>"""
+
+# The 29 Sept review found Gemma 12B opening the answer with a label its own reasoning contradicts
+# (IL-016, IL-214, IL-219). A second read of the explanation alone -- label removed, so it can't
+# anchor -- decides which answer the reasoning supports.
+LABEL_CHECK_PROMPT = """Below is a yes/no question about Israeli law and the explanation part of an \
+answer to it. Read only the explanation: does it lead to "yes" or to "no" as the answer to the \
+question exactly as asked? Judge what the explanation says, not whether it is correct.
+
+<question>{question}</question>
+
+<explanation>
+{explanation}
+</explanation>"""
+
+# Categories whose instructions don't ask for a yes/no answer: a bare כן/לא opener there (55 of 66
+# of Gemma 12B's such answers) is dropped.
+NO_YES_NO_OPENER = {"rule_recall", "rule_application", "interpretation", "citation_grounding",
+                    "temporal_amendment", "issue_spotting"}
+_YES_NO_OPENER_RE = re.compile(r"^\s*(?:\*\*)?\s*(כן|לא)\s*(?:\*\*)?\s*(?:[,.:;!\-–—]+|\n)\s*(?:\*\*)?\s*")
+MAX_REWRITE_PASSES = 2
 
 # Output budgets, reasoning included. The 26 Sept bulk500 run (16k context, never more than 6.1k
 # of it used) stopped 8 of 500 answers at 3072 and 11 of 431 judge calls at 2048 while still
@@ -165,7 +184,8 @@ def _question_text(q: dict) -> str:
 def retrieve(query_text: str, categories: list[str], top_k: int) -> list[dict]:
     """Top `top_k` chunks (by distance, merged across `categories`) from the bulk corpus
     at config.legal.corpus.vectordb_dir. Each category is queried for `top_k` first, so a
-    category with the single best hits isn't starved by one that returns weaker ones."""
+    category with the single best hits isn't starved by one that returns weaker ones. Records
+    corpus_retrieval.in_scope rules out (West Bank orders, drafts, repealed law) are skipped."""
     from docslides.legal_data.corpus_index import CorpusCollection
 
     legal_cfg = get_config().legal
@@ -173,6 +193,7 @@ def retrieve(query_text: str, categories: list[str], top_k: int) -> list[dict]:
     vector = embed_texts(
         legal_cfg.retrieval.embedding_model,  # same embedding model the corpus was built with -- see vectorize.py
         [normalize_for_embedding(query_text, corpus_cfg.fold_final_letters_for_embedding)],
+        device=legal_cfg.retrieval.device,
     )[0]
     hits: list[dict] = []
     for category in categories:
@@ -182,9 +203,12 @@ def retrieve(query_text: str, categories: list[str], top_k: int) -> list[dict]:
         collection = CorpusCollection(path, f"{corpus_cfg.collection_prefix}_{category}")
         if collection.count() == 0:
             continue
-        result = collection.query(vector, top_k)
+        result = collection.query(vector, top_k * 2)
+        kept = 0
         for distance, meta, document in zip(result["distances"][0], result["metadatas"][0], result["documents"][0]):
-            hits.append({"category": category, "distance": distance, "meta": meta, "text": document})
+            if kept < top_k and in_scope(meta, []):
+                hits.append({"category": category, "distance": distance, "meta": meta, "text": document})
+                kept += 1
     hits.sort(key=lambda h: h["distance"])
     return hits[:top_k]
 
@@ -206,6 +230,41 @@ _FOREIGN_RE = re.compile(r"[\u0400-\u04ff\u0600-\u06ff\u4e00-\u9fff\u3040-\u30ff
 
 def foreign_words(text: str) -> list[str]:
     return _FOREIGN_RE.findall(text)
+
+
+def split_yes_no_opener(text: str) -> tuple[str | None, str]:
+    """("כן" / "לא", the rest) for an answer opening with a bare label -- "לא.", "**כן**,", "כן\\n" --
+    else (None, text). "לא ניתן ..." is a sentence, not a label, and stays whole."""
+    match = _YES_NO_OPENER_RE.match(text)
+    if not match or not text[match.end():].strip():
+        return None, text
+    return match.group(1), text[match.end():]
+
+
+class LabelVerdict(BaseModel):
+    answer: Literal["yes", "no", "unclear"]
+
+
+async def check_label(qwen, question: str, text: str) -> tuple[str, str | None]:
+    """A rule_conclusion answer whose first word is the label its explanation supports. The
+    explanation is read without the label; a wrong label is swapped, a missing one added.
+    Returns (answer, repair or None)."""
+    label, explanation = split_yes_no_opener(text)
+    try:
+        verdict = await qwen.complete_json(
+            [ChatMessage("user", LABEL_CHECK_PROMPT.format(question=question, explanation=explanation.strip()))],
+            LLMCallSite("legal_eval_label_check"), schema=LabelVerdict,
+            sampling=SamplingParams(temperature=0.0, max_tokens=256), enable_thinking=False,
+        )
+    except Exception:  # noqa: BLE001 -- keep the answer as written
+        return text, None
+    if verdict.answer == "unclear":
+        return text, None
+    wanted = "כן" if verdict.answer == "yes" else "לא"
+    first_words = re.findall(r"[א-ת]+", text[:40])  # how score.py reads the label
+    if label == wanted or (label is None and first_words[:1] == [wanted]):
+        return text, None
+    return f"{wanted}. {explanation.lstrip()}", ("label_fixed" if label else "label_added")
 
 
 async def plan_issues(qwen, q: dict, max_issues: int) -> list[EvalIssue]:
@@ -249,15 +308,28 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
             repairs.append("empty_answer_retry")
             text = (await qwen.complete_text(messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
                                              enable_thinking=False)).strip()
-        stray = foreign_words(text)
-        if stray:
+        # Up to two passes: the 29 Sept review found one rewrite leaving script in 26 Qwen answers.
+        for _ in range(MAX_REWRITE_PASSES):
+            stray = foreign_words(text)
+            if not stray:
+                break
             repairs.append("hebrew_rewrite")
             rewritten = (await qwen.complete_text(
                 [ChatMessage("user", REWRITE_PROMPT.format(words=", ".join(dict.fromkeys(stray)), answer=text))],
                 LLMCallSite("legal_eval_rewrite"), sampling=sampling, enable_thinking=False,
             )).strip()
-            if rewritten and len(foreign_words(rewritten)) < len(stray):
-                text = rewritten
+            if not rewritten or len(foreign_words(rewritten)) >= len(stray):
+                break
+            text = rewritten
+        if q.get("category") in NO_YES_NO_OPENER:
+            label, rest = split_yes_no_opener(text)
+            if label:
+                repairs.append("stray_yes_no_opener")
+                text = rest.lstrip()
+        elif q.get("category") == "rule_conclusion" and text:
+            text, repair = await check_label(qwen, qtext, text)
+            if repair:
+                repairs.append(repair)
     return {
         "id": q["id"], "answer": text,
         "retrieved": [{"category": h["category"], "distance": round(h["distance"], 4),
@@ -276,6 +348,9 @@ async def cmd_answer(a) -> None:
     done = _load_done(out)
     categories = a.categories.split(",")
     qwen = get_legal_orchestrator_client()
+    started = time.monotonic()
+    device = warm_up_retrieval()
+    _log(f"retrieval ready on {device} ({round(time.monotonic() - started)}s)")
     _log(f"{len(questions)} questions, {len(done)} already answered")
     for q in questions:
         if q["id"] in done:

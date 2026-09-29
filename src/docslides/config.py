@@ -41,6 +41,8 @@ class ThinkingDefaults(BaseModel):
     legal_eval_plan: bool = False
     legal_retrieval_plan: bool = False
     legal_eval_rewrite: bool = False
+    legal_eval_label_check: bool = False
+    legal_eval_repair: bool = False
 
 
 class SamplingDefaults(BaseModel):
@@ -62,6 +64,9 @@ class LLMConfig(BaseModel):
     request_timeout_s: int = 600
     max_model_len: int = 8192
     guided_decoding_backend: str = "xgrammar"
+    # False for a model with no thinking mode (Gemma 3): every call then goes out with thinking
+    # off, instead of asking for it and relying on the server's 400 + a retry (llm/client.py).
+    supports_thinking: bool = True
     thinking_defaults: ThinkingDefaults = Field(default_factory=ThinkingDefaults)
     default_sampling: SamplingDefaults = Field(default_factory=SamplingDefaults)
 
@@ -72,6 +77,13 @@ class LegalRetrievalConfig(BaseModel):
     source: Literal["corpus", "signed_index"] = "corpus"
     vectordb_dir: str = "./data/legal_vectordb"
     embedding_model: str = "BAAI/bge-m3"
+    # Where the bulk-corpus path runs the embedder and reranker: None = the library default (a GPU
+    # when one is visible), "cpu", or "cuda" (loaded in fp16). legal/corpus_retrieval.warm_up_retrieval
+    # falls back to the CPU when the GPU hasn't room beside the LLM.
+    device: str | None = None
+    # BM25 over the corpus's lexical copy (lexical_<category>.jsonl), fused with the dense search on
+    # the corpus path: exact terms of art ("עושק", "פקודת הנזיקין") that embeddings rank loosely.
+    corpus_lexical: bool = True
     top_k: int = 6
     fetch_k: int = 24  # candidates considered before dedupe + MMR cut them to top_k
     mmr_lambda: float = 0.7  # 1.0 = pure relevance; lower = more diversity
@@ -156,6 +168,21 @@ class LegalCorpusConfig(BaseModel):
     # What the Legal tab searches when legal.retrieval.source is "corpus".
     categories: list[str] = Field(default_factory=lambda: ["laws", "procedural_rules"])
     top_k: int = 12  # chunks kept after reranking, before the max_evidence_tokens budget
+    # Records that aren't Israeli law in force inside Israel, matched against the title and never
+    # retrieved: military commanders' orders for Judea & Samaria, the Jordanian criminal law, and
+    # drafts/proposals. (Knesset laws *about* those areas -- חוק להסדרת ההתיישבות ביהודה והשומרון,
+    # the Jordan peace-treaty law -- don't match.) The 29 Sept eval review traced wrong answers to
+    # each of these.
+    exclude_title_patterns: list[str] = Field(default_factory=lambda: [
+        r"^(?:צו|תקנות) בדבר .*יהודה וה?שומרון",
+        r"\(יהודה וה?שומרון\)\s*\(מס",
+        r"החוק הפלילי הירדני",
+        r"^הצעת ",
+    ])
+    # Repealed records (status "repealed": the 1984 Civil Procedure Regulations, 66 laws) are left
+    # out of free search, and come back only when the retrieval plan names that very law -- a
+    # question about what applied *before* can still reach them.
+    repealed_only_when_named: bool = True
 
 
 class LegalConfig(BaseModel):
@@ -369,13 +396,17 @@ _LLM_ENV_OVERRIDES = {
     "DOCSLIDES_LLM_BASE_URL": "base_url",
     "DOCSLIDES_LLM_MODEL": "model",
     "DOCSLIDES_LLM_MAX_MODEL_LEN": "max_model_len",
+    "DOCSLIDES_LLM_SUPPORTS_THINKING": "supports_thinking",
 }
 _LEGAL_ORCHESTRATOR_ENV_OVERRIDES = {
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND": "backend",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL": "base_url",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL": "model",
     "DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN": "max_model_len",
+    "DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING": "supports_thinking",
 }
+
+
 def _env_overrides(env_map: dict[str, str]) -> dict[str, str]:
     return {key: os.environ[env] for env, key in env_map.items() if env in os.environ}
 

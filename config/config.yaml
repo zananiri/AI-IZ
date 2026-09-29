@@ -38,8 +38,9 @@ legal:
     backend: "vllm"
     base_url: "http://vllm:8000/v1"
     # Qwen3-14B: the same weights docker-compose.yml's vLLM serves (QWEN_MODEL_REPO), so the
-    # Legal tab and the general chat share one server. Ollama tag: qwen3:14b (scripts/setup.*).
-    # Qwen3-32B (Qwen/Qwen3-32B-AWQ, qwen3:32b) is the larger option for milestone runs.
+    # Legal tab and the general chat share one server. The Ollama path (scripts/setup.*,
+    # docker-compose.portable.yml, .env.local) defaults to gemma3:27b-it-qat instead, with
+    # supports_thinking: false. Qwen3-32B (Qwen/Qwen3-32B-AWQ, qwen3:32b) is the larger Qwen option.
     model: "Qwen/Qwen3-14B-AWQ"
     api_key: "not-needed"
     request_timeout_s: 900

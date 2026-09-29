@@ -299,16 +299,23 @@ def named_sections(query: str) -> list[tuple[str, str | None]]:
 
 
 @lru_cache(maxsize=2)
-def _reranker(model_name: str):
+def _reranker(model_name: str, device: str | None = None):
     """The cross-encoder, or None if it can't be loaded (then retrieval ranks
-    by embedding distance alone, as before the reranker existed)."""
+    by embedding distance alone, as before the reranker existed). `device` None lets
+    sentence-transformers choose; on a GPU the model runs in fp16."""
     try:
         from sentence_transformers import CrossEncoder
 
-        return CrossEncoder(model_name, max_length=get_config().legal.retrieval.rerank_max_length)
+        model = CrossEncoder(model_name, max_length=get_config().legal.retrieval.rerank_max_length, device=device)
     except Exception as exc:  # noqa: BLE001 -- a missing model must not block answering
         logger.warning("legal_reranker_unavailable", model=model_name, error=str(exc))
         return None
+    if str(getattr(model, "device", device or "")).startswith("cuda"):
+        try:
+            (model if hasattr(model, "half") else model.model).half()
+        except Exception as exc:  # noqa: BLE001 -- fp32 still works, just slower
+            logger.warning("legal_reranker_fp16_failed", error=str(exc))
+    return model
 
 
 @dataclass

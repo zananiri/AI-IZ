@@ -89,6 +89,9 @@ legal = [
     # extra is also installed via its own separate `pip install -e ".[legal]"`
     # call (README / requirements-legal-data.txt), not alongside ingestion-mineru.
     "sentence-transformers>=3.0,<6.0",
+    # BM25 over the bulk corpus (legal/corpus_lexical.py): a sparse matrix, with scipy.
+    # sentence-transformers already pulls both in; named here because the code uses them directly.
+    "scikit-learn>=1.2",
 ]
 # Bulk legal corpus: fetchers + vectorize.py in scripts/legal_data/ (src/docslides/legal_data/).
 # Use together with `legal` (chromadb, sentence-transformers). Also: requirements-legal-data.txt.

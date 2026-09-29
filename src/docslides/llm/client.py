@@ -142,6 +142,8 @@ class LLMCallSite:
         "legal_eval_plan",
         "legal_retrieval_plan",
         "legal_eval_rewrite",
+        "legal_eval_label_check",
+        "legal_eval_repair",
     ]
 
 
@@ -196,6 +198,8 @@ class QwenClient:
         await self._client.aclose()
 
     def _enable_thinking(self, call_site: LLMCallSite, override: bool | None) -> bool:
+        if not self._llm_cfg.supports_thinking:
+            return False
         if override is not None:
             return override
         return getattr(self._llm_cfg.thinking_defaults, call_site.name)

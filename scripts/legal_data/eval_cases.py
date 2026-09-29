@@ -12,6 +12,13 @@ docstring: "prepare"/"report" are for gold.jsonl), so this script also does the 
 
 Reasoning: every LLM call goes to <logging.llm_trace_dir>/<date>.jsonl (llm/trace.py) with the
 full prompt and the model's reasoning, job_id set to the case id -- see eval_run.py's docstring.
+
+Per case: (1) the model lists the case's issues and governing laws (plan_issues, as for the single
+questions) and retrieve_planned gathers the reference material for each; (2) the work file
+(CASE_SYSTEM); (3) sections the work file left out are written and appended (legal_eval_repair);
+(4) if it holds dates or amounts that aren't in the case file, the model revises it once -- showing
+the calculation behind a deadline, dropping what it can't support. The plan and repairs are
+recorded on the row.
 """
 
 from __future__ import annotations
@@ -19,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 import time
 from datetime import datetime
@@ -26,8 +34,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from eval_run import RAG_SYSTEM, eval_sampling, render_context, retrieve
+from eval_run import eval_sampling, plan_issues, render_context
 
+from docslides.legal.corpus_retrieval import retrieve_planned, warm_up_retrieval
 from docslides.legal.evaluation import get_judge_client
 from docslides.llm import trace
 from docslides.llm.client import (
@@ -41,12 +50,89 @@ DEFAULT_DIR = Path("legal_txt/Evals/israeli_legal_eval")
 RUBRIC_SECTIONS = ["facts_summary", "chronology", "legal_issues", "deadlines", "red_flags",
                     "missing_info", "deliverable", "next_step"]
 
-CASE_SYSTEM = """You act as a paralegal at a law firm, working under ISRAELI law. Follow the task \
-instructions exactly, in the order given, using only facts that appear in the case file -- if you \
-assume something, say so explicitly. Reply in Hebrew."""
+# The 29 Sept review of the Qwen 14B / Gemma 12B work files: every case lost points for an invented
+# period or deadline, a law applied outside its scope, or a fact misread from the file; the
+# deliverable was often an outline or missing.
+CASE_SYSTEM = """You act as a paralegal at a law firm, working under ISRAELI law. Prepare the work \
+file the task instructions describe. <reference_material> holds excerpts retrieved from an index of \
+Israeli legislation; some are relevant and some are not.
+- Write all eight sections, in the order given, each under its own numbered heading (1 to 8) -- \
+including section 7, the full text of the document the case asks for, not an outline of it.
+- Take facts, names, dates and amounts only from the case file, exactly as written there; check \
+each one against its document. If you assume something, say so explicitly.
+- For every legal issue cite the law and section. Before relying on a law, check that it covers \
+this kind of party and transaction. Never cite a law just because it appears in <reference_material>.
+- State a period (limitation, notice, filing, appeal) only when a provision in \
+<reference_material>, or a law you are certain of, sets it -- and cite that provision. Otherwise \
+write "יש לבדוק את המועד" instead of guessing. Show every calculation: start date + period = end \
+date, counting from the date the file was received ("today").
+- Never advise anything unlawful or unethical (coordinating testimony, hiding assets, misleading \
+a court or the other side).
+- Write only in Hebrew, and start directly with section 1 -- no preamble."""
+
+# A heading line for each of the eight sections: what missing_sections looks for.
+SECTION_HEADINGS = {
+    "1. תקציר עובדתי": r"תקציר",
+    "2. ציר זמן": r"ציר\s*(?:ה)?זמן|כרונולוגי",
+    "3. סוגיות משפטיות": r"סוגיות",
+    "4. מועדים ודחיפות": r"מועדים|דחיפות",
+    "5. סתירות וסימני אזהרה": r"סתירות|אזהרה",
+    "6. מידע ומסמכים חסרים": r"חסרים|חסר",
+    "7. טיוטת מסמך": r"טיוטה|טיוטת",
+    "8. המלצה לצעד הבא": r"המלצה|צעד\s*הבא",
+}
+# "## 4. מועדים", "**4. מועדים ודחיפות**", "4) מועדים": a line that opens with a heading marker.
+_HEADING_LINE_RE = re.compile(r"^[ \t]*(?=#|\*\*|\d{1,2}[ \t]*[.):])[#* \t\d.):]*(?P<title>[^\n]{0,80})$", re.MULTILINE)
+
+COMPLETE_PROMPT = """The work file above is missing these sections: {sections}. Write only those \
+sections, each under its numbered heading, following the same rules (section 7 is the full text \
+of the document the case asks for). Do not repeat the sections already written."""
+
+FACTS_PROMPT = """Below are a case file and a paralegal work file prepared from it. These dates and \
+amounts in the work file do not appear in the case file: {values}.
+For each one: if it is a deadline or a sum you calculated, keep it and make sure the calculation \
+(and the provision that sets any period) is written next to it; if it is a fact the case file \
+doesn't give, remove it or write "לא ידוע". Correct nothing else. Return the whole work file, in \
+Hebrew, with the same sections and headings.
+
+<case_file>
+{case_text}
+</case_file>
+
+<work_file>
+{work_file}
+</work_file>"""
 
 WORK_FILE_MAX_TOKENS = 6144  # a work file has eight sections, plus the reasoning before them
 JUDGE_MAX_TOKENS = 4096
+CASE_MAX_ISSUES = 6
+
+_DATE_RE = re.compile(r"(?<![\d.,/])(\d{1,2})[./](\d{1,2})(?:[./](?:\d{4}|\d{2}))?(?![\d,]|[./]\d)")
+_AMOUNT_RE = re.compile(r"(?<![\d.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*(?:₪|ש[\"״]ח|שקל)|(?<![\d.,])(\d{1,3}(?:,\d{3})+)(?![\d,])")
+
+
+def missing_sections(work_file: str) -> list[str]:
+    """The SECTION_HEADINGS whose keyword appears on no heading-like line of the work file."""
+    lines = [m.group("title") for m in _HEADING_LINE_RE.finditer(work_file) if m.group("title").strip()]
+    return [name for name, pattern in SECTION_HEADINGS.items()
+            if not any(re.search(pattern, line) for line in lines)]
+
+
+def _dates(text: str) -> set[tuple[int, int]]:
+    return {(int(d), int(m)) for d, m in _DATE_RE.findall(text) if 1 <= int(d) <= 31 and 1 <= int(m) <= 12}
+
+
+def _amounts(text: str) -> set[str]:
+    return {(a or b).replace(",", "") for a, b in _AMOUNT_RE.findall(text)}
+
+
+def unsupported_values(work_file: str, case_text: str) -> list[str]:
+    """Dates (day.month) and amounts in the work file that the case file doesn't contain -- each
+    either a calculation to show or a fact the model made up."""
+    case_dates, case_numbers = _dates(case_text), {n.replace(",", "") for n in re.findall(r"\d[\d,]*", case_text)}
+    out = [f"{d}.{m}" for d, m in sorted(_dates(work_file) - case_dates, key=lambda x: (x[1], x[0]))]
+    out += [f"{int(a):,}" for a in sorted(_amounts(work_file) - case_numbers, key=int)]
+    return out
 
 
 def _log(message: str) -> None:
@@ -76,23 +162,58 @@ def load_gold(path: Path) -> dict[str, dict]:
 async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
                       categories: list[str], top_k: int, thinking: bool = True,
                       max_tokens: int = WORK_FILE_MAX_TOKENS) -> dict:
-    # Always with retrieval over the corpus: there is no model-alone mode.
-    hits = retrieve(case_text, categories, top_k)
-    reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>"
-    system = RAG_SYSTEM.replace("You are a legal assistant", "You act as a paralegal") + "\n\n" + CASE_SYSTEM
-    user = f"{instructions}\n\n---\n\n{case_text}{reference}"
-
+    repairs: list[str] = []
     with trace.collect(job_id=case_id):
-        text = await qwen.complete_text(
-            [ChatMessage("system", system), ChatMessage("user", user)],
-            LLMCallSite("legal_eval_baseline"),
-            sampling=eval_sampling(max_tokens, thinking),
+        # Always with retrieval over the corpus (there is no model-alone mode), planned as for the
+        # single questions: one search per issue the model sees, not one on the whole case text.
+        issues = await plan_issues(qwen, {"id": case_id, "question": case_text}, max_issues=CASE_MAX_ISSUES)
+        hits = retrieve_planned(case_text, issues, categories, top_k, per_issue_slot=True)
+        reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>"
+        messages = [ChatMessage("system", CASE_SYSTEM),
+                    ChatMessage("user", f"{instructions}\n\n---\n\n{case_text}{reference}")]
+
+        text = (await qwen.complete_text(
+            messages, LLMCallSite("legal_eval_baseline"), sampling=eval_sampling(max_tokens, thinking),
             enable_thinking=thinking,
-        )
-    return {"case_id": case_id, "work_file": text.strip(),
+        )).strip()
+        sampling = eval_sampling(max_tokens, False)
+        if not text and thinking:
+            repairs.append("empty_answer_retry")
+            text = (await qwen.complete_text(messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
+                                             enable_thinking=False)).strip()
+
+        missing = missing_sections(text) if text else []
+        if missing:
+            repairs.append("missing_sections")
+            addition = (await qwen.complete_text(
+                [*messages, ChatMessage("assistant", text),
+                 ChatMessage("user", COMPLETE_PROMPT.format(sections=", ".join(missing)))],
+                LLMCallSite("legal_eval_repair"), sampling=sampling, enable_thinking=False,
+            )).strip()
+            if addition:
+                text = f"{text}\n\n{addition}"
+
+        unsupported = unsupported_values(text, case_text) if text else []
+        if unsupported:
+            revised = (await qwen.complete_text(
+                [ChatMessage("system", CASE_SYSTEM),
+                 ChatMessage("user", FACTS_PROMPT.format(values=", ".join(unsupported), case_text=case_text,
+                                                         work_file=text))],
+                LLMCallSite("legal_eval_repair"), sampling=sampling, enable_thinking=False,
+            )).strip()
+            # A revision that dropped sections or much of the text is worse than the unchecked file.
+            if revised and len(revised) >= 0.7 * len(text) and \
+                    len(missing_sections(revised)) <= len(missing_sections(text)):
+                repairs.append("facts_revised")
+                text = revised
+    return {"case_id": case_id, "work_file": text,
             "retrieved": [{"category": h["category"], "distance": round(h["distance"], 4),
-                            "title": h["meta"].get("title"), "section": h["meta"].get("section_number")}
-                           for h in hits]}
+                           "score": round(h["score"], 4) if "score" in h else None,
+                           "title": h["meta"].get("title"), "section": h["meta"].get("section_number")}
+                          for h in hits],
+            "plan": [i.model_dump() for i in issues],
+            "unsupported_values": unsupported,
+            "repairs": repairs}
 
 
 async def cmd_answer(a) -> None:
@@ -103,6 +224,9 @@ async def cmd_answer(a) -> None:
     done = _load_done(out)
     categories = a.categories.split(",")
     qwen = get_legal_orchestrator_client()
+    started = time.monotonic()
+    device = warm_up_retrieval()
+    _log(f"retrieval ready on {device} ({round(time.monotonic() - started)}s)")
     cases = list(gold.items())[: a.limit] if a.limit else list(gold.items())
     _log(f"{len(cases)} of {len(gold)} cases, {len(done)} already answered")
     for case_id, entry in cases:

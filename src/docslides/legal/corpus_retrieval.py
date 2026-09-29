@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from docslides.cleaning.tokens import count_tokens
@@ -42,20 +43,27 @@ PLAN_PROMPT = """List the distinct legal issues this question about ISRAELI law 
 {max_issues}) and, for each, the Israeli statute or regulation that governs it -- its full official \
 Hebrew name -- with the section numbers you believe apply. Prefer the primary statute (a חוק or \
 פקודה) over regulations, unless the question is specifically about a regulation. If you are not \
-sure of a section number, leave sections empty rather than guess.
+sure of a section number, leave sections empty rather than guess. Write each issue as a short \
+Hebrew phrase in the statute's own terms (at most ten words) -- it is searched for in the law's text.
 
 <question>{question}</question>"""
 
-PLAN_MAX_TOKENS = 512
+# 512 cut the JSON off mid-plan for 1 of 100 questions with Qwen and 4 with Gemma 12B (29 Sept
+# eval review) -- each then retrieved on the question alone.
+PLAN_MAX_TOKENS = 1024
 FETCH_K = 24  # dense candidates per query per category, before dedupe and reranking
 RERANK_POOL = 40  # candidates the cross-encoder scores
 LOOKUP_K = 5  # hits per direct section lookup (filtered to the section number, then to the law)
 MAX_PER_SECTION = 2  # chunks one section may contribute (a long section splits into parts)
 MAX_LOOKUP_SLOTS = 3  # context slots reserved for sections the plan named
+LEXICAL_K = 24  # BM25 candidates for the question, per category (legal/corpus_lexical.py)
+LEXICAL_ISSUE_K = 8  # ... and for each "law + issue" of the plan
+OUT_OF_SCOPE_MARGIN = 2  # over-fetch factor, so hits dropped by in_scope don't thin the pool
 
 _SECTION_RE = re.compile(r"\d{1,4}[א-ת]{0,3}\d{0,3}")
 _NIQQUD_RE = re.compile(r"[֑-ׇ]")
 _YEAR_RE = re.compile(r"(?:^|\s)ה?תש[א-ת]{1,3}(?=\s|$)|\d{4}")
+_GREGORIAN_YEAR_RE = re.compile(r"(?<!\d)(?:18|19|20)\d\d(?!\d)")
 _PART_SUFFIX_RE = re.compile(r"#p\d+")
 
 _SOURCE_TYPES = {"laws": "statute", "procedural_rules": "regulation", "supreme_court": "ruling"}
@@ -75,6 +83,28 @@ def law_key(name: str) -> str:
 def same_law(named: str, title: str) -> bool:
     a, b = law_key(named), law_key(title)
     return bool(a) and bool(b) and (a == b or a in b or b in a)
+
+
+@lru_cache(maxsize=4)
+def _exclusion(patterns: tuple[str, ...]) -> re.Pattern | None:
+    return re.compile("|".join(f"(?:{p})" for p in patterns)) if patterns else None
+
+
+def in_scope(meta: dict, named_laws: list[str]) -> bool:
+    """Whether a corpus record may be retrieved at all: not a title legal.corpus.exclude_title_patterns
+    rules out (West Bank military orders, the Jordanian criminal law, drafts), and -- with
+    repealed_only_when_named -- not repealed, unless the plan names that very law: its name and
+    its year ("תקנות סדר הדין האזרחי, התשמ"ד-1984"). The name alone doesn't do: the 1984 Civil
+    Procedure Regulations share it with the 2018 ones in force."""
+    corpus_cfg = get_config().legal.corpus
+    title = meta.get("title") or ""
+    exclusion = _exclusion(tuple(corpus_cfg.exclude_title_patterns))
+    if exclusion is not None and exclusion.search(title):
+        return False
+    if corpus_cfg.repealed_only_when_named and meta.get("status") == "repealed":
+        years = set(_GREGORIAN_YEAR_RE.findall(title))
+        return any(same_law(name, title) and years & set(_GREGORIAN_YEAR_RE.findall(name)) for name in named_laws)
+    return True
 
 
 def corpus_stats() -> dict | None:
@@ -130,40 +160,64 @@ def _hits_from(result: dict, category: str, source: str) -> list[dict]:
     ]
 
 
+def _lexical_hits(collection, category: str, ranked: list[tuple[str, float]], source: str) -> list[dict]:
+    """BM25 results as hits, in BM25 order: text and metadata from the Chroma collection (the
+    lexical copy is folded, and the model must read the text as embedded). Distance 1.0 -- no
+    embedding distance -- so a chunk dense search also found keeps its own."""
+    if not ranked:
+        return []
+    found = collection.collection.get(ids=[chunk_id for chunk_id, _ in ranked], include=["metadatas", "documents"])
+    by_id = {chunk_id: (meta or {}, document or "")
+             for chunk_id, meta, document in zip(found.get("ids") or [], found.get("metadatas") or [],
+                                                 found.get("documents") or [])}
+    return [{"id": chunk_id, "category": category, "distance": 1.0, "meta": by_id[chunk_id][0],
+             "text": by_id[chunk_id][1], "sources": {source}}
+            for chunk_id, _ in ranked if chunk_id in by_id]
+
+
 def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[str], top_k: int,
                      per_issue_slot: bool = False) -> list[dict]:
     """Retrieval steered by the answering model's own reading of the question:
 
-    1. dense search on the question itself and on each "law + issue" the plan names;
+    1. dense search on the question itself and on each "law + issue" the plan names, and (with
+       legal.retrieval.corpus_lexical) BM25 on the same texts -- exact terms of art;
     2. a direct lookup of every section the plan names (filtered to that section number,
        then to the named law) -- the step that surfaces, say, section 15 of the Contracts Law
        for a fact pattern about misrepresentation, which the question's wording alone doesn't;
-    3. at most MAX_PER_SECTION chunks per section, then the cross-encoder
+    3. records `in_scope` rules out are dropped (West Bank orders, drafts, repealed law the plan
+       doesn't name), the rest fused by reciprocal rank;
+    4. at most MAX_PER_SECTION chunks per section, then the cross-encoder
        (legal.retrieval.reranker_model) reranks the pool against the question and the issues;
-    4. up to MAX_LOOKUP_SLOTS slots go to the looked-up sections (and, for issue spotting, one
+    5. up to MAX_LOOKUP_SLOTS slots go to the looked-up sections (and, for issue spotting, one
        to each issue's best hit) whatever their rerank score; the rest go by rerank score.
 
     Falls back to plain embedding order when the reranker can't be loaded."""
+    from docslides.legal.corpus_lexical import lexical_index
     from docslides.legal.retrieval import _reranker
     from docslides.legal_data.corpus_index import CorpusCollection
 
     legal_cfg = get_config().legal
     corpus_cfg = legal_cfg.corpus
+    device = legal_cfg.retrieval.device
+    named_laws = [i.law for i in issues]
     queries = [query_text] + [f"{i.law} {i.issue}" for i in issues]
     lookups = [(i.law, number) for i in issues for number in section_numbers(i.sections)[:3]]
     texts = queries + [f"{law} סעיף {number}" for law, number in lookups]
     vectors = embed_texts(
         legal_cfg.retrieval.embedding_model,
         [normalize_for_embedding(t, corpus_cfg.fold_final_letters_for_embedding) for t in texts],
+        device=device,
     )
 
     pool: dict[str, dict] = {}
 
-    def add(hit: dict, rank: int) -> None:
-        kept = pool.setdefault(hit["id"], {**hit, "sources": set(), "fused": 0.0})
-        kept["sources"] |= hit["sources"]
-        kept["fused"] += 1.0 / (60 + rank)
-        kept["distance"] = min(kept["distance"], hit["distance"])
+    def add_all(hits: list[dict], limit: int) -> None:
+        kept_hits = [h for h in hits if in_scope(h["meta"], named_laws)][:limit]
+        for rank, hit in enumerate(kept_hits):
+            kept = pool.setdefault(hit["id"], {**hit, "sources": set(), "fused": 0.0})
+            kept["sources"] |= hit["sources"]
+            kept["fused"] += 1.0 / (60 + rank)
+            kept["distance"] = min(kept["distance"], hit["distance"])
 
     for category in categories:
         path = Path(corpus_cfg.vectordb_dir) / category
@@ -173,14 +227,19 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
         if collection.count() == 0:
             continue
         for qi, vector in enumerate(vectors[: len(queries)]):
-            for rank, hit in enumerate(_hits_from(collection.query(vector, FETCH_K), category, f"q{qi}")):
-                add(hit, rank)
+            result = collection.query(vector, FETCH_K * OUT_OF_SCOPE_MARGIN)
+            add_all(_hits_from(result, category, f"q{qi}"), FETCH_K)
         for li, (law, number) in enumerate(lookups):
             vector = vectors[len(queries) + li]
             result = collection.query(vector, LOOKUP_K, where={"section_number": number})
-            matched = [h for h in _hits_from(result, category, f"l{li}") if same_law(law, h["meta"].get("title", ""))]
-            for rank, hit in enumerate(matched):
-                add(hit, rank)
+            add_all([h for h in _hits_from(result, category, f"l{li}") if same_law(law, h["meta"].get("title", ""))],
+                    LOOKUP_K)
+        lexical = lexical_index(corpus_cfg.vectordb_dir, category) if legal_cfg.retrieval.corpus_lexical else None
+        if lexical is not None:
+            for qi, text in enumerate(queries):
+                k = LEXICAL_K if qi == 0 else LEXICAL_ISSUE_K
+                ranked = lexical.search(text, k * OUT_OF_SCOPE_MARGIN)
+                add_all(_lexical_hits(collection, category, ranked, f"k{qi}"), k)
 
     # One section may split into several chunks; keep its best MAX_PER_SECTION.
     per_section: dict[tuple, int] = {}
@@ -195,7 +254,7 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
     lookup_hits = [h for h in candidates if any(s.startswith("l") for s in h["sources"])]
     head = candidates[:RERANK_POOL]
     head += [h for h in lookup_hits if h not in head]
-    reranker = _reranker(legal_cfg.retrieval.reranker_model) if legal_cfg.retrieval.reranker_model else None
+    reranker = _reranker(legal_cfg.retrieval.reranker_model, device) if legal_cfg.retrieval.reranker_model else None
     if reranker is not None and head:
         rerank_query = query_text + "\n" + "; ".join(f"{i.issue} – {i.law}" for i in issues)
         for hit, score in zip(head, reranker.predict([(rerank_query, h["text"]) for h in head])):
@@ -209,7 +268,7 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
         picked.append(hit)
     if per_issue_slot:
         for qi in range(1, len(queries)):
-            best = next((h for h in ranked if f"q{qi}" in h["sources"]), None)
+            best = next((h for h in ranked if {f"q{qi}", f"k{qi}"} & h["sources"]), None)
             if best is not None and best not in picked and len(picked) < top_k:
                 picked.append(best)
     for hit in ranked:
@@ -298,6 +357,59 @@ def to_retrieval_result(hits: list[dict]) -> RetrievalResult:
         trimmed_chunk_ids=trimmed,
         best_rerank_score=best_score,
     )
+
+
+def _roomiest_gpu() -> str:
+    """"cuda:<i>" for the GPU with the most free memory -- with the LLM split over two GPUs, the
+    one it left more room on -- or plain "cuda"."""
+    try:
+        import torch
+
+        count = torch.cuda.device_count()
+        if count > 1:
+            free = [torch.cuda.mem_get_info(i)[0] for i in range(count)]
+            return f"cuda:{max(range(count), key=free.__getitem__)}"
+    except Exception:  # noqa: BLE001, S110 -- let the library pick
+        pass
+    return "cuda"
+
+
+def warm_up_retrieval() -> str:
+    """Loads the embedder, the reranker and the BM25 indexes before the first question, so it isn't
+    charged for them -- and moves retrieval to the CPU (legal.retrieval.device) when the GPU hasn't
+    room for it beside the LLM. Returns the device retrieval now runs on ("auto" = library default)."""
+    from docslides.legal.corpus_lexical import lexical_index
+    from docslides.legal.retrieval import _reranker
+
+    legal_cfg = get_config().legal
+    retrieval = legal_cfg.retrieval
+    if retrieval.device == "cuda":
+        retrieval.device = _roomiest_gpu()
+
+    def load(device: str | None) -> None:
+        embed_texts(retrieval.embedding_model, ["warm up"], device=device)
+        if retrieval.reranker_model and _reranker(retrieval.reranker_model, device) is None and device != "cpu":
+            _reranker.cache_clear()  # don't keep the failed load
+            raise RuntimeError(f"reranker did not load on {device or 'the default device'}")
+
+    try:
+        load(retrieval.device)
+    except Exception as exc:
+        if retrieval.device == "cpu":
+            raise
+        logger.warning("legal_retrieval_moved_to_cpu", device=retrieval.device, error=f"{type(exc).__name__}: {exc}")
+        retrieval.device = "cpu"
+        try:
+            import torch
+
+            torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001, S110 -- nothing to free without torch/CUDA
+            pass
+        load("cpu")
+    if retrieval.corpus_lexical:
+        for category in legal_cfg.corpus.categories:
+            lexical_index(legal_cfg.corpus.vectordb_dir, category)
+    return retrieval.device or "auto"
 
 
 def retrieve_corpus(query: str, issues: list[EvalIssue]) -> RetrievalResult:

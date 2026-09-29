@@ -149,6 +149,7 @@ class LLMCallSite:
         "legal_retrieval_plan",
         "legal_eval_rewrite",
         "legal_eval_label_check",
+        "legal_eval_scope",
         "legal_eval_repair",
     ]
 

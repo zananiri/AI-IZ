@@ -66,3 +66,43 @@ def test_a_value_followed_by_a_comma_is_still_found_in_the_case_file():
     case_text = "- 3.2.2026, יוסי: נזילה.\n- 20.3.2026, אבי: בוצע. פיקדון 13,000, ערבות 19,500 ש\"ח."
     work_file = "| 3.2.2026 | נזילה |\n| 20.3.2026 | תיקון |\nפיקדון 13,000, ניכויים 8,000 ש\"ח."
     assert eval_cases.unsupported_values(work_file, case_text) == ["8,000"]
+
+
+def test_the_conclusion_written_last_is_moved_to_the_front():
+    text = "לפי סעיף 9(א) לחוק עבודת נשים, אין לפטר עובדת בהריון בלי היתר.\nמסקנה: לא"
+    assert eval_run.place_conclusion(text) == (
+        "לא. לפי סעיף 9(א) לחוק עבודת נשים, אין לפטר עובדת בהריון בלי היתר.", "conclusion_first")
+    # an opening label the reasoning contradicts is overruled by the conclusion
+    assert eval_run.place_conclusion("כן. המבטח איחר, חלפו 69 יום.\n**מסקנה:** כן") == (
+        "כן. המבטח איחר, חלפו 69 יום.", "conclusion_first")
+    assert eval_run.place_conclusion("לא, המבטח איחר.\n\nמסקנה: כן.") == ("כן. המבטח איחר.", "opener_overruled")
+    assert eval_run.place_conclusion("המעסיק רשאי.") == ("המעסיק רשאי.", None)  # no conclusion line
+    assert eval_run.place_conclusion("מסקנה: כן") == ("מסקנה: כן", None)  # nothing but the line
+
+
+def test_leaked_template_tokens_are_removed():
+    assert eval_run.strip_template_tokens("הפרת חוזה – סעיף 15. </start_of_turn>") == "הפרת חוזה – סעיף 15."
+    assert eval_run.strip_template_tokens("תשובה רגילה") == "תשובה רגילה"
+
+
+def test_amendment_questions_are_told_to_check_the_version_but_repair_questions_are_not():
+    assert eval_run.TEMPORAL_RE.search("על אילו חוזים חל הנוסח החדש של סעיף 25(א) שנקבע בתיקון מס' 3?")
+    assert eval_run.TEMPORAL_RE.search("האם תמיד היה ניתן לעשות צוואות הדדיות?")
+    assert not eval_run.TEMPORAL_RE.search("תוך כמה זמן חייב משכיר לתקן ליקוי? מה דין תיקון על חשבון השוכר?")
+
+
+class _Scope:
+    def __init__(self, verdict=None):
+        self.verdict = verdict
+
+    async def complete_json(self, *_, **__):
+        if self.verdict is None:
+            raise RuntimeError("server error")
+        return self.verdict
+
+
+def test_a_failed_scope_check_never_turns_a_question_into_a_refusal():
+    assert asyncio.run(eval_run.check_scope(_Scope(), "ש")).scope == "in_scope"
+    flagged = eval_run.ScopeVerdict(scope="foreign_law", note="דין קליפורניה")
+    assert asyncio.run(eval_run.check_scope(_Scope(flagged), "ש")) is flagged
+    assert set(eval_run.SCOPE_NOTES) == set(eval_run.ScopeVerdict.model_fields["scope"].annotation.__args__) - {"in_scope"}

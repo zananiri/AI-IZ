@@ -30,15 +30,19 @@ of law).
         --judged data/legal/eval/bulk500/judged_rag.jsonl \
         --json-out data/legal/eval/bulk500/report_rag.json
 
-Per question: (1) the answering model lists the issues and the laws/sections it believes
-govern them (legal_eval_plan, thinking off); (2) retrieve_planned searches on the question and on
+Per question: (0) a first reading flags questions outside the index -- foreign law, rulings or
+statistics, a false premise, a law or section that doesn't exist, a harmful request -- and the answer
+call gets a note on how to handle that case (legal_eval_scope); (1) the answering model lists the
+issues and the laws/sections it believes govern them (legal_eval_plan, thinking off), and a question
+about which version of a law applies also searches for commencement and transitional provisions; (2) retrieve_planned searches on the question and on
 each issue (dense + BM25), looks the named sections up directly, drops out-of-scope records (West
 Bank orders, drafts, repealed law), keeps at most two chunks per section and reranks with
 legal.retrieval.reranker_model; (3) the answer call (ANSWER_SYSTEM); (4) an empty answer is
 retried without thinking, one containing other scripts is rewritten into Hebrew (legal_eval_rewrite,
-up to two passes), a כן/לא opener the instructions didn't ask for is dropped, and a rule_conclusion
-answer with no label gets the one its explanation supports (legal_eval_label_check; a label the
-model wrote is kept). The plan and any repairs
+up to two passes), a כן/לא opener the instructions didn't ask for is dropped, a rule_conclusion answer
+-- written explanation first, ending "מסקנה: כן/לא" -- gets that conclusion moved to the front (one with
+no conclusion line and no label gets the label its explanation supports, legal_eval_label_check), and
+leaked chat-template tokens are removed. The plan and any repairs
 are recorded on the answers.jsonl row.
 
 Reasoning: every LLM call is written in full -- prompt, reasoning ("thinking"), output, timing --
@@ -130,6 +134,109 @@ question exactly as asked? Judge what the explanation says, not whether it is co
 <explanation>
 {explanation}
 </explanation>"""
+
+# rule_conclusion answers: the explanation first, the label last. In the 29 Sept full 27B run, 15 of 72
+# labels were wrong and 8 of those answers argued the right conclusion after a wrong opening word: a
+# label written first commits the model before it has reasoned. A second model reading the explanation
+# (check_label) broke more labels than it fixed, so here the answering model writes the conclusion
+# itself, last, and place_conclusion moves it to the front where score.py reads it.
+CONCLUSION_NOTE = """Write the explanation first. Then end the answer with one separate last line, \
+exactly: מסקנה: כן  or  מסקנה: לא -- the answer to the question exactly as asked (if the question \
+asks "can he ... without X?" and he cannot, the answer is לא). Do not open the answer with כן or לא: \
+the conclusion line is moved to the front for you."""
+_CONCLUSION_RE = re.compile(r"\n?[ \t>*_-]*מסקנה[ \t*_]*[:：][ \t*_]*(כן|לא)\b[^\n]*\s*$")
+
+# A first reading of the question, before retrieval: questions the index can't or mustn't answer.
+# The 29 Sept full 27B run answered 9 of 24 abstention items anyway (California leave law from
+# memory, "section 999" with another section's text, an invented summary of a ruling).
+SCOPE_PROMPT = """Classify this question put to a legal assistant whose only source is an index of \
+ISRAELI legislation (laws and regulations -- no case law, news, statistics or personal data).
+
+- in_scope: an ordinary question about Israeli law, even a hard or hypothetical one
+- foreign_law: it asks about the law of another country
+- not_in_legislation: it asks for court rulings or case numbers, news, speeches, statistics, or \
+personal details of real people
+- false_premise: it asserts a legal rule, period or amendment that is wrong, and asks a question \
+built on it
+- nonexistent_law_or_section: it names a law that does not exist, or a section number the named \
+law does not have (for example section 250 of a law of about 60 sections)
+- harmful_request: it asks for help deceiving, threatening, forging, hiding assets or evading the law
+
+Choose in_scope unless you are sure. In note, say in a few Hebrew words what is wrong (empty for \
+in_scope).
+
+<question>{question}</question>"""
+
+SCOPE_NOTES = {
+    "foreign_law": "The question appears to ask about foreign law, which the index does not cover. If so, "
+                   "say so in one or two sentences and do not describe the foreign law from memory; you may "
+                   "name the Israeli rule on the same subject if <context> states it.",
+    "not_in_legislation": "The question appears to ask for material the index does not hold (rulings, case "
+                          "numbers, news, statistics or personal details). If so, say plainly that it is not "
+                          "available here and never invent a ruling, number or fact; add the relevant "
+                          "statutory rule only if <context> states it.",
+    "false_premise": "The question may rest on a wrong premise. If the premise is wrong, open by saying so "
+                     "and give the correct rule from <context>; do not answer as if the premise were true.",
+    "nonexistent_law_or_section": "The question may name a law or section that does not exist. If <context> "
+                                  "does not contain it, say it does not exist in the index, do not describe "
+                                  "its content, and point to the provision that does govern the subject if "
+                                  "<context> has one.",
+    "harmful_request": "The request may ask for help deceiving, threatening or evading the law. If so, "
+                       "refuse briefly and describe the lawful alternative.",
+}
+
+# Questions about which version of a law applies scored 25% in the 29 Sept full 27B run: the model
+# answered from the current text or from memory ("manslaughter still exists", "Amendment 3 did not
+# change s.25(a)"). Retrieval also looks for the commencement and transitional provisions.
+TEMPORAL_RE = re.compile(r"תיקון מס|בתיקון|לפני התיקון|נוסח(?:ו)? (?:החדש|הקודם)|בוטל|הוראת השעה|הוראת שעה|"
+                         r"נכנס(?:ה)? לתוקף|כיום|בעבר|תמיד היה|תמיד הייתה|תמיד ניתן")
+TEMPORAL_ISSUE = "תחילה תחולה והוראות מעבר"
+TEMPORAL_NOTE = """This question is about which version of a law applies, or what changed and when. Look \
+in <context> for the commencement (תחילה), application (תחולה) and transitional (הוראות מעבר) provisions \
+and for amending laws (תיקון). Say which version applies to the date or facts in the question and why. If \
+<context> does not show when the provision changed, say so and name the version to check. Never state from \
+memory that a law, offence or section still exists, or that an amendment left a section unchanged."""
+
+_TEMPLATE_TOKEN_RE = re.compile(r"\s*</?(?:start|end)_of_turn>\s*")
+
+
+class ScopeVerdict(BaseModel):
+    scope: Literal["in_scope", "foreign_law", "not_in_legislation", "false_premise",
+                   "nonexistent_law_or_section", "harmful_request"]
+    note: str = ""
+
+
+def place_conclusion(text: str) -> tuple[str, str | None]:
+    """A rule_conclusion answer ending "מסקנה: כן/לא" -> (label first, explanation, no conclusion line),
+    and the repair made. An opening label the model wrote anyway is dropped: the conclusion, written
+    after the reasoning, wins. (text, None) when there is no conclusion line."""
+    match = _CONCLUSION_RE.search(text)
+    if not match:
+        return text, None
+    label, body = match.group(1), text[: match.start()].rstrip()
+    opener, rest = split_yes_no_opener(body)
+    if opener is not None:
+        body = rest.lstrip()
+    if not body:
+        return text, None
+    return f"{label}. {body}", ("conclusion_first" if opener in (None, label) else "opener_overruled")
+
+
+def strip_template_tokens(text: str) -> str:
+    return _TEMPLATE_TOKEN_RE.sub(" ", text).strip() if _TEMPLATE_TOKEN_RE.search(text) else text
+
+
+async def check_scope(qwen, qtext: str) -> ScopeVerdict:
+    """in_scope on failure: a failed check must never turn an ordinary question into a refusal."""
+    try:
+        return await qwen.complete_json(
+            [ChatMessage("user", SCOPE_PROMPT.format(question=qtext))],
+            LLMCallSite("legal_eval_scope"), schema=ScopeVerdict,
+            sampling=SamplingParams(temperature=0.0, max_tokens=256), enable_thinking=False,
+        )
+    except Exception:  # noqa: BLE001
+        return ScopeVerdict(scope="in_scope")
+
 
 # Categories whose instructions don't ask for a yes/no answer: a bare כן/לא opener there (55 of 66
 # of Gemma 12B's such answers) is dropped.
@@ -293,13 +400,26 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
     repairs: list[str] = []
     with trace.collect(job_id=q["id"]):
         spotting = q.get("category") == "issue_spotting"
+        conclusion = q.get("category") == "rule_conclusion"
+        temporal = q.get("category") == "temporal_amendment" or bool(TEMPORAL_RE.search(q["question"]))
+        scope = await check_scope(qwen, qtext)
         issues = await plan_issues(qwen, q, max_issues=6 if spotting else 3)
-        hits = retrieve_planned(qtext, issues, categories, ISSUE_SPOTTING_TOP_K if spotting else top_k,
+        search_issues = list(issues)
+        if temporal and issues:
+            search_issues.append(EvalIssue(issue=TEMPORAL_ISSUE, law=issues[0].law))
+        hits = retrieve_planned(qtext, search_issues, categories, ISSUE_SPOTTING_TOP_K if spotting else top_k,
                                 per_issue_slot=spotting)
         user = f"<instructions>{q['instructions']}</instructions>\n\n<question>{qtext}</question>\n\n" \
                f"<context>\n{render_context(hits)}\n</context>"
-        if spotting:
-            user += f"\n\n{ISSUE_SPOTTING_NOTE}"
+        notes = [ISSUE_SPOTTING_NOTE] if spotting else []
+        if scope.scope != "in_scope":
+            notes.append(SCOPE_NOTES[scope.scope] + (f" (First reading: {scope.note})" if scope.note else ""))
+        if temporal:
+            notes.append(TEMPORAL_NOTE)
+        if conclusion:
+            notes.append(CONCLUSION_NOTE)
+        if notes:
+            user += "\n\n" + "\n\n".join(notes)
         messages = [ChatMessage("system", ANSWER_SYSTEM), ChatMessage("user", user)]
 
         text = (await qwen.complete_text(
@@ -330,16 +450,23 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
             if label:
                 repairs.append("stray_yes_no_opener")
                 text = rest.lstrip()
-        elif q.get("category") == "rule_conclusion" and text:
-            text, repair = await check_label(qwen, qtext, text)
+        elif conclusion and text:
+            text, repair = place_conclusion(text)
+            if repair is None:  # no conclusion line: add a missing label as before
+                text, repair = await check_label(qwen, qtext, text)
             if repair:
                 repairs.append(repair)
+        cleaned = strip_template_tokens(text)
+        if cleaned != text:
+            repairs.append("template_token")
+            text = cleaned
     return {
         "id": q["id"], "answer": text,
         "retrieved": [{"category": h["category"], "distance": round(h["distance"], 4),
                         "score": round(h["score"], 4) if "score" in h else None,
                         "title": h["meta"].get("title"), "section": h["meta"].get("section_number")} for h in hits],
         "plan": [i.model_dump() for i in issues],
+        "scope": scope.model_dump(),
         "repairs": repairs,
     }
 

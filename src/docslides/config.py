@@ -42,6 +42,7 @@ class ThinkingDefaults(BaseModel):
     legal_retrieval_plan: bool = False
     legal_eval_rewrite: bool = False
     legal_eval_label_check: bool = False
+    legal_eval_scope: bool = False
     legal_eval_repair: bool = False
 
 

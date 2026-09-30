@@ -143,3 +143,17 @@ def test_holding_starts_a_fresh_chunk_without_overlap():
     units[4].holding_start = True
     chunks = pack(units, min_tokens=400, max_tokens=600, overlap_tokens=80)
     assert [len(c) for c in chunks] == [4, 2] and all(u.holding for u in chunks[1])
+
+
+def test_header_with_the_crawl_layout_court_and_case_number_split_over_lines():
+    """The layout of the real dataset (row Id 159588): court line and case number split, padding lines."""
+    from israeli_caselaw_ingest.encoding import normalize
+
+    raw = ('\n\n\n \n\n  \n\n  \nבבית המשפט\n  העליון\n\n  \n\n \n\n\n\n \n\n  \n\n  \nבג"ץ \n  5856/03 - י\'\n\n'
+           '  \n\n  \nבפני:    \n\n  \n\n  \nכבוד השופטת א\' חיות\n\n  \n\n \n\n  \n\n  \nהעותר:\n\n  \n\n  \nיורם יזדי\n\n'
+           '  \n\nנ ג ד\n\n  \nהמשיבה:\n\n  \nפרקליטות המדינה\n\n  \nהחלטה\n\n  \n1. העתירה נדחית.')
+    h = parse_header(normalize(raw))
+    assert h.parsed
+    assert h.court == "בבית המשפט העליון"
+    assert h.judges == ["א' חיות"]
+    assert h.parties == ["יורם יזדי", "פרקליטות המדינה"]

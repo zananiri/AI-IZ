@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 import warnings
 
-from .state import log
+from .state import log, quiet_hf
 
 _WORD_RE = re.compile(r"\w+|[^\w\s]")
 
@@ -22,6 +22,7 @@ class RegexTokenizer:
 
 class HFTokenizer:
     def __init__(self, model_name: str):
+        quiet_hf()
         from transformers import AutoTokenizer
 
         self.name = model_name

@@ -8,7 +8,7 @@ import re
 
 import numpy as np
 
-from .state import log
+from .state import log, quiet_hf
 
 
 def instructions(cfg: dict) -> tuple[str, str]:
@@ -42,6 +42,7 @@ class HashEncoder:
 class STEncoder:
     def __init__(self, model_name: str, device: str = "auto", fp16: bool = True, max_seq_length: int = 1024,
                  local_dir=None):
+        quiet_hf()
         import torch
         from sentence_transformers import SentenceTransformer
 

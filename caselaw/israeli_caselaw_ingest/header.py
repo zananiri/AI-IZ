@@ -22,11 +22,12 @@ import re
 from dataclasses import dataclass, field
 
 COURT_RE = re.compile(r"^\s*(?:ב?בית[\s\-]+(?:ה)?משפט[\s\-]+העליון|in the supreme court)", re.I)
+COURT_SPLIT_RE = re.compile(r"^\s*ב?בית[\s\-]+(?:ה)?משפט\s*$")
 SITTING_RE = re.compile(r"^\s*(?:בשבתו|sitting as)", re.I)
 PANEL_RE = re.compile(r"^\s*(?:בפני|לפני|before)\s*:?\s*(.*)$", re.I)
 VERSUS_RE = re.compile(r"^\s*[-–]?\s*(?:נ\s*ג\s*ד|נגד|נ'|v\.?|vs\.?|versus|against)\s*[-–]?\s*$", re.I)
 ROLE_RE = re.compile(
-    r"^\s*(?:ה?(?:עותר|מערער|מבקש|משיב|נאשם|תובע|נתבע|מאשים|מאשימה|עורר|נילון)(?:ת|ים|ות)?"
+    r"^\s*(?:ה?(?:עותר|מערער|מבקש|משיב|נאשם|תובע|נתבע|מאשים|מאשימה|עורר|נילון)(?:ת|ה|ים|ות)?"
     r"(?:\s+(?:ב|מס['׳]?\s*)?\d+)?|(?:the\s+)?(?:petitioners?|appellants?|applicants?|respondents?))\s*:?\s*", re.I)
 ROLE_ONLY_RE = re.compile(ROLE_RE.pattern + r"$", re.I)
 COUNSEL_RE = re.compile(r"^\s*(?:בשם|ב\"כ|ב״כ|ע\"י|ע״י|עו\"ד|עו״ד|על ידי|for the|on behalf of|תאריך|תאריכי|ישיבה|בקשה ל|ערעור על|עתירה ל|מ?לשכת)", re.I)
@@ -37,6 +38,8 @@ FIRST_PARA_RE = re.compile(r"^\s*1\.\s")
 JUDGE_TITLE_RE = re.compile(
     r"כבוד|כב['׳]|ה?שופט(?:ת|ים)?|ה?נשיא(?:ה)?|המשנה\s+ל?נשיא(?:ה)?|ממלא(?:ת)?\s+מקום|ה?רשמ(?:ת|ים)?|"
     r"\bjustices?\b|\bpresident\b|\bdeputy\b|\bhon\.?\b|\bthe\b|\bregistrar\b|\(בדימ['׳]?\)|:", re.I)
+# The case number under the court line, whole or split: 'בג"ץ 5856/03', or 'בג"ץ' then '5856/03 - י\''.
+CITATION_LINE_RE = re.compile(r"^\s*(?:[א-ת]{1,4}[\"״][א-ת]{1,2}\s*(?:\d|$)|\d{1,6}/\d{2,4}\b)")
 _ITEM_RE = re.compile(r"(?:^|\s)\d{1,2}\s*[.)]\s+")
 
 
@@ -78,16 +81,31 @@ def clean_parties(lines: list[str]) -> list[str]:
     return [n for n in names if len(n) > 1][:30]
 
 
+def _next_nonblank(lines: list[tuple[int, str]], i: int) -> int | None:
+    for j in range(i + 1, min(i + 4, len(lines))):
+        if lines[j][1].strip():
+            return j
+    return None
+
+
 def parse_header(text: str, max_chars: int = 6000) -> Header:
     lines = _lines_with_offsets(text, max_chars)
     header = Header()
     court_idx = panel_idx = versus_idx = title_idx = None
     for i, (_, line) in enumerate(lines):
-        if court_idx is None and COURT_RE.match(line):
+        if court_idx is None and (COURT_RE.match(line) or COURT_SPLIT_RE.match(line)):
+            nxt = _next_nonblank(lines, i)
+            if COURT_RE.match(line):
+                header.court = line.strip()
+            elif nxt is not None and lines[nxt][1].strip().startswith("העליון"):
+                # The crawl's layout splits the court line: "בבית המשפט" / "העליון".
+                header.court = f"{line.strip()} {lines[nxt][1].strip()}"
+                nxt = _next_nonblank(lines, nxt)
+            else:
+                continue
             court_idx = i
-            header.court = line.strip()
-            if i + 1 < len(lines) and SITTING_RE.match(lines[i + 1][1]):
-                header.court += " " + lines[i + 1][1].strip()
+            if nxt is not None and SITTING_RE.match(lines[nxt][1]):
+                header.court += " " + lines[nxt][1].strip()
         elif panel_idx is None and PANEL_RE.match(line):
             panel_idx = i
         elif versus_idx is None and VERSUS_RE.match(line):
@@ -103,16 +121,17 @@ def parse_header(text: str, max_chars: int = 6000) -> Header:
     if panel_idx is not None:
         first = PANEL_RE.match(lines[panel_idx][1]).group(1)
         panel = [first] if first.strip() else []
-        for _, line in lines[panel_idx + 1:]:
-            stripped = line.strip()
+        panel_end = panel_idx + 1
+        for j in range(panel_idx + 1, len(lines)):
+            stripped = lines[j][1].strip()
             if not stripped:
                 continue
             if JUDGE_TITLE_RE.search(stripped) and not ROLE_RE.match(stripped) and not VERSUS_RE.match(stripped):
                 panel.append(stripped)
+                panel_end = j + 1  # blank lines between judges don't shift where the parties start
             else:
                 break
         header.judges = [j for j in (clean_judge(p) for p in panel) if j and len(j) < 60]
-        panel_end = panel_idx + len(panel) + (0 if first.strip() else 1)
     else:
         panel_end = (court_idx + 1) if court_idx is not None else 0
 
@@ -120,7 +139,7 @@ def parse_header(text: str, max_chars: int = 6000) -> Header:
         end = title_idx if title_idx is not None else min(versus_idx + 12, len(lines))
         side_a = [line for _, line in lines[panel_end:versus_idx] if not PANEL_RE.match(line)]
         # Skip the citation line(s) right under the court line (בג"ץ 5856/03).
-        side_a = [line for line in side_a if not re.match(r"^\s*[א-ת]{1,4}[\"״][א-ת]{1,2}\s*\d", line)]
+        side_a = [line for line in side_a if not CITATION_LINE_RE.match(line) and "העליון" not in line]
         side_b = [line for _, line in lines[versus_idx + 1:end]]
         header.parties = clean_parties(side_a) + clean_parties(side_b)
 

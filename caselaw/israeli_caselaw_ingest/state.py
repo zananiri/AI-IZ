@@ -11,6 +11,18 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 
+def quiet_hf() -> None:
+    """No per-tensor "Loading weights" progress bars (a thousand log lines per model load on Kaggle)."""
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    try:
+        from transformers.utils import logging as hf_logging
+
+        hf_logging.disable_progress_bar()
+        hf_logging.set_verbosity_error()
+    except Exception:  # noqa: BLE001 -- transformers missing or moved: only cosmetic
+        pass
+
+
 def log(message: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
 

@@ -165,9 +165,10 @@ These are estimates to check against the dry run.
 
 - **Chunk count:** the filtered corpus is a few hundred thousand documents, which gives a few
   million chunks.
-- **Embedding time:** bge-m3 on a T4 in fp16 manages a few hundred chunks per second, so the
-  full corpus takes several sessions. `embed` prints its own estimate, needs `--yes` above
-  3 hours, and resumes shard by shard.
+- **Embedding time:** bge-m3 on a T4 in fp16 manages about 70 chunks per second (measured on
+  the real data; each ~600-token chunk is ~0.35 TFLOP). Up to a million chunks is about 4 hours
+  on one T4, or 2 on Kaggle's two. `embed` prints its own estimate, needs `--yes` above 3 hours,
+  and resumes shard by shard.
 - **Vector store:** use LanceDB, which is the default. FAISS `IndexHNSWFlat` keeps every vector
   in RAM as float32, which is more than a free session's 12 GB for the full corpus.
 

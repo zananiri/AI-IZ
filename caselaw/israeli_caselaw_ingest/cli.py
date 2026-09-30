@@ -57,14 +57,22 @@ def chunk(config: ConfigOpt = None, root: RootOpt = None, sample_n: SampleOpt = 
 @app.command()
 def embed(config: ConfigOpt = None, root: RootOpt = None, sample_n: SampleOpt = None, force: ForceOpt = False,
           yes: Annotated[bool, typer.Option("--yes", help="go ahead even if the estimate exceeds the limit")] = False,
-          store: Annotated[Optional[str], typer.Option("--store", help="lancedb | faiss")] = None):
-    """Embed chunks (resumable shards) and build the vector store; also builds BM25."""
+          store: Annotated[Optional[str], typer.Option("--store", help="lancedb | faiss")] = None,
+          shard_stride: Annotated[int, typer.Option("--shard-stride", help="GPU workers: how many run at once")] = 1,
+          shard_offset: Annotated[int, typer.Option("--shard-offset", help="GPU workers: this worker's index")] = 0,
+          device: Annotated[Optional[str], typer.Option("--device", help="e.g. cuda:1 (default: embed.device)")] = None,
+          no_store: Annotated[bool, typer.Option("--no-store", help="only encode shards (GPU workers)")] = False):
+    """Embed chunks (resumable shards) and build the vector store; also builds BM25.
+
+    Two GPUs: run `embed --shard-stride 2 --shard-offset K --device cuda:K --no-store` for K = 0, 1
+    at the same time, then a plain `embed` to build the store."""
     from .embed import run_embed
     from .search import run_bm25
 
     cfg = _cfg(config, root, sample_n)
-    run_embed(cfg, yes=yes, force=force, store=store)
-    if cfg["bm25"].get("enabled", True):
+    run_embed(cfg, yes=yes, force=force, store=store, shard_stride=shard_stride, shard_offset=shard_offset,
+              device=device, build_store=not no_store)
+    if cfg["bm25"].get("enabled", True) and not no_store:
         run_bm25(cfg, force=force)
 
 

@@ -211,4 +211,4 @@ Each is a `legal.corpus` switch, off by default, so one can be measured at a tim
 
 The 19 doctrine cards are drafts (`status: draft_needs_lawyer_review`): have a lawyer check them before
 reporting a run that uses them. `ab_fixes.py` runs ten failed 29 Sept questions, one per root cause,
-through each variant on your own computer (Gemma 3 12B, no judge, by default) and writes `comparison.md`.
+through each variant on your own computer (Gemma 4 12B, no judge, by default) and writes `comparison.md`.

@@ -113,3 +113,19 @@ def test_sample_n_keeps_the_first_n(cfg):
     result = run_filter(cfg)
     assert result["kept"] == 40
     assert paths_for(cfg).work.name == "sample_40"
+
+
+def test_two_gpu_workers_then_store(cfg):
+    make_dataset(dataset_path(cfg), n=300)
+    for stage in (run_filter, run_clean, run_chunk):
+        stage(cfg)
+    cfg["embed"]["keep_npy_shards"] = False
+    out = paths_for(cfg).embeddings
+    run_embed(cfg, yes=True, shard_stride=2, shard_offset=0, build_store=False)
+    evens = sorted(p.name for p in out.glob("shard-*.npy"))
+    assert evens and all(int(n[6:11]) % 2 == 0 for n in evens)
+    run_embed(cfg, yes=True, shard_stride=2, shard_offset=1, build_store=False)
+    result = run_embed(cfg, yes=True)                       # every shard present: only builds the store
+    assert result["rows"] == len(_chunks(cfg))
+    assert not list(out.glob("shard-*.npy")) and (out / "id_map.parquet").exists()
+    assert run_embed(cfg)["rows"] == result["rows"]          # done: nothing re-encoded without the .npy files

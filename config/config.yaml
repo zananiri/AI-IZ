@@ -39,7 +39,7 @@ legal:
     base_url: "http://vllm:8000/v1"
     # Qwen3-14B: the same weights docker-compose.yml's vLLM serves (QWEN_MODEL_REPO), so the
     # Legal tab and the general chat share one server. The Ollama path (scripts/setup.*,
-    # docker-compose.portable.yml, .env.local) defaults to gemma3:27b-it-qat instead, with
+    # docker-compose.portable.yml, .env.local) defaults to gemma4:31b (Gemma 4 31B dense) instead, with
     # supports_thinking: false. Qwen3-32B (Qwen/Qwen3-32B-AWQ, qwen3:32b) is the larger Qwen option.
     model: "Qwen/Qwen3-14B-AWQ"
     api_key: "not-needed"
@@ -107,7 +107,7 @@ legal:
     analysis_max_tokens: 4096
   audit_dir: "./data/legal/audit"
   # Evals only: the grading model (legal/evaluation.get_judge_client), on the orchestrator's Ollama.
-  # Neither family under test (qwen3, gemma3) grades itself. DOCSLIDES_LEGAL_JUDGE_MODEL overrides it;
+  # Neither family under test (qwen3, gemma) grades itself. DOCSLIDES_LEGAL_JUDGE_MODEL overrides it;
   # null = the orchestrator grades its own answers.
   judge_model: "gpt-oss:20b"
   # Bulk corpus built from legal_txt/ JSONL by scripts/legal_data/vectorize.py: its own Chroma

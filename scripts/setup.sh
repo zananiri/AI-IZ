@@ -16,12 +16,13 @@
 #   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-14B-AWQ
 #                        (Qwen/Qwen3-32B-AWQ for the larger model)
 #   OLLAMA_MODEL         Ollama path model tag (general + Legal orchestrator).
-#                        default: gemma3:27b-it-qat (~18GB, 4-bit
-#                        quantization-aware, multimodal; ~22GB resident with
-#                        the 16k context). Under 24GB of RAM the default falls
-#                        back to gemma3:12b-it-qat (~9GB), under 12GB to
-#                        gemma3:4b-it-qat. Gemma 3 has no thinking mode, so a
-#                        gemma3 tag also writes *_SUPPORTS_THINKING=false.
+#                        default: gemma4:31b (Gemma 4 31B dense, 4-bit,
+#                        ~20GB; ~25GB resident with the 16k context). Under
+#                        32GB of RAM the default falls back to gemma4:12b
+#                        (Gemma 4 12B), under 12GB to gemma3:4b-it-qat. A
+#                        gemma tag runs with thinking off (Gemma 3 has no
+#                        thinking mode; Gemma 4's stays off so its runs compare
+#                        with the Gemma 3 ones): *_SUPPORTS_THINKING=false.
 #                        qwen3:14b / qwen3:32b still work (thinking on); 32b
 #                        needs ~48GB RAM on a CPU-only host (llama.cpp's CPU
 #                        "repack" buffer, briefly resident while loading, hits
@@ -129,8 +130,8 @@ else
   echo "== [5/7] Ollama path: installing Ollama + pulling the model =="
   LEGAL_CONTEXT_LENGTH="${LEGAL_CONTEXT_LENGTH:-16384}"
   # Linux without an NVIDIA or AMD (ROCm, /dev/kfd) GPU runs the model on the CPU, where
-  # gemma3:27b-it-qat writes ~1 token/s and a Legal answer's longer calls outrun any sensible
-  # timeout: default to gemma3:12b-it-qat there. Macs use Metal and keep the 27B.
+  # gemma4:31b writes ~1 token/s and a Legal answer's longer calls outrun any sensible
+  # timeout: default to gemma4:12b there. Macs use Metal and keep the 31B.
   CPU_ONLY=false
   if [ "$OS_NAME" != "Darwin" ] && [ ! -e /dev/kfd ]; then
     CPU_ONLY=true
@@ -138,7 +139,7 @@ else
   REQUEST_TIMEOUT_S=900
   [ "$CPU_ONLY" = true ] && REQUEST_TIMEOUT_S=3600
   if [ -z "${OLLAMA_MODEL:-}" ]; then
-    OLLAMA_MODEL="gemma3:27b-it-qat"
+    OLLAMA_MODEL="gemma4:31b"
     TOTAL_RAM_GB=0
     if [ "$OS_NAME" = "Darwin" ]; then
       TOTAL_RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
@@ -147,17 +148,17 @@ else
     fi
     if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 12 ]; then
       OLLAMA_MODEL="gemma3:4b-it-qat"
-    elif { [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 24 ]; } || [ "$CPU_ONLY" = true ]; then
-      OLLAMA_MODEL="gemma3:12b-it-qat"
+    elif { [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 32 ]; } || [ "$CPU_ONLY" = true ]; then
+      OLLAMA_MODEL="gemma4:12b"
     fi
-    if [ "$OLLAMA_MODEL" != "gemma3:27b-it-qat" ]; then
+    if [ "$OLLAMA_MODEL" != "gemma4:31b" ]; then
       if [ "$CPU_ONLY" = true ]; then WHY="no NVIDIA/AMD GPU detected (CPU only)"; else WHY="${TOTAL_RAM_GB}GB RAM detected"; fi
-      echo "[note] $WHY -- gemma3:27b-it-qat is too slow or too large here,"
-      echo "       so the Ollama model defaults to $OLLAMA_MODEL. Set OLLAMA_MODEL=gemma3:27b-it-qat to override."
+      echo "[note] $WHY -- gemma4:31b is too slow or too large here,"
+      echo "       so the Ollama model defaults to $OLLAMA_MODEL. Set OLLAMA_MODEL=gemma4:31b to override."
     fi
   fi
   case "$OLLAMA_MODEL" in
-    gemma*) SUPPORTS_THINKING=false ;;  # Gemma 3 has no thinking mode
+    gemma*) SUPPORTS_THINKING=false ;;  # Gemma runs with thinking off (Gemma 3 has none)
     *) SUPPORTS_THINKING=true ;;
   esac
   if ! command -v ollama >/dev/null 2>&1; then

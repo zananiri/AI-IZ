@@ -9,14 +9,14 @@ governing section retrieved; does the answer state the point the 29 Sept answer 
 
 Needs: this repo on main with its Python environment (pip install -e .), the corpus database at
 data/legal_corpus_vectordb (laws/, procedural_rules/; the same one the Kaggle runs use), and Ollama
-running with the model pulled (ollama pull gemma3:12b). By default Gemma 3 12B answers with each fix
-(five arms, no run without fixes -- the reference is the 29 Sept Gemma 27B score) and nothing is judged:
+running with the model pulled (ollama pull gemma4:12b). By default Gemma 4 12B answers with each fix
+(five arms, no run without fixes -- the reference is the 29 Sept Gemma 3 27B score) and nothing is judged:
 send the zip back for grading. About 1-3 minutes per question per arm on one GPU, 1-3 hours in all.
 Re-running resumes: answers already written are kept (--fresh starts over).
 
-    python scripts/legal_data/ab_fixes.py                       # Gemma 12B, the five fix arms, no judge
+    python scripts/legal_data/ab_fixes.py                       # Gemma 4 12B, the five fix arms, no judge
     python scripts/legal_data/ab_fixes.py --arms extract,doctrines
-    python scripts/legal_data/ab_fixes.py --arms baseline,all --model gemma3:27b-it-qat --judge
+    python scripts/legal_data/ab_fixes.py --arms baseline,all --model gemma4:31b --judge
 """
 
 from __future__ import annotations
@@ -145,7 +145,7 @@ def main() -> None:
     p.add_argument("--arms", default=",".join(a for a in ARMS if a != "baseline"),
                    help=f"comma-separated, from: {', '.join(ARMS)} (default: every arm with a fix)")
     p.add_argument("--ids", default=",".join(QUESTIONS), help="a subset of the ten question ids")
-    p.add_argument("--model", default="gemma3:12b", help="the Ollama model that answers")
+    p.add_argument("--model", default="gemma4:12b", help="the Ollama model that answers")
     p.add_argument("--base-url", default="http://localhost:11434")
     p.add_argument("--thinking", action="store_true", help="for a model with a thinking mode (Qwen3); off for Gemma")
     p.add_argument("--context-length", type=int, default=16384, help="Ollama num_ctx, as in the Kaggle runs")

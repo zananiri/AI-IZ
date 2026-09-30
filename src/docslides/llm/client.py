@@ -536,7 +536,7 @@ class QwenClient:
         return LLMTimeoutError(
             f"{self._llm_cfg.model} ({self._backend}) did not finish the '{call_site.name}' step within "
             f"{self._llm_cfg.request_timeout_s:g} s. The model is too slow for this machine: on a CPU without a "
-            "supported GPU use a smaller model (e.g. gemma3:12b-it-qat), or raise the limit with "
+            "supported GPU use a smaller model (e.g. gemma4:12b), or raise the limit with "
             "DOCSLIDES_LLM_REQUEST_TIMEOUT_S / DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S."
         )
 

@@ -64,18 +64,18 @@ they run on; override with `FORCE_BACKEND`/`-ForceBackend`):
 |---|---|---|
 | Hardware | NVIDIA GPU only (24GB-class, e.g. RTX 4090/5090) | Any: CPU, NVIDIA, AMD (ROCm), Apple Silicon (Metal) |
 | Install | Docker image (`vllm/vllm-openai`) | Native host install (not Docker -- see `docker-compose.portable.yml`'s header comment for why, esp. on Mac) |
-| Model | Qwen3-14B AWQ 4-bit (~10GB) via Hugging Face (Qwen3-32B AWQ, ~20GB, for milestone runs) | `gemma3:27b-it-qat` (Gemma 3 27B, 4-bit QAT, ~18GB) via `ollama pull`; `qwen3:14b` / `qwen3:32b` still supported |
+| Model | Qwen3-14B AWQ 4-bit (~10GB) via Hugging Face (Qwen3-32B AWQ, ~20GB, for milestone runs) | `gemma4:31b` (Gemma 4 31B dense, 4-bit, ~20GB) via `ollama pull`; `qwen3:14b` / `qwen3:32b` still supported |
 | Speed | Fastest -- purpose-built for concurrent GPU serving | Slower, especially CPU-only; scales with whatever acceleration the host has |
 | Structured JSON / thinking toggle | `guided_json` extra_body / `chat_template_kwargs` | top-level `format` JSON Schema / `think` field |
 
 Both are driven through the same `src/docslides/llm/client.py` interface --
 nothing above the LLM client needs to know which backend is active.
 
-Under Ollama the default model is Gemma 3 27B (`gemma3:27b-it-qat`, 4-bit
-quantization-aware, multimodal; ~22GB resident with the Legal tab's 16k context);
-`scripts/setup.*` fall back to `gemma3:12b-it-qat` under 24GB of RAM and
-`gemma3:4b-it-qat` under 12GB. Gemma 3 has no thinking mode, so the setup scripts
-also write `DOCSLIDES_LLM_SUPPORTS_THINKING=false` /
+Under Ollama the default model is Gemma 4 31B dense (`gemma4:31b`, 4-bit; ~25GB
+resident with the Legal tab's 16k context); `scripts/setup.*` fall back to Gemma 4 12B
+(`gemma4:12b`) under 32GB of RAM and `gemma3:4b-it-qat` under 12GB. Gemma runs with
+thinking off (Gemma 3 has no thinking mode, and Gemma 4's stays off so its results compare
+with the earlier Gemma 3 runs), so the setup scripts also write `DOCSLIDES_LLM_SUPPORTS_THINKING=false` /
 `DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (every call
 then goes out with thinking off). Under vLLM the default stays Qwen3-14B AWQ.
 Qwen3 still works under Ollama (`qwen3:14b`, ~9GB, with thinking on).
@@ -125,12 +125,12 @@ Re-running either script is safe -- already-downloaded files are left in place.
 
 ```bash
 # macOS/Linux
-./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_MODEL=gemma3:27b-it-qat / LEGAL_CONTEXT_LENGTH=16384
+./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_MODEL=gemma4:31b / LEGAL_CONTEXT_LENGTH=16384
 ```
 
 ```powershell
 # Windows
-.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaModel gemma3:27b-it-qat / -LegalContextLength 16384
+.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaModel gemma4:31b / -LegalContextLength 16384
 ```
 
 When the Ollama backend is selected, the script writes `.env.local` with the
@@ -419,13 +419,13 @@ The Israeli legal eval set (`legal_txt/Evals/israeli_legal_eval.zip`) runs again
 
 | Notebook | Where | What |
 |---|---|---|
-| `notebooks/colab_legal_eval_qwen_gemma.ipynb` | Google Colab, free T4 | qwen3:14b and gemma3:12b answer the same 100 questions + 5 cases. **No judging**: answers, full reasoning traces (`llm_trace/`, `reasoning_report*.md`), judge-free scores and a summary, written to Google Drive as it goes (resumable) |
-| `notebooks/kaggle_legal_eval_gemma27b.ipynb` | Kaggle, 2× T4 | gemma3:27b-it-qat on the same 100 questions + 5 cases, with retrieval on the GPU and BM25; **no judging**. Prints a judge-free comparison with the 29 Sept gemma3:12b run (multiple choice, yes/no labels, governing section retrieved, out-of-scope sources, timing) |
+| `notebooks/colab_legal_eval_qwen_gemma.ipynb` | Google Colab, free T4 | qwen3:14b and gemma4:12b answer the same 100 questions + 5 cases. **No judging**: answers, full reasoning traces (`llm_trace/`, `reasoning_report*.md`), judge-free scores and a summary, written to Google Drive as it goes (resumable) |
+| `notebooks/kaggle_legal_eval_gemma27b.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases, with retrieval on the GPU and BM25; **no judging**. Prints a judge-free comparison with the 29 Sept gemma3:12b run (multiple choice, yes/no labels, governing section retrieved, out-of-scope sources, timing) |
 | `notebooks/kaggle_legal_eval_bulk500.ipynb` | Kaggle, 2× T4 | answer + judge + score; qwen3:14b by default (qwen3:32b for milestone runs) |
 | `notebooks/kaggle_legal_eval_dictalm.ipynb` | Kaggle, 2× T4 | the same test with DictaLM 3.0 answering |
 
 The judge is `legal.judge_model` (default `gpt-oss:20b`, overridden by `DOCSLIDES_LEGAL_JUDGE_MODEL`): a
-family other than the models under test, so neither qwen3 nor gemma3 grades its own answers. Saved answers
+family other than the models under test, so neither qwen3 nor gemma grades its own answers. Saved answers
 can be re-judged without re-answering: `score.py prepare`, then `scripts/legal_data/eval_run.py judge`,
 then `score.py report` (see `eval_run.py`'s docstring). `scripts/legal_data/check_corpus_coverage.py`
 checks every law and section the gold answers cite against the installed corpus.

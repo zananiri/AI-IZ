@@ -27,11 +27,11 @@
 
 .PARAMETER OllamaModel
     Model tag to pull when the Ollama backend is selected (general chat model
-    + Legal tab orchestrator). Default: gemma3:27b-it-qat (~18GB, 4-bit
-    quantization-aware, multimodal; ~22GB resident with the 16k context).
-    Under 24GB of RAM it falls back to gemma3:12b-it-qat (~9GB), under 12GB
-    to gemma3:4b-it-qat. Gemma 3 has no thinking mode, so a gemma3 tag also
-    writes *_SUPPORTS_THINKING=false. qwen3:14b / qwen3:32b still work
+    + Legal tab orchestrator). Default: gemma4:31b (Gemma 4 31B dense, 4-bit,
+    ~20GB; ~25GB resident with the 16k context). Under 32GB of RAM it falls
+    back to gemma4:12b (Gemma 4 12B), under 12GB to gemma3:4b-it-qat. A gemma
+    tag runs with thinking off (Gemma 3 has no thinking mode; Gemma 4's stays
+    off so its runs compare with the Gemma 3 ones): *_SUPPORTS_THINKING=false. qwen3:14b / qwen3:32b still work
     (thinking on); qwen3:32b's llama.cpp CPU "repack" step needs a second
     ~20GB buffer while loading, so on a CPU-only host under ~48GB it fails
     with "std::bad_alloc" -- which makes the chat/Legal tabs look like they
@@ -47,7 +47,7 @@
 .EXAMPLE
     .\scripts\setup.ps1 -ModelsDir D:\models -SkipMineru
 .EXAMPLE
-    .\scripts\setup.ps1 -ForceBackend ollama -OllamaModel gemma3:12b-it-qat
+    .\scripts\setup.ps1 -ForceBackend ollama -OllamaModel gemma4:12b
 #>
 param(
     [string]$ModelsDir = "./models",
@@ -56,7 +56,7 @@ param(
     [string]$QwenModelRepo = "Qwen/Qwen3-14B-AWQ",
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
-    [string]$OllamaModel = "gemma3:27b-it-qat",
+    [string]$OllamaModel = "gemma4:31b",
     [int]$LegalContextLength = 16384
 )
 
@@ -198,13 +198,13 @@ if (-not $Backend) {
 }
 Write-Host "selected backend: $Backend"
 
-# On the Ollama (CPU/no-NVIDIA) path, gemma3:27b-it-qat (~18GB + the 16k
-# context) stays the model unless the host has under 24GB of RAM (then
-# gemma3:12b-it-qat) or under 12GB (gemma3:4b-it-qat), unless -OllamaModel was
+# On the Ollama (CPU/no-NVIDIA) path, gemma4:31b (~20GB + the 16k
+# context) stays the model unless the host has under 32GB of RAM (then
+# gemma4:12b) or under 12GB (gemma3:4b-it-qat), unless -OllamaModel was
 # passed explicitly -- see the header comment.
 # Without a GPU Ollama can use (an NVIDIA or AMD Radeon card), everything runs on the CPU:
-# gemma3:27b-it-qat then writes ~1 token/s on a laptop CPU and a Legal answer's longer calls
-# (6k-token prompts) run past any sensible timeout, so the CPU-only default is gemma3:12b-it-qat.
+# gemma4:31b then writes ~1 token/s on a laptop CPU and a Legal answer's longer calls
+# (6k-token prompts) run past any sensible timeout, so the CPU-only default is gemma4:12b.
 $CpuOnly = $false
 if ($Backend -eq "ollama") {
     try {
@@ -219,18 +219,18 @@ if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel"
     } catch {}
     if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 12) {
         $OllamaModel = "gemma3:4b-it-qat"
-    } elseif (($TotalRamGB -gt 0 -and $TotalRamGB -lt 24) -or $CpuOnly) {
-        $OllamaModel = "gemma3:12b-it-qat"
+    } elseif (($TotalRamGB -gt 0 -and $TotalRamGB -lt 32) -or $CpuOnly) {
+        $OllamaModel = "gemma4:12b"
     }
-    if ($OllamaModel -ne "gemma3:27b-it-qat") {
+    if ($OllamaModel -ne "gemma4:31b") {
         $why = if ($CpuOnly) { "no NVIDIA/AMD GPU detected (CPU only)" } else { "$TotalRamGB GB RAM detected" }
-        Write-Host "[note] $why -- gemma3:27b-it-qat is too slow or too large here," -ForegroundColor Yellow
-        Write-Host "       so the model defaults to $OllamaModel. Pass -OllamaModel gemma3:27b-it-qat to override." -ForegroundColor Yellow
+        Write-Host "[note] $why -- gemma4:31b is too slow or too large here," -ForegroundColor Yellow
+        Write-Host "       so the model defaults to $OllamaModel. Pass -OllamaModel gemma4:31b to override." -ForegroundColor Yellow
     }
 }
 # One model call may take this long (seconds). config.yaml's limits (600/900) are sized for a GPU.
 $RequestTimeoutS = if ($CpuOnly) { 3600 } else { 900 }
-# Gemma 3 has no thinking mode: every call goes out with thinking off.
+# Gemma runs with thinking off (Gemma 3 has no thinking mode; Gemma 4 matches it).
 $SupportsThinking = if ($OllamaModel -like "gemma*") { "false" } else { "true" }
 Write-Host ""
 

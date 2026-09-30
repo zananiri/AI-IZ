@@ -111,6 +111,7 @@ embed:
   lancedb_index_min_rows: 100000    # build an IVF_PQ index at or above this many rows
   faiss_hnsw_m: 32
   save_model: true                  # save the model under <root>/models/ for offline use
+  keep_npy_shards: true             # false: delete embeddings/*.npy once the store holds the vectors (saves disk)
 
 bm25:
   enabled: true

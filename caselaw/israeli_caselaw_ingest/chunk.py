@@ -250,15 +250,16 @@ def chunk_document(doc: dict, cfg: dict, tokenizer, now: dt.datetime) -> list[di
 def run_chunk(cfg: dict, force: bool = False) -> dict:
     paths = paths_for(cfg)
     clean_done = stage_done(paths.state, "clean")
+    done = stage_done(paths.state, "chunk")
+    if done and not force and clean_done and done.get("clean") == clean_done.get("config_hash") \
+            and done.get("chunk_settings") == config_hash([cfg["chunk"], cfg["embed"]["model"]]):
+        log(f"chunk: done already ({done['chunks']:,} chunks); --force to redo")
+        return done
     if not clean_done or not paths.documents.exists():
         raise SystemExit("run the clean stage first")
     tokenizer = get_tokenizer(cfg)
     settings_hash = config_hash({"chunk": cfg["chunk"], "model": cfg["embed"]["model"], "tokenizer": tokenizer.name,
                                  "clean": clean_done.get("config_hash")})
-    done = stage_done(paths.state, "chunk")
-    if done and not force and done.get("config_hash") == settings_hash:
-        log(f"chunk: done already ({done['chunks']:,} chunks); --force to redo")
-        return done
     out = paths.chunks
     done_dir = out / "_done"
     marker = read_json(out / "_settings.json")
@@ -296,7 +297,7 @@ def run_chunk(cfg: dict, force: bool = False) -> dict:
         totals["documents"] += s["documents"]
         totals["chunks"] += s["chunks"]
     mark_done(paths.state, "chunk", config_hash=settings_hash, chunks=totals["chunks"], documents=totals["documents"],
-              tokenizer=tokenizer.name)
+              tokenizer=tokenizer.name, clean=clean_done.get("config_hash"), chunk_settings=config_hash([cfg["chunk"], cfg["embed"]["model"]]))
     log(f"chunk: {totals['chunks']:,} chunks from {totals['documents']:,} documents -> {out}")
     return dict(totals)
 

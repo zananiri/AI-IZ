@@ -232,7 +232,7 @@ class LegalConfig(BaseModel):
     corpus: LegalCorpusConfig = Field(default_factory=LegalCorpusConfig)
     audit_dir: str = "./data/legal/audit"
     # Evals only (legal/evaluation.get_judge_client): the grading model, served by the same Ollama
-    # as the orchestrator. A family other than the models under test (qwen3, gemma3), so neither
+    # as the orchestrator. A family other than the models under test (qwen3, gemma), so neither
     # is graded by itself. None = the orchestrator grades its own answers.
     # DOCSLIDES_LEGAL_JUDGE_MODEL overrides it.
     judge_model: str | None = "gpt-oss:20b"

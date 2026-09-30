@@ -99,14 +99,24 @@ def estimate(cfg: dict, encoder, files: list[Path], total: int, remaining: int, 
         f"{hours:.1f} h; vectors {gb:.1f} GB float16 (+ about the same again in the vector store)")
     if hours > ecfg.get("max_hours_without_confirm", 3) and not yes:
         raise SystemExit(f"the estimate ({hours:.1f} h) exceeds {ecfg.get('max_hours_without_confirm', 3)} h, "
-                         "longer than a free Colab session: re-run with --yes to go ahead (it resumes shard by "
+                         "longer than a free Colab/Kaggle session: re-run with --yes to go ahead (it resumes shard by "
                          "shard after a disconnect), or use a smaller sample_n")
 
 
-def run_embed(cfg: dict, yes: bool = False, force: bool = False, store: str | None = None) -> dict:
+def run_embed(cfg: dict, yes: bool = False, force: bool = False, store: str | None = None,
+              shard_stride: int = 1, shard_offset: int = 0, device: str | None = None,
+              build_store: bool = True) -> dict:
+    """Embed, then build the vector store.
+
+    Several GPUs: start one worker per GPU with shard_stride=<number of GPUs>, shard_offset=<its
+    index>, device="cuda:<index>" and build_store=False; each encodes only the shards i with
+    i % stride == offset. A plain run afterwards finds every shard present and builds the store."""
     paths = paths_for(cfg)
     if not stage_done(paths.state, "chunk"):
         raise SystemExit("run the chunk stage first")
+    if device:
+        cfg["embed"]["device"] = device
+    worker = shard_stride > 1
     ecfg = cfg["embed"]
     files = chunk_files(paths.chunks)
     total = count_chunks(files)
@@ -117,17 +127,30 @@ def run_embed(cfg: dict, yes: bool = False, force: bool = False, store: str | No
     settings = {"model": ecfg["model"], "shard_size": shard_size, "include_prefix": ecfg.get("include_prefix", True),
                 "chunks": total, "chunk_stage": stage_done(paths.state, "chunk").get("config_hash")}
     marker = read_json(out / "_settings.json")
+    store = store or ecfg.get("store", "lancedb")
+    done = stage_done(paths.state, "embed")
+    if (not force and not worker and done and marker == settings and done.get("store") == store
+            and (paths.lancedb if store == "lancedb" else paths.faiss).exists()):
+        log(f"embed: done already ({done['rows']:,} vectors in {store}); --force to redo")
+        return done
     if force or (marker and marker != settings):
+        if worker:
+            raise SystemExit("embed: the shards on disk were made with other settings or chunks; run "
+                             "`embed --force` once in a single process before starting the GPU workers")
         log("embed: settings or chunks changed: starting the embeddings over")
         for p in out.glob("shard-*"):
             p.unlink()
     atomic_write_json(out / "_settings.json", settings)
 
-    done_shards = [i for i in range(n_shards) if (out / f"shard-{i:05d}.npy").exists()
+    mine = [i for i in range(n_shards) if i % shard_stride == shard_offset]
+    done_shards = [i for i in mine if (out / f"shard-{i:05d}.npy").exists()
                    and (out / f"shard-{i:05d}.ids.parquet").exists()]
-    first_missing = next((i for i in range(n_shards) if i not in done_shards), n_shards)
-    remaining = total - sum(min(shard_size, total - i * shard_size) for i in done_shards)
-    log(f"embed: {total:,} chunks, {n_shards} shards of {shard_size:,}; {len(done_shards)} done")
+    todo = [i for i in mine if i not in done_shards]
+    first_missing = todo[0] if todo else n_shards
+    remaining = sum(min(shard_size, total - i * shard_size) for i in todo)
+    log(f"embed: {total:,} chunks, {n_shards} shards of {shard_size:,}"
+        + (f"; worker {shard_offset + 1}/{shard_stride} on {len(mine)} shards" if worker else "")
+        + f"; {len(done_shards)} done")
     encoder = None
     if remaining:
         encoder = get_encoder(cfg, paths)
@@ -137,7 +160,7 @@ def run_embed(cfg: dict, yes: bool = False, force: bool = False, store: str | No
         done_now = 0
         for i, table in iter_shards(files, shard_size, columns=["chunk_id", "context_prefix", "text"],
                                     start_shard=first_missing):
-            if i in done_shards:
+            if i not in todo:
                 continue
             texts = embed_texts(table, passage, ecfg.get("include_prefix", True))
             vecs = encode_sorted(encoder, texts, ecfg["batch_size"])
@@ -149,14 +172,18 @@ def run_embed(cfg: dict, yes: bool = False, force: bool = False, store: str | No
             log(f"embed: shard {i + 1}/{n_shards} ({done_now:,}/{remaining:,} this run, {rate:,.0f}/s, "
                 f"~{left / max(rate, 1e-6) / 60:.0f} min left)")
     # Saved by the run that encoded; a run with nothing left to encode doesn't load the model.
-    if encoder is not None and ecfg.get("save_model", True) and hasattr(encoder, "save"):
+    if encoder is not None and ecfg.get("save_model", True) and hasattr(encoder, "save") and shard_offset == 0:
         target = paths.models / ecfg["model"].replace("/", "__")
         if not (target / "config.json").exists():
             encoder.save(target)
             log(f"embed: model saved to {target} for offline query encoding")
 
+    if not build_store:
+        return {"chunks": total, "encoded": remaining, "shards": len(mine)}
+    missing = [i for i in range(n_shards) if not (out / f"shard-{i:05d}.npy").exists()]
+    if missing:
+        raise SystemExit(f"embed: {len(missing)} shards missing (first: {missing[0]}); run embed again")
     write_id_map(out, n_shards)
-    store = store or ecfg.get("store", "lancedb")
     if store == "lancedb":
         rows = build_lancedb(cfg, files, total)
     elif store == "faiss":
@@ -164,6 +191,10 @@ def run_embed(cfg: dict, yes: bool = False, force: bool = False, store: str | No
     else:
         raise SystemExit(f"unknown embed.store {store}; choose lancedb or faiss")
     mark_done(paths.state, "embed", chunks=total, shards=n_shards, store=store, rows=rows, model=ecfg["model"])
+    if not ecfg.get("keep_npy_shards", True):
+        for p in out.glob("shard-*.npy"):
+            p.unlink()  # the vectors live on in the store; id_map.parquet stays
+        log("embed: .npy shards removed (embed.keep_npy_shards: false)")
     return {"chunks": total, "store": store, "rows": rows}
 
 

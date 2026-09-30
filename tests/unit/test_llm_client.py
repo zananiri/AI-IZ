@@ -51,7 +51,7 @@ def test_payload_carries_top_k_seed_thinking_and_context(ollama):
 def test_a_model_without_thinking_gets_no_think_field(ollama):
     # Gemma 3: some Ollama versions answer HTTP 400 even to "think": false, and the streamed chat
     # path (the General tab) had no retry without it.
-    gemma = QwenClient(ollama._llm_cfg.model_copy(update={"model": "gemma3:27b-it-qat", "supports_thinking": False}))
+    gemma = QwenClient(ollama._llm_cfg.model_copy(update={"model": "gemma4:31b", "supports_thinking": False}))
     for site in ("legal_analysis", "chat_general"):
         payload = gemma._build_payload([ChatMessage("user", "hi")], LLMCallSite(site), SamplingParams(), None, None,
                                        stream=True)

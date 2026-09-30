@@ -192,3 +192,23 @@ On Kaggle (`notebooks/kaggle_legal_corpus_vectorize.ipynb`):
   other sites (e.g. olaw.org.il) are recorded, never fetched.
 - `KNS_Law` doesn't exist in OData V4 and is reported as unavailable.
 - A regulation's status is usually unknown: OData doesn't record its validity.
+
+## Retrieval and answering variants (30 Sept)
+
+Each is a `legal.corpus` switch, off by default, so one can be measured at a time on the v2 dev split
+(`eval_run.py answer --variant <names>`); the code is in `src/docslides/legal/corpus_navigation.py`.
+
+| --variant | Setting | What it does |
+|---|---|---|
+| `whole_sections` | `whole_sections` | a split section's parts are merged into one context slot (limit `whole_section_max_tokens`) |
+| `toc` | `toc_navigation` | the model picks sections from the tables of contents of the top two laws; they are added whole |
+| `xref` | `cross_references` | sections of the same law that the top hits refer to are added |
+| `reg_cap` | `regulation_cap: 3` | at most three regulation excerpts, unless the plan names a regulation |
+| `grouped` | `law_grouped_context` | the context lists each law's excerpts together, in section order |
+| `extract` | `extract_then_answer` | a first call quotes the governing provisions and lists elements and exceptions; the answer must cover them |
+| `completeness` | also `completeness_check` | a last call lists what the answer left out, and the answer is revised to cover it |
+| `doctrines` | `doctrine_cards_path` | matching cards from `legal_txt/doctrine_cards.jsonl` (case-law doctrines, amendment timelines), labelled as notes, not statute |
+
+The 19 doctrine cards are drafts (`status: draft_needs_lawyer_review`): have a lawyer check them before
+reporting a run that uses them. `ab_fixes.py` runs ten failed 29 Sept questions, one per root cause,
+through a baseline and each variant on your own computer, and writes `comparison.md`.

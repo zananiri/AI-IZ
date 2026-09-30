@@ -28,7 +28,7 @@ from pathlib import Path
 
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
-from docslides.legal import amendments
+from docslides.legal import amendments, corpus_navigation
 from docslides.legal.models import ChunkMetadata
 from docslides.legal.retrieval import RetrievalResult, RetrievedLegalChunk
 from docslides.legal_data.hebrew import normalize_for_embedding
@@ -229,6 +229,9 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
        against the question and the issues (not the plan's law names);
     5. pick_hits: by rerank score, after (for issue spotting and case files) one slot for each
        issue's best hit. Looked-up sections get no slot of their own: they compete.
+    6. with legal.corpus.regulation_cap, at most that many regulation hits unless the plan names a
+       regulation; with legal.corpus.whole_sections, one slot per section, holding the whole
+       section (legal/corpus_navigation.py).
 
     Falls back to plain embedding order when the reranker can't be loaded."""
     from docslides.legal.corpus_lexical import lexical_index
@@ -302,7 +305,15 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
         ranked = sorted(head, key=lambda h: -h["score"])
     else:
         ranked = head
-    return pick_hits(ranked, len(issues), top_k, per_issue_slot)
+    if corpus_cfg.regulation_cap is not None:
+        ranked = corpus_navigation.cap_regulations(ranked, corpus_cfg.regulation_cap, named_laws)
+    if corpus_cfg.whole_sections:
+        # One slot per section, filled with the whole section (corpus_navigation.expand_sections).
+        ranked = corpus_navigation.collapse_sections(ranked)
+    picked = pick_hits(ranked, len(issues), top_k, per_issue_slot)
+    if corpus_cfg.whole_sections:
+        picked = corpus_navigation.expand_sections(picked)
+    return picked
 
 
 def _ymd_to_iso(value) -> str:

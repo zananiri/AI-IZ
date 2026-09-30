@@ -45,6 +45,15 @@ no conclusion line and no label gets the label its explanation supports, legal_e
 leaked chat-template tokens are removed. The plan and any repairs
 are recorded on the answers.jsonl row.
 
+Variants (--variant, each a legal.corpus switch, off by default; measure one at a time on the v2
+dev split): whole_sections (a split section retrieved whole), toc (the model picks sections from the
+top laws' tables of contents), xref (sections a retrieved section refers to), reg_cap (at most 3
+regulation excerpts unless the plan names one), grouped (context ordered by law and section),
+extract (a first call quotes the governing provisions and lists their elements and exceptions; the
+answer must cover them), completeness (extract, plus a check that the answer covers every element,
+and a revision when it doesn't), doctrines (legal_txt/doctrine_cards.jsonl: case-law doctrines and
+amendment timelines, labelled as notes, not statute text).
+
 Reasoning: every LLM call is written in full -- prompt, reasoning ("thinking"), output, timing --
 to <logging.llm_trace_dir>/<date>.jsonl (llm/trace.py), with job_id set to the question id, as
 long as DOCSLIDES_CONFIG's logging.llm_trace_dir is set (see notebooks/kaggle_legal_eval_bulk500.ipynb).
@@ -67,7 +76,9 @@ from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
+from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
+from docslides.legal import corpus_navigation
 from docslides.legal.corpus_retrieval import (  # shared with the Legal tab's corpus path
     PLAN_MAX_TOKENS,
     PLAN_PROMPT,
@@ -198,6 +209,144 @@ and for amending laws (תיקון). Say which version applies to the date or fac
 memory that a law, offence or section still exists, or that an amendment left a section unchanged."""
 
 _TEMPLATE_TOKEN_RE = re.compile(r"\s*</?(?:start|end)_of_turn>\s*")
+
+# Extract, then answer (legal.corpus.extract_then_answer). In the 29 Sept full 27B run half the
+# half-credit answers (49 of 91) had the governing section in <context> and still left out a
+# condition, exception or qualifier. A first call quotes the provisions and lists every element;
+# the answer call is then told to cover each one.
+EXTRACT_PROMPT = """Read the question about Israeli law and the excerpts in <context>. Do not answer yet.
+
+1. provisions: the excerpts that govern the question (at most four): the law's name and section number exactly as in <context>, and a quote of the words that decide the question, copied exactly (at most 60 words each). Skip excerpts about other subjects.
+2. elements: every condition, element, threshold, number, deadline and actor those provisions set that the answer must state, one short Hebrew phrase each.
+3. exceptions: every exception, proviso ("ואולם", "אלא אם", "בכפוף ל", "למעט") or special case in them that bears on the question.
+If no excerpt governs the question, return empty lists.
+
+<question>{question}</question>
+
+<context>
+{context}
+</context>"""
+
+EXTRACTED_NOTE = """<extracted> lists the provisions that govern this question and every element and exception they set, taken from <context> in an earlier step. Your answer must address each element and each exception that bears on the facts -- state it, or say why it does not apply -- and cite the provisions listed. If <extracted> is empty, answer as instructed above."""
+
+COMPLETENESS_PROMPT = """Below are a question about Israeli law, the elements and exceptions that the governing provisions set, and an answer. List each element or exception that bears on the question and that the answer neither states nor explains away. Return an empty list if the answer covers them all. Judge coverage only, not style.
+
+<question>{question}</question>
+
+<elements>
+{elements}
+</elements>
+
+<answer>
+{answer}
+</answer>"""
+
+REVISE_PROMPT = """The answer below leaves out these points, which the governing provisions set:
+{missing}
+
+Rewrite the answer so that it covers them, each in its right place, citing the provision that sets it. Keep everything else as it is: its content, structure, law names, section numbers, and any first word or final "מסקנה:" line. Write only in Hebrew and return only the answer.
+
+<question>{question}</question>
+
+<answer>
+{answer}
+</answer>"""
+
+# Retrieved text per question with whole or added sections: the Kaggle runs give Ollama 16,384 tokens
+# for the prompt and the answer (up to 6,144), and twelve single chunks take about 5,000.
+CONTEXT_BUDGET_TOKENS = 7000
+
+# Letter answers are read by exact match: an added paragraph could only hurt.
+NO_COMPLETENESS = {"mcq_bar"}
+
+# --variant names for eval_run.py answer -> the legal.corpus settings they turn on.
+VARIANTS = {
+    "whole_sections": {"whole_sections": True},
+    "toc": {"toc_navigation": True},
+    "xref": {"cross_references": True},
+    "reg_cap": {"regulation_cap": 3},
+    "grouped": {"law_grouped_context": True},
+    "extract": {"extract_then_answer": True},
+    "completeness": {"extract_then_answer": True, "completeness_check": True},
+    "doctrines": {"doctrine_cards_path": "legal_txt/doctrine_cards.jsonl"},
+}
+
+
+class Provision(BaseModel):
+    law: str
+    section: str
+    quote: str
+
+
+class Extraction(BaseModel):
+    provisions: list[Provision] = []
+    elements: list[str] = []
+    exceptions: list[str] = []
+
+
+class Completeness(BaseModel):
+    missing: list[str] = []
+
+
+def apply_variants(names: list[str]) -> dict:
+    """Sets legal.corpus for the named --variant entries; returns the settings changed."""
+    corpus_cfg = get_config().legal.corpus
+    changed: dict = {}
+    for name in names:
+        if name not in VARIANTS:
+            raise SystemExit(f"unknown --variant {name}; choose from {', '.join(VARIANTS)}")
+        changed.update(VARIANTS[name])
+    for key, value in changed.items():
+        setattr(corpus_cfg, key, value)
+    return changed
+
+
+def render_extraction(extraction: Extraction) -> str:
+    lines = [f"- {p.law} סעיף {p.section}: \"{p.quote}\"" for p in extraction.provisions]
+    if extraction.elements:
+        lines += ["יסודות ותנאים:"] + [f"- {e}" for e in extraction.elements]
+    if extraction.exceptions:
+        lines += ["חריגים וסייגים:"] + [f"- {e}" for e in extraction.exceptions]
+    return "\n".join(lines)
+
+
+async def extract_provisions(qwen, qtext: str, context: str) -> Extraction | None:
+    try:
+        return await qwen.complete_json(
+            [ChatMessage("user", EXTRACT_PROMPT.format(question=qtext, context=context))],
+            LLMCallSite("legal_eval_extract"), schema=Extraction,
+            sampling=SamplingParams(temperature=0.0, max_tokens=2048), enable_thinking=False,
+        )
+    except Exception:  # noqa: BLE001 -- answer from the context alone
+        return None
+
+
+async def complete_answer(qwen, qtext: str, extraction: Extraction, text: str) -> tuple[str, list[str]]:
+    """(the answer, revised to cover what it missed; the points it missed) -- the answer unchanged
+    when nothing is missing or a call fails."""
+    elements = extraction.elements + extraction.exceptions
+    if not elements or not text:
+        return text, []
+    try:
+        verdict = await qwen.complete_json(
+            [ChatMessage("user", COMPLETENESS_PROMPT.format(
+                question=qtext, elements="\n".join(f"- {e}" for e in elements), answer=text))],
+            LLMCallSite("legal_eval_completeness"), schema=Completeness,
+            sampling=SamplingParams(temperature=0.0, max_tokens=512), enable_thinking=False,
+        )
+    except Exception:  # noqa: BLE001 -- keep the answer
+        return text, []
+    missing = [m for m in verdict.missing if m.strip()][:5]
+    if not missing:
+        return text, []
+    revised = (await qwen.complete_text(
+        [ChatMessage("user", REVISE_PROMPT.format(missing="\n".join(f"- {m}" for m in missing),
+                                                  question=qtext, answer=text))],
+        LLMCallSite("legal_eval_completeness"), sampling=eval_sampling(ANSWER_MAX_TOKENS, False),
+        enable_thinking=False,
+    )).strip()
+    # A revision far shorter than the answer dropped content rather than adding it.
+    return (revised, missing) if len(revised) >= 0.8 * len(text) else (text, missing)
 
 
 class ScopeVerdict(BaseModel):
@@ -409,9 +558,39 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
             search_issues.append(EvalIssue(issue=TEMPORAL_ISSUE, law=issues[0].law))
         hits = retrieve_planned(qtext, search_issues, categories, ISSUE_SPOTTING_TOP_K if spotting else top_k,
                                 per_issue_slot=spotting)
+        corpus_cfg = get_config().legal.corpus
+        extra: list[dict] = []
+        if corpus_cfg.toc_navigation and scope.scope == "in_scope":
+            extra += await corpus_navigation.navigate_toc(qwen, qtext, hits)
+        if corpus_cfg.cross_references:
+            extra += corpus_navigation.cross_reference_hits(hits + extra)
+        if corpus_cfg.whole_sections or extra:
+            # Whole and added sections are longer: keep the context inside CONTEXT_BUDGET_TOKENS, the
+            # sections the model picked or that the top hits refer to first, then the rest best-first.
+            extra = corpus_navigation.trim_to_budget(extra, CONTEXT_BUDGET_TOKENS // 2)
+            spent = sum(count_tokens(h["text"]) for h in extra)
+            hits = corpus_navigation.trim_to_budget(hits, CONTEXT_BUDGET_TOKENS - spent) + extra
+        if corpus_cfg.law_grouped_context:
+            hits = corpus_navigation.group_by_law(hits)
+        context = render_context(hits)
         user = f"<instructions>{q['instructions']}</instructions>\n\n<question>{qtext}</question>\n\n" \
-               f"<context>\n{render_context(hits)}\n</context>"
+               f"<context>\n{context}\n</context>"
+        cards: list[dict] = []
+        if corpus_cfg.doctrine_cards_path:
+            plan_text = " ".join(f"{i.law} {i.issue}" for i in issues)
+            cards = corpus_navigation.match_doctrine_cards(
+                f"{qtext} {plan_text}", corpus_navigation.load_doctrine_cards(corpus_cfg.doctrine_cards_path),
+                corpus_cfg.doctrine_cards_max)
+            if cards:
+                user += "\n\n" + corpus_navigation.render_doctrine_cards(cards)
+        extraction = None
+        if corpus_cfg.extract_then_answer and scope.scope == "in_scope":
+            extraction = await extract_provisions(qwen, qtext, context)
+            if extraction is not None and (extraction.provisions or extraction.elements):
+                user += f"\n\n<extracted>\n{render_extraction(extraction)}\n</extracted>"
         notes = [ISSUE_SPOTTING_NOTE] if spotting else []
+        if extraction is not None and (extraction.provisions or extraction.elements):
+            notes.append(EXTRACTED_NOTE)
         if scope.scope != "in_scope":
             notes.append(SCOPE_NOTES[scope.scope] + (f" (First reading: {scope.note})" if scope.note else ""))
         if temporal:
@@ -432,6 +611,12 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
             repairs.append("empty_answer_retry")
             text = (await qwen.complete_text(messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
                                              enable_thinking=False)).strip()
+        missing: list[str] = []
+        if corpus_cfg.completeness_check and extraction is not None and q.get("category") not in NO_COMPLETENESS:
+            revised, missing = await complete_answer(qwen, qtext, extraction, text)
+            if revised != text:
+                repairs.append("completeness_revision")
+                text = revised
         # Up to two passes: the 29 Sept review found one rewrite leaving script in 26 Qwen answers.
         for _ in range(MAX_REWRITE_PASSES):
             stray = foreign_words(text)
@@ -464,9 +649,14 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
         "id": q["id"], "answer": text,
         "retrieved": [{"category": h["category"], "distance": round(h["distance"], 4),
                         "score": round(h["score"], 4) if "score" in h else None,
-                        "title": h["meta"].get("title"), "section": h["meta"].get("section_number")} for h in hits],
+                        "title": h["meta"].get("title"), "section": h["meta"].get("section_number"),
+                        "via": "".join(sorted({s[0] for s in h.get("sources", ())})),
+                        "chunk_ids": h.get("chunk_ids") or [h.get("id")]} for h in hits],
         "plan": [i.model_dump() for i in issues],
         "scope": scope.model_dump(),
+        "extraction": extraction.model_dump() if extraction is not None else None,
+        "missing": missing,
+        "doctrine_cards": [c["id"] for c in cards],
         "repairs": repairs,
     }
 
@@ -478,6 +668,10 @@ async def cmd_answer(a) -> None:
     out = Path(a.out)
     done = _load_done(out)
     categories = a.categories.split(",")
+    variants = [v for v in (a.variant or "").split(",") if v]
+    changed = apply_variants(variants)
+    if changed:
+        _log(f"variant {'+'.join(variants)}: legal.corpus {changed}")
     qwen = get_legal_orchestrator_client()
     started = time.monotonic()
     device = warm_up_retrieval()
@@ -491,6 +685,8 @@ async def cmd_answer(a) -> None:
             row = await answer_one(qwen, q, categories, a.top_k, thinking=a.thinking, max_tokens=a.max_tokens)
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
             row = {"id": q["id"], "answer": "", "error": f"{type(exc).__name__}: {exc}"}
+        if variants:
+            row["variant"] = variants
         _append(out, row)
         _log(f"{q['id']} ({q['category']}): {round(time.monotonic() - started)}s"
              f"{' -- ' + row['error'] if row.get('error') else ''}")
@@ -556,6 +752,9 @@ def main() -> None:
                     help="output budget per answer, reasoning included (a model that always reasons needs more)")
     pa.add_argument("--thinking", action=argparse.BooleanOptionalAction, default=True,
                     help="reasoning on the answer call (--no-thinking for models without a thinking mode)")
+    pa.add_argument("--variant", default="",
+                    help="comma-separated legal.corpus switches to measure on the dev split: "
+                         + ", ".join(VARIANTS))
 
     pj = sub.add_parser("judge")
     pj.add_argument("--requests", required=True, help="judge_requests.jsonl from score.py prepare")

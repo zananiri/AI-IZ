@@ -150,6 +150,9 @@ class LLMCallSite:
         "legal_eval_rewrite",
         "legal_eval_label_check",
         "legal_eval_scope",
+        "legal_eval_toc",
+        "legal_eval_extract",
+        "legal_eval_completeness",
         "legal_eval_repair",
     ]
 

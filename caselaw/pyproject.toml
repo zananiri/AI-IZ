@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "israeli-caselaw-ingest"
+version = "0.1.0"
+description = "Israeli Supreme Court judgments (HF: LevMuchnik/SupremeCourtOfIsrael) -> chunks, embeddings, offline indexes"
+requires-python = ">=3.10"
+readme = "README.md"
+
+[tool.setuptools]
+packages = ["israeli_caselaw_ingest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,125 @@
+# Israeli Supreme Court case-law ingestion (israeli_caselaw_ingest).
+# Every threshold, model name and path lives here. Override the root with --root or $CASELAW_ROOT,
+# and the sample size with --sample-n.
+
+paths:
+  # Everything (dataset cache, outputs, state) lives under root. On Colab this is Google Drive.
+  root: /content/drive/MyDrive/israeli_caselaw/
+  cache_dir: cache            # relative to root: the downloaded parquet
+  # A sample run (sample_n set) writes to <root>/sample_<n>/ so it never mixes with the full run.
+
+source:
+  repo_id: LevMuchnik/SupremeCourtOfIsrael
+  repo_type: dataset
+  filename: cases_all.parquet
+  revision: main
+  dataset_name: LevMuchnik/SupremeCourtOfIsrael   # stored on every row as source_dataset
+  # Reference URL for citation only; the pipeline never fetches it.
+  source_url_template: "https://supremedecisions.court.gov.il/Home/Download?path={path}&fileName={file_name}&type=4"
+
+# Keep the first N documents that pass the filter (dry run). null = the full corpus.
+sample_n: null
+
+read:
+  batch_size: 5000            # rows per parquet batch in the filter stage
+
+filter:
+  max_decision_date: "2022-01-01"   # keep decisions strictly before this date
+  min_valid_date: "1948-01-01"      # an earlier resolved date is bogus: fall back to the next field
+  keep_types:                       # compared after normalising gershayim, hyphens and spaces
+    - פסק-דין
+    - פד"י
+    - פסקי דין באנגלית
+    - תקצירים
+  decision_type: החלטה
+  keep_decisions: true
+  decision_require_non_technical: true
+  decision_min_chars: 1500
+  dedupe: true
+  max_logged_date_fixes: 200        # examples of date fallbacks written to reports/date_fixes.jsonl
+
+clean:
+  # A line matching any of these (Python regex, searched) is removed.
+  boilerplate_patterns:
+    - "העותק כפוף לשינויי עריכה וניסוח"
+    - "^\\s*מרכז מידע"
+    - "טל(?:'|׳|פון)?\\s*[:\\-]?\\s*\\d{2,3}[\\-\\s]?\\d{6,7}"
+    - "^\\s*\\*?\\s*\\d{2,3}-\\d{7}\\s*$"
+    - "https?://\\S+"
+    - "www\\.\\S+"
+    - "supreme\\.court\\.gov\\.il"
+    - "court\\.gov\\.il"
+  mojibake_min_chars: 3             # suspicious chars needed on a line before trying a repair
+  mojibake_min_ratio: 0.5           # share of the line's letters that are Latin-1/Greek look-alikes
+  try_ftfy: true
+  max_header_chars: 6000            # header parsing looks only at the start of the text
+  keep_parts: false                 # keep documents_parts/ after documents.parquet is written
+
+chunk:
+  # Tokenizer used to measure chunk length: "auto" = the embedding model's tokenizer
+  # (falls back to a regex word counter, with a warning, when it can't be loaded);
+  # or "regex" to force the fallback (tests, offline dry runs).
+  tokenizer: auto
+  min_tokens: 400
+  max_tokens: 600
+  overlap_tokens: 80
+  heading_break_min_tokens: 100      # a heading starts a new chunk once the current one holds this many
+  doc_batch_size: 2000              # documents per batch; one chunk file per year per batch
+  headings:
+    - רקע
+    - רקע עובדתי
+    - העובדות
+    - עובדות המקרה
+    - ההליכים הקודמים
+    - ההליך הקודם
+    - פסק הדין של בית המשפט המחוזי
+    - פסק דינו של בית המשפט המחוזי
+    - טענות הצדדים
+    - טענות המערער
+    - טענות המערערים
+    - טענות העותר
+    - טענות העותרים
+    - טענות המשיבה
+    - טענות המשיבים
+    - תמצית טענות הצדדים
+    - דיון
+    - דיון והכרעה
+    - הכרעה
+    - המסגרת הנורמטיבית
+    - מן הכלל אל הפרט
+    - סוף דבר
+    - סיכום
+    - התוצאה
+  holding_markers:
+    - סוף דבר
+    - אשר על כן
+    - התוצאה היא
+    - סיכומו של דבר
+
+embed:
+  model: BAAI/bge-m3                # or intfloat/multilingual-e5-large
+  device: auto                      # auto | cuda | cpu
+  fp16: true
+  batch_size: 64                    # start value; halved on CUDA out-of-memory
+  max_seq_length: 1024              # chunks are <= ~700 tokens with the prefix
+  include_prefix: true              # embed context_prefix + text
+  shard_size: 20000                 # chunks per .npy shard = checkpoint interval
+  estimate_sample: 2000             # chunks timed before the full run
+  max_hours_without_confirm: 3      # a longer estimate needs --yes
+  store: lancedb                    # lancedb | faiss
+  lancedb_table: chunks
+  lancedb_index_min_rows: 100000    # build an IVF_PQ index at or above this many rows
+  faiss_hnsw_m: 32
+  save_model: true                  # save the model under <root>/models/ for offline use
+
+bm25:
+  enabled: true
+  shard_size: 50000                 # chunks per BM25 shard (bounds RAM while indexing)
+  strip_prefixes: true              # also index ו/ה/ב/ל/מ/ש/כ-stripped forms of Hebrew words
+
+validate:
+  top_k: 5
+  queries:
+    - חובת ההנמקה של רשות מנהלית
+    - עקרון המידתיות
+    - ע"א 6821/93

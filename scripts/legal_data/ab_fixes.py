@@ -9,13 +9,14 @@ governing section retrieved; does the answer state the point the 29 Sept answer 
 
 Needs: this repo on main with its Python environment (pip install -e .), the corpus database at
 data/legal_corpus_vectordb (laws/, procedural_rules/; the same one the Kaggle runs use), and Ollama
-running with the model pulled (ollama pull gemma3:27b-it-qat). About 3-6 minutes per question per arm
-on one 24 GB GPU; the default six arms x ten questions take 3-5 hours. Re-running resumes: answers
-already written are kept (--fresh starts over).
+running with the model pulled (ollama pull gemma3:12b). By default Gemma 3 12B answers with each fix
+(five arms, no run without fixes -- the reference is the 29 Sept Gemma 27B score) and nothing is judged:
+send the zip back for grading. About 1-3 minutes per question per arm on one GPU, 1-3 hours in all.
+Re-running resumes: answers already written are kept (--fresh starts over).
 
-    python scripts/legal_data/ab_fixes.py                       # all arms, no judge
-    python scripts/legal_data/ab_fixes.py --arms baseline,extract --judge
-    python scripts/legal_data/ab_fixes.py --model qwen3:14b --thinking
+    python scripts/legal_data/ab_fixes.py                       # Gemma 12B, the five fix arms, no judge
+    python scripts/legal_data/ab_fixes.py --arms extract,doctrines
+    python scripts/legal_data/ab_fixes.py --arms baseline,all --model gemma3:27b-it-qat --judge
 """
 
 from __future__ import annotations
@@ -132,9 +133,10 @@ def run(cmd: list[str], env: dict, log: Path) -> int:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--arms", default=",".join(ARMS), help=f"comma-separated, from: {', '.join(ARMS)}")
+    p.add_argument("--arms", default=",".join(a for a in ARMS if a != "baseline"),
+                   help=f"comma-separated, from: {', '.join(ARMS)} (default: every arm with a fix)")
     p.add_argument("--ids", default=",".join(QUESTIONS), help="a subset of the ten question ids")
-    p.add_argument("--model", default="gemma3:27b-it-qat", help="the Ollama model that answers")
+    p.add_argument("--model", default="gemma3:12b", help="the Ollama model that answers")
     p.add_argument("--base-url", default="http://localhost:11434")
     p.add_argument("--thinking", action="store_true", help="for a model with a thinking mode (Qwen3); off for Gemma")
     p.add_argument("--context-length", type=int, default=16384, help="Ollama num_ctx, as in the Kaggle runs")
@@ -143,7 +145,7 @@ def main() -> None:
     p.add_argument("--device", default=None, help="embedder/reranker device: cuda, cpu (default: library choice)")
     p.add_argument("--judge", action="store_true", help="also grade with the judge and score.py")
     p.add_argument("--judge-model", default=None, help="judge model (default: legal.judge_model, else --model)")
-    p.add_argument("--out", default="data/legal/eval/ab_fixes")
+    p.add_argument("--out", default=None, help="default: data/legal/eval/ab_fixes_<model>")
     p.add_argument("--fresh", action="store_true", help="discard earlier answers in --out")
     a = p.parse_args()
 
@@ -152,7 +154,7 @@ def main() -> None:
     if unknown:
         raise SystemExit(f"unknown arm(s) {unknown}; choose from {', '.join(ARMS)}")
     ids = [x for x in a.ids.split(",") if x]
-    out = (ROOT / a.out).resolve()
+    out = (ROOT / (a.out or f"data/legal/eval/ab_fixes_{re.sub(r'[^A-Za-z0-9.]+', '_', a.model)}")).resolve()
     out.mkdir(parents=True, exist_ok=True)
     if not (ROOT / "data" / "legal_corpus_vectordb" / "laws").exists():
         print("warning: data/legal_corpus_vectordb/laws not found -- answers will have no retrieval", file=sys.stderr)
@@ -263,9 +265,10 @@ def report(out: Path, arms: list[str], ids: list[str], gold: dict, timings: dict
 
     legend = ("Each cell: **S** governing section retrieved / **s** not; **✓** the answer states the point the "
               "29 Sept answer left out / **✗** not (a pattern check -- read the answers); then the judge score "
-              "when run with --judge. \"29 Sept\" is that run's judged score.")
+              "when run with --judge. \"29 Sept 27B\" is the judged score of the 29 Sept Gemma 27B run, "
+              "which had none of these fixes.")
     lines = ["# A/B of the 30 Sept fixes on ten failed questions", "", legend, "",
-             "| id | root cause | aimed fix | 29 Sept | " + " | ".join(arms) + " |",
+             "| id | root cause | aimed fix | 29 Sept 27B | " + " | ".join(arms) + " |",
              "|---|---|---|--:|" + "|".join("---" for _ in arms) + "|"]
     for qid in ids:
         cause, fix, _, _ = QUESTIONS[qid]

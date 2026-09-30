@@ -68,8 +68,8 @@ class LLMConfig(BaseModel):
     request_timeout_s: int = 600
     max_model_len: int = 8192
     guided_decoding_backend: str = "xgrammar"
-    # False for a model with no thinking mode (Gemma 3): every call then goes out with thinking
-    # off, instead of asking for it and relying on the server's 400 + a retry (llm/client.py).
+    # False to run with thinking off (Gemma 3, which can't think; Gemma 4, which thinks unless told
+    # not to): every call then sends "think": false, never asking for it (llm/client.py).
     supports_thinking: bool = True
     thinking_defaults: ThinkingDefaults = Field(default_factory=ThinkingDefaults)
     default_sampling: SamplingDefaults = Field(default_factory=SamplingDefaults)

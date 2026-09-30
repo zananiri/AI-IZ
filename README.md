@@ -77,7 +77,8 @@ resident with the Legal tab's 16k context); `scripts/setup.*` fall back to Gemma
 thinking off (Gemma 3 has no thinking mode, and Gemma 4's stays off so its results compare
 with the earlier Gemma 3 runs), so the setup scripts also write `DOCSLIDES_LLM_SUPPORTS_THINKING=false` /
 `DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (every call
-then goes out with thinking off). Under vLLM the default stays Qwen3-14B AWQ.
+then goes out with an explicit `"think": false`: Gemma 4 thinks by default when the field is
+missing; a server that rejects the field, as some do for Gemma 3, is asked again without it). Under vLLM the default stays Qwen3-14B AWQ.
 Qwen3 still works under Ollama (`qwen3:14b`, ~9GB, with thinking on).
 Qwen3-32B (`qwen3:32b`, ~20GB) is the larger Qwen option: pass
 `OLLAMA_MODEL=qwen3:32b` / `-OllamaModel qwen3:32b` (or

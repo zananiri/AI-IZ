@@ -122,12 +122,21 @@ def score_py(work: Path) -> Path:
     return target / "score.py"
 
 
-def run(cmd: list[str], env: dict, log: Path) -> int:
+TIMED_OUT = -9
+
+
+def run(cmd: list[str], env: dict, log: Path, timeout_s: float | None = None) -> int:
+    """The command's exit code, or TIMED_OUT when it was stopped after `timeout_s` (eval_run.py writes
+    each answer as it goes, so only the question in progress is lost)."""
     print("  $", " ".join(cmd), flush=True)
     with log.open("a", encoding="utf-8", errors="replace") as out:
         out.write(f"\n$ {' '.join(cmd)}\n")
         out.flush()
-        proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT, check=False)
+        try:
+            proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT, check=False,
+                                  timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            return TIMED_OUT
     return proc.returncode
 
 
@@ -147,6 +156,9 @@ def main() -> None:
     p.add_argument("--judge-model", default=None, help="judge model (default: legal.judge_model, else --model)")
     p.add_argument("--out", default=None, help="default: data/legal/eval/ab_fixes_<model>")
     p.add_argument("--fresh", action="store_true", help="discard earlier answers in --out")
+    p.add_argument("--stop-after-s", type=float, default=None,
+                   help="time budget for answering, all arms together (Kaggle): the arm running when it "
+                        "ends is stopped, later arms are skipped, and the report covers what was answered")
     a = p.parse_args()
 
     arms = [x for x in a.arms.split(",") if x]
@@ -194,7 +206,12 @@ def main() -> None:
 
     log = out / "run.log"
     timings: dict[str, float] = {}
+    deadline = time.monotonic() + a.stop_after_s if a.stop_after_s else None
     for arm in arms:
+        left = deadline - time.monotonic() if deadline else None
+        if left is not None and left < 120:
+            print(f"\n== {arm}: skipped, the time budget is spent", flush=True)
+            continue
         arm_dir = out / arm
         arm_dir.mkdir(exist_ok=True)
         answers = arm_dir / "answers.jsonl"
@@ -208,7 +225,10 @@ def main() -> None:
             cmd += ["--variant", ARMS[arm]]
         if not a.thinking:
             cmd.append("--no-thinking")
-        if run(cmd, env, log):
+        code = run(cmd, env, log, timeout_s=left)
+        if code == TIMED_OUT:
+            print(f"  {arm}: stopped at the time budget", file=sys.stderr)
+        elif code:
             tail = log.read_text(encoding="utf-8", errors="replace").splitlines()[-25:]
             print(f"  answer step failed for {arm}; last lines of {log}:\n    " + "\n    ".join(tail), file=sys.stderr)
             if not (arm_dir / "answers.jsonl").exists():

@@ -2,9 +2,9 @@
 whole sections instead of fragments, the table of contents of the laws found, the sections a
 retrieved section refers to, and short doctrine cards for what the statute text doesn't say.
 
-Every step is off by default and switched on in legal.corpus (whole_sections, toc_navigation,
-cross_references, regulation_cap, law_grouped_context, doctrine_cards_path), so each can be
-measured alone on the eval's dev split. The 30 Sept root-cause review of the 29 Sept Gemma 27B run
+Every step is a legal.corpus switch (whole_sections, toc_navigation, cross_references,
+regulation_cap, law_grouped_context, doctrine_cards_path), all on by default; eval_run.py
+--variant turns on only the named ones, so each can still be measured alone on the dev split. The 30 Sept root-cause review of the 29 Sept Gemma 27B run
 (72.6%) behind them:
 
 - 63 of the 110 points lost were on questions whose governing section *was* retrieved: half the

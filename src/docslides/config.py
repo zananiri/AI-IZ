@@ -187,34 +187,35 @@ class LegalCorpusConfig(BaseModel):
     # out of free search, and come back only when the retrieval plan names that very law -- a
     # question about what applied *before* can still reach them.
     repealed_only_when_named: bool = True
-    # Retrieval and answering variants from the 30 Sept root-cause review, each off by default so a
-    # dev-split run can measure it alone (scripts/legal_data/eval_run.py answer --variant ...).
+    # Retrieval and answering fixes from the 30 Sept root-cause review. All on since the 30 Sept A/B
+    # on ten failed Gemma 27B questions (2.0 -> ~7.75 of 10 with every fix); eval_run.py answer
+    # --variant <names> turns on only the named ones, --variant baseline none of them.
     # whole_sections: a retrieved chunk of a split section brings the rest of that section, merged
     # in order (the per-section cap cut exceptions and provisos off 49 half-credit answers).
-    whole_sections: bool = False
+    whole_sections: bool = True
     whole_section_max_tokens: int = 1500  # a longer section keeps only its retrieved parts
     # toc_navigation: the model reads the table of contents of the top laws retrieved and names the
     # sections that govern; those are added whole (29.5 points were lost on the right law, wrong section).
-    toc_navigation: bool = False
+    toc_navigation: bool = True
     toc_laws: int = 2
     toc_max_sections: int = 4
     # cross_references: "סעיף 5", "בכפוף לסעיף 12" in a retrieved section fetch those sections of the same law.
-    cross_references: bool = False
+    cross_references: bool = True
     cross_reference_max: int = 3
     # regulation_cap: at most this many regulation (procedural_rules) hits unless the plan names a
     # regulation; None = no cap. They took 24% of the context slots in the 29 Sept 27B run.
-    regulation_cap: int | None = None
+    regulation_cap: int | None = 3
     # law_grouped_context: the context lists each law's excerpts together, in section order.
-    law_grouped_context: bool = False
+    law_grouped_context: bool = True
     # extract_then_answer: a first call quotes the governing provisions and lists every element,
     # condition and exception; the answer call must cover them. completeness_check: a last call
-    # compares the answer with that list and restores anything left out.
-    extract_then_answer: bool = False
-    completeness_check: bool = False
+    # compares the answer with the elements of the provisions it cites and restores anything left out.
+    extract_then_answer: bool = True
+    completeness_check: bool = True
     # Doctrine cards (legal_txt/doctrine_cards.jsonl): short, labelled notes on case-law doctrines and
     # amendment timelines the statute text doesn't state, matched by keyword. Drafts until a lawyer
     # has reviewed them; None = off.
-    doctrine_cards_path: str | None = None
+    doctrine_cards_path: str | None = "legal_txt/doctrine_cards.jsonl"
     doctrine_cards_max: int = 2
 
 

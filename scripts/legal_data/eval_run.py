@@ -45,13 +45,13 @@ no conclusion line and no label gets the label its explanation supports, legal_e
 leaked chat-template tokens are removed. The plan and any repairs
 are recorded on the answers.jsonl row.
 
-Variants (--variant, each a legal.corpus switch, off by default; measure one at a time on the v2
-dev split): whole_sections (a split section retrieved whole), toc (the model picks sections from the
+Variants (--variant, each a legal.corpus switch; all on by default, --variant <names> turns on only
+the named ones and --variant baseline none, to measure one at a time on the v2 dev split): whole_sections (a split section retrieved whole), toc (the model picks sections from the
 top laws' tables of contents), xref (sections a retrieved section refers to), reg_cap (at most 3
 regulation excerpts unless the plan names one), grouped (context ordered by law and section),
 extract (a first call quotes the governing provisions and lists their elements and exceptions; the
-answer must cover them), completeness (extract, plus a check that the answer covers every element,
-and a revision when it doesn't), doctrines (legal_txt/doctrine_cards.jsonl: case-law doctrines and
+answer must cover them), completeness (extract, plus a check that the answer covers every element of
+the provisions it cites, and a revision when it doesn't), doctrines (legal_txt/doctrine_cards.jsonl: case-law doctrines and
 amendment timelines, labelled as notes, not statute text).
 
 Reasoning: every LLM call is written in full -- prompt, reasoning ("thinking"), output, timing --
@@ -216,10 +216,12 @@ _TEMPLATE_TOKEN_RE = re.compile(r"\s*</?(?:start|end)_of_turn>\s*")
 # the answer call is then told to cover each one.
 EXTRACT_PROMPT = """Read the question about Israeli law and the excerpts in <context>. Do not answer yet.
 
-1. provisions: the excerpts that govern the question (at most four): the law's name and section number exactly as in <context>, and a quote of the words that decide the question, copied exactly (at most 60 words each). Skip excerpts about other subjects.
-2. elements: every condition, element, threshold, number, deadline and actor those provisions set that the answer must state, one short Hebrew phrase each.
-3. exceptions: every exception, proviso ("ואולם", "אלא אם", "בכפוף ל", "למעט") or special case in them that bears on the question.
-If no excerpt governs the question, return empty lists.
+provisions: the excerpts that govern the question (at most four). Skip excerpts about other subjects, other laws the question doesn't raise, and other kinds of case. For each:
+- law and section: the law's name and section number exactly as in <context>;
+- quote: the words that decide the question, copied exactly (at most 60 words);
+- elements: every condition, element, threshold, number, deadline and actor this provision sets that the answer must state, one short Hebrew phrase each;
+- exceptions: every exception, proviso ("ואולם", "אלא אם", "בכפוף ל", "למעט") or special case in it that bears on the question.
+If no excerpt governs the question, return an empty list.
 
 <question>{question}</question>
 
@@ -241,10 +243,13 @@ COMPLETENESS_PROMPT = """Below are a question about Israeli law, the elements an
 {answer}
 </answer>"""
 
-REVISE_PROMPT = """The answer below leaves out these points, which the governing provisions set:
+REVISE_PROMPT = """The answer below leaves out these points, which the provisions it cites set:
 {missing}
 
-Rewrite the answer so that it covers them, each in its right place, citing the provision that sets it. Keep everything else as it is: its content, structure, law names, section numbers, and any first word or final "מסקנה:" line. Write only in Hebrew and return only the answer.
+The provisions, as quoted from the law:
+{provisions}
+
+Rewrite the answer so that it covers them, each in its right place, in the provision's own terms and citing it. Add nothing else: no other law, section or point. Keep everything else as it is: its content, structure, law names, section numbers, and any first word; a final "מסקנה:" line keeps its conclusion after the colon. No bold or other markup. Write only in Hebrew and return only the answer.
 
 <question>{question}</question>
 
@@ -276,25 +281,36 @@ class Provision(BaseModel):
     law: str
     section: str
     quote: str
+    elements: list[str] = []
+    exceptions: list[str] = []
 
 
 class Extraction(BaseModel):
     provisions: list[Provision] = []
-    elements: list[str] = []
-    exceptions: list[str] = []
 
 
 class Completeness(BaseModel):
     missing: list[str] = []
 
 
+# The value each switch takes when --variant leaves it out: the fix is off.
+VARIANT_OFF = {"whole_sections": False, "toc_navigation": False, "cross_references": False, "regulation_cap": None,
+               "law_grouped_context": False, "extract_then_answer": False, "completeness_check": False,
+               "doctrine_cards_path": None}
+
+
 def apply_variants(names: list[str]) -> dict:
-    """Sets legal.corpus for the named --variant entries; returns the settings changed."""
+    """Every fix is on by default; --variant turns on only the named ones ("baseline": none) and
+    sets legal.corpus to match. Returns the settings changed ({} with no --variant)."""
     corpus_cfg = get_config().legal.corpus
-    changed: dict = {}
+    if not names:
+        return {}
+    changed: dict = dict(VARIANT_OFF)
     for name in names:
+        if name == "baseline":
+            continue
         if name not in VARIANTS:
-            raise SystemExit(f"unknown --variant {name}; choose from {', '.join(VARIANTS)}")
+            raise SystemExit(f"unknown --variant {name}; choose from baseline, {', '.join(VARIANTS)}")
         changed.update(VARIANTS[name])
     for key, value in changed.items():
         setattr(corpus_cfg, key, value)
@@ -302,12 +318,52 @@ def apply_variants(names: list[str]) -> dict:
 
 
 def render_extraction(extraction: Extraction) -> str:
-    lines = [f"- {p.law} סעיף {p.section}: \"{p.quote}\"" for p in extraction.provisions]
-    if extraction.elements:
-        lines += ["יסודות ותנאים:"] + [f"- {e}" for e in extraction.elements]
-    if extraction.exceptions:
-        lines += ["חריגים וסייגים:"] + [f"- {e}" for e in extraction.exceptions]
+    lines: list[str] = []
+    for p in extraction.provisions:
+        lines.append(f"- {p.law} סעיף {p.section}: \"{p.quote}\"")
+        if p.elements:
+            lines += ["  יסודות ותנאים:"] + [f"  - {e}" for e in p.elements]
+        if p.exceptions:
+            lines += ["  חריגים וסייגים:"] + [f"  - {e}" for e in p.exceptions]
     return "\n".join(lines)
+
+
+_CITED_SPAN_RE = re.compile(r"סעי(?:ף|פים|פי)\s+([^.;:\n]{0,40})")
+_SECTION_NUMBER_RE = re.compile(r"\d+[א-ת]{0,2}(?![א-ת])")
+_LAW_YEAR_RE = re.compile(r"[,\s]+(?:ה?תש[א-ת]{0,2}[\"״'׳]|\d{4}|\[).*$")
+
+
+def cited_sections(text: str) -> set[str]:
+    """Section numbers the text cites ("סעיף 7(ב)", "סעיפים 12 ו-39" -> 7, 12, 39)."""
+    return {n for span in _CITED_SPAN_RE.findall(text) for n in _SECTION_NUMBER_RE.findall(span)}
+
+
+def cites(text: str, provision: Provision, sections: set[str]) -> bool:
+    """Whether the answer relies on this provision: it cites the section number and names the law
+    (its name without the year, or the first two words: "חוק החוזים")."""
+    number = _SECTION_NUMBER_RE.match(provision.section.strip())
+    if not number or number.group(0) not in sections:
+        return False
+    name = _LAW_YEAR_RE.sub("", provision.law).strip()
+    return bool(name) and (name in text or " ".join(name.split()[:2]) in text)
+
+
+def _norm(phrase: str) -> str:
+    return re.sub(r"[\W_]+", " ", phrase).strip()
+
+
+def listed(point: str, elements: list[str]) -> bool:
+    """A point the checker names is one of the elements it was given, not a new one."""
+    p = _norm(point)
+    return bool(p) and any(p in _norm(e) or _norm(e) in p for e in elements if _norm(e))
+
+
+_EMPTY_CONCLUSION_RE = re.compile(r"\n+\s*\**מסקנה:?\**\s*$")
+
+
+def drop_empty_conclusion(text: str) -> str:
+    """An answer ending in a "מסקנה:" heading with nothing after it loses the heading."""
+    return _EMPTY_CONCLUSION_RE.sub("", text).rstrip()
 
 
 async def extract_provisions(qwen, qtext: str, context: str) -> Extraction | None:
@@ -323,8 +379,16 @@ async def extract_provisions(qwen, qtext: str, context: str) -> Extraction | Non
 
 async def complete_answer(qwen, qtext: str, extraction: Extraction, text: str) -> tuple[str, list[str]]:
     """(the answer, revised to cover what it missed; the points it missed) -- the answer unchanged
-    when nothing is missing or a call fails."""
-    elements = extraction.elements + extraction.exceptions
+    when nothing is missing or a call fails.
+
+    Only the elements of provisions the answer itself cites are checked: in the 30 Sept A/B the check
+    ran on every extracted provision and pushed in points from laws the answer didn't rely on (the
+    international sale law into a Contracts Remedies definition, electricity-supply rules into a
+    tenancy case), and the revision then added wrong numbers. A point the checker names must be one
+    of those elements."""
+    sections = cited_sections(text)
+    cited = [p for p in extraction.provisions if cites(text, p, sections)]
+    elements = [e for p in cited for e in p.elements + p.exceptions]
     if not elements or not text:
         return text, []
     try:
@@ -336,15 +400,17 @@ async def complete_answer(qwen, qtext: str, extraction: Extraction, text: str) -
         )
     except Exception:  # noqa: BLE001 -- keep the answer
         return text, []
-    missing = [m for m in verdict.missing if m.strip()][:5]
+    missing = [m for m in verdict.missing if m.strip() and listed(m, elements)][:5]
     if not missing:
         return text, []
+    provisions = "\n".join(f"- {p.law} סעיף {p.section}: \"{p.quote}\"" for p in cited)
     revised = (await qwen.complete_text(
         [ChatMessage("user", REVISE_PROMPT.format(missing="\n".join(f"- {m}" for m in missing),
-                                                  question=qtext, answer=text))],
+                                                  provisions=provisions, question=qtext, answer=text))],
         LLMCallSite("legal_eval_completeness"), sampling=eval_sampling(ANSWER_MAX_TOKENS, False),
         enable_thinking=False,
     )).strip()
+    revised = drop_empty_conclusion(revised)
     # A revision far shorter than the answer dropped content rather than adding it.
     return (revised, missing) if len(revised) >= 0.8 * len(text) else (text, missing)
 
@@ -586,10 +652,10 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
         extraction = None
         if corpus_cfg.extract_then_answer and scope.scope == "in_scope":
             extraction = await extract_provisions(qwen, qtext, context)
-            if extraction is not None and (extraction.provisions or extraction.elements):
+            if extraction is not None and extraction.provisions:
                 user += f"\n\n<extracted>\n{render_extraction(extraction)}\n</extracted>"
         notes = [ISSUE_SPOTTING_NOTE] if spotting else []
-        if extraction is not None and (extraction.provisions or extraction.elements):
+        if extraction is not None and extraction.provisions:
             notes.append(EXTRACTED_NOTE)
         if scope.scope != "in_scope":
             notes.append(SCOPE_NOTES[scope.scope] + (f" (First reading: {scope.note})" if scope.note else ""))
@@ -641,6 +707,10 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
                 text, repair = await check_label(qwen, qtext, text)
             if repair:
                 repairs.append(repair)
+        trimmed = drop_empty_conclusion(text)
+        if trimmed != text:
+            repairs.append("empty_conclusion")
+            text = trimmed
         cleaned = strip_template_tokens(text)
         if cleaned != text:
             repairs.append("template_token")

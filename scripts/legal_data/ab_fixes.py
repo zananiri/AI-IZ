@@ -72,7 +72,7 @@ QUESTIONS = {
 }
 
 ARMS = {
-    "baseline": "",
+    "baseline": "baseline",
     "whole_sections": "whole_sections",
     "toc_xref": "toc,xref",
     "extract": "completeness",

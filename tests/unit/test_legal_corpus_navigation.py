@@ -157,44 +157,89 @@ def test_the_shipped_doctrine_cards_are_well_formed_drafts():
         assert card["status"] == "draft_needs_lawyer_review" and card["reviewed_by_lawyer"] is False
 
 
-def test_whole_sections_are_off_by_default_and_retrieval_is_unchanged():
+def test_every_fix_is_on_by_default():
     corpus_cfg = get_config().legal.corpus
-    assert not (corpus_cfg.whole_sections or corpus_cfg.toc_navigation or corpus_cfg.cross_references
-                or corpus_cfg.extract_then_answer or corpus_cfg.completeness_check or corpus_cfg.law_grouped_context)
-    assert corpus_cfg.regulation_cap is None and corpus_cfg.doctrine_cards_path is None
+    assert (corpus_cfg.whole_sections and corpus_cfg.toc_navigation and corpus_cfg.cross_references
+            and corpus_cfg.extract_then_answer and corpus_cfg.completeness_check and corpus_cfg.law_grouped_context)
+    assert corpus_cfg.regulation_cap == 3 and corpus_cfg.doctrine_cards_path == "legal_txt/doctrine_cards.jsonl"
 
 
-def test_variants_set_the_corpus_switches(monkeypatch):
+def test_variants_turn_on_only_the_named_fixes(monkeypatch):
     import eval_run
 
     corpus_cfg = get_config().legal.corpus
-    for key in ("whole_sections", "toc_navigation", "cross_references", "extract_then_answer", "completeness_check"):
+    for key in eval_run.VARIANT_OFF:
         monkeypatch.setattr(corpus_cfg, key, getattr(corpus_cfg, key))
+    assert eval_run.apply_variants([]) == {} and corpus_cfg.doctrine_cards_path
     changed = eval_run.apply_variants(["whole_sections", "completeness"])
-    assert changed == {"whole_sections": True, "extract_then_answer": True, "completeness_check": True}
+    assert changed["whole_sections"] and changed["extract_then_answer"] and changed["completeness_check"]
     assert corpus_cfg.whole_sections and corpus_cfg.completeness_check
+    assert not corpus_cfg.toc_navigation and corpus_cfg.regulation_cap is None and corpus_cfg.doctrine_cards_path is None
+    eval_run.apply_variants(["baseline"])
+    assert not (corpus_cfg.whole_sections or corpus_cfg.completeness_check)
 
 
-def test_completeness_revises_an_answer_that_misses_an_element():
+REMEDIES = "חוק החוזים (תרופות בשל הפרת חוזה), תשל״א–1970"
+
+
+class _CompletenessModel:
+    def __init__(self, missing):
+        self.missing, self.revise_calls, self.revise_prompt = missing, 0, ""
+
+    async def complete_json(self, *_, **__):
+        import eval_run
+
+        return eval_run.Completeness(missing=self.missing)
+
+    async def complete_text(self, messages, *_, **__):
+        self.revise_calls += 1
+        self.revise_prompt = messages[0].content
+        return "הנפגע רשאי לבטל אחרי ארכה, אלא אם הביטול בלתי צודק (חוק החוזים (תרופות בשל הפרת חוזה), סעיף 7(ב)).\n\nמסקנה:"
+
+
+def test_completeness_revises_an_answer_that_misses_an_element_of_a_cited_provision():
     import eval_run
 
-    class Model:
-        def __init__(self, missing):
-            self.missing, self.revise_calls = missing, 0
-
-        async def complete_json(self, *_, **__):
-            return eval_run.Completeness(missing=self.missing)
-
-        async def complete_text(self, *_, **__):
-            self.revise_calls += 1
-            return "הנפגע רשאי לבטל אחרי ארכה, אלא אם הביטול בלתי צודק (סעיף 7(ב))."
-
-    extraction = eval_run.Extraction(elements=["ארכה"], exceptions=["אלא אם הביטול בלתי צודק"])
-    text = "הנפגע רשאי לבטל אחרי ארכה (סעיף 7(ב))."
-    revised, missing = asyncio.run(eval_run.complete_answer(Model(["בלתי צודק"]), "ש", extraction, text))
+    extraction = eval_run.Extraction(provisions=[eval_run.Provision(
+        law=REMEDIES, section="7(ב)", quote="אלא אם כן ביטול החוזה בלתי צודק בנסיבות העניין",
+        elements=["ארכה"], exceptions=["אלא אם הביטול בלתי צודק"])])
+    text = "הנפגע רשאי לבטל אחרי ארכה (חוק החוזים (תרופות בשל הפרת חוזה), סעיף 7(ב))."
+    model = _CompletenessModel(["בלתי צודק"])
+    revised, missing = asyncio.run(eval_run.complete_answer(model, "ש", extraction, text))
     assert "בלתי צודק" in revised and missing == ["בלתי צודק"]
+    assert not revised.endswith("מסקנה:")  # an empty conclusion heading is dropped
+    assert "בלתי צודק בנסיבות העניין" in model.revise_prompt  # the revision sees the provision's words
 
-    model = Model([])
+    model = _CompletenessModel([])
     assert asyncio.run(eval_run.complete_answer(model, "ש", extraction, text)) == (text, [])
     assert model.revise_calls == 0
     assert "חריגים וסייגים" in eval_run.render_extraction(extraction)
+
+
+def test_completeness_ignores_provisions_the_answer_does_not_cite_and_points_it_was_not_given():
+    import eval_run
+
+    extraction = eval_run.Extraction(provisions=[
+        eval_run.Provision(law=REMEDIES, section="6", quote="...", exceptions=["אלא אם התניה בלתי סבירה"]),
+        eval_run.Provision(law="חוק המכר (מכר טובין בין־לאומי), התש״ס–1999", section="25", quote="...",
+                           elements=["פגיעה מהותית"]),
+    ])
+    # The answer cites neither extracted provision (s.7, not s.6 or s.25): nothing is checked.
+    text = "הפרה יסודית מוגדרת בחוק החוזים (תרופות בשל הפרת חוזה), סעיף 7."
+    model = _CompletenessModel(["פגיעה מהותית"])
+    assert asyncio.run(eval_run.complete_answer(model, "ש", extraction, text)) == (text, [])
+    assert model.revise_calls == 0
+
+    # It cites s.6: only s.6's exception may be restored, not a point the checker made up.
+    text = "הפרה יסודית מוגדרת בחוק החוזים (תרופות בשל הפרת חוזה), תשל״א–1970, סעיף 6."
+    model = _CompletenessModel(["פגיעה מהותית", "מזג אוויר קיצוני"])
+    assert asyncio.run(eval_run.complete_answer(model, "ש", extraction, text)) == (text, [])
+    assert model.revise_calls == 0
+
+
+def test_cited_sections_and_empty_conclusion():
+    import eval_run
+
+    assert eval_run.cited_sections("לפי סעיפים 12 ו-39 לחוק, וסעיף 10ט לחוק הנוער; 15 ימים") == {"12", "39", "10ט"}
+    assert eval_run.drop_empty_conclusion("תשובה.\n\nמסקנה:") == "תשובה."
+    assert eval_run.drop_empty_conclusion("תשובה.\nמסקנה: כן") == "תשובה.\nמסקנה: כן"

@@ -217,6 +217,14 @@ class LegalCorpusConfig(BaseModel):
     # has reviewed them; None = off.
     doctrine_cards_path: str | None = "legal_txt/doctrine_cards.jsonl"
     doctrine_cards_max: int = 2
+    # Supreme Court case law (caselaw/: judgments before 2022 from LevMuchnik/SupremeCourtOfIsrael,
+    # chunked and indexed by israeli_caselaw_ingest): the folder holding its lancedb/ (and bm25/).
+    # When set, the best-matching judgment excerpts go into the prompt as a <case_law> block of their
+    # own, after the statute context (legal/caselaw.py). None = off.
+    caselaw_dir: str | None = None
+    caselaw_top_k: int = 3               # excerpts, at most one per judgment
+    caselaw_max_tokens: int = 1500       # their total length in the prompt
+    caselaw_candidates: int = 30         # dense + BM25 candidates reranked per question
 
 
 class LegalConfig(BaseModel):

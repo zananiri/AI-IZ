@@ -36,6 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from eval_run import eval_sampling, plan_issues, render_context
 
+from docslides.config import get_config
+from docslides.legal import caselaw
 from docslides.legal.corpus_retrieval import retrieve_planned, warm_up_retrieval
 from docslides.legal.evaluation import get_judge_client
 from docslides.llm import trace
@@ -189,6 +191,10 @@ async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
         issues = await plan_issues(qwen, {"id": case_id, "question": case_text}, max_issues=CASE_MAX_ISSUES)
         hits = retrieve_planned(case_text, issues, categories, top_k, per_issue_slot=True)
         reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>"
+        case_hits = caselaw.search_caselaw(case_text, [i.issue for i in issues]) \
+            if get_config().legal.corpus.caselaw_dir else []
+        if case_hits:
+            reference += "\n\n" + caselaw.render_caselaw(case_hits)
         messages = [ChatMessage("system", CASE_SYSTEM),
                     ChatMessage("user", f"{instructions}\n\n---\n\n{case_text}{reference}")]
 
@@ -234,6 +240,7 @@ async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
                            "title": h["meta"].get("title"), "section": h["meta"].get("section_number")}
                           for h in hits],
             "plan": [i.model_dump() for i in issues],
+            "caselaw": caselaw.caselaw_record(case_hits),
             "unsupported_values": unsupported,
             "repairs": repairs}
 

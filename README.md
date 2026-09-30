@@ -421,6 +421,7 @@ The Israeli legal eval set (`legal_txt/Evals/israeli_legal_eval.zip`) runs again
 |---|---|---|
 | `notebooks/colab_legal_eval_qwen_gemma.ipynb` | Google Colab, free T4 | qwen3:14b and gemma4:12b answer the same 100 questions + 5 cases. **No judging**: answers, full reasoning traces (`llm_trace/`, `reasoning_report*.md`), judge-free scores and a summary, written to Google Drive as it goes (resumable) |
 | `notebooks/kaggle_legal_eval_gemma27b.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases, with retrieval on the GPU and BM25; **no judging**. Prints a judge-free comparison with the 29 Sept gemma3:12b run (multiple choice, yes/no labels, governing section retrieved, out-of-scope sources, timing) |
+| `notebooks/kaggle_legal_eval_gemma4_caselaw.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases as the 29 Sept Gemma 3 27B run, in two arms: with the Supreme Court case-law index (`legal.corpus.caselaw_dir`, `src/docslides/legal/caselaw.py`) and without; **no judging**. Needs the Output of `notebooks/kaggle_caselaw_ingest.ipynb` as Input |
 | `notebooks/kaggle_legal_eval_bulk500.ipynb` | Kaggle, 2× T4 | answer + judge + score; qwen3:14b by default (qwen3:32b for milestone runs) |
 | `notebooks/kaggle_legal_eval_dictalm.ipynb` | Kaggle, 2× T4 | the same test with DictaLM 3.0 answering |
 

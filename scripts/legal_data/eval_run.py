@@ -78,7 +78,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
-from docslides.legal import corpus_navigation
+from docslides.legal import caselaw, corpus_navigation
 from docslides.legal.corpus_retrieval import (  # shared with the Legal tab's corpus path
     PLAN_MAX_TOKENS,
     PLAN_PROMPT,
@@ -649,6 +649,11 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
                 corpus_cfg.doctrine_cards_max)
             if cards:
                 user += "\n\n" + corpus_navigation.render_doctrine_cards(cards)
+        case_hits: list[dict] = []
+        if corpus_cfg.caselaw_dir and scope.scope == "in_scope":
+            case_hits = caselaw.search_caselaw(qtext, [i.issue for i in issues])
+            if case_hits:
+                user += "\n\n" + caselaw.render_caselaw(case_hits)
         extraction = None
         if corpus_cfg.extract_then_answer and scope.scope == "in_scope":
             extraction = await extract_provisions(qwen, qtext, context)
@@ -727,6 +732,7 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
         "extraction": extraction.model_dump() if extraction is not None else None,
         "missing": missing,
         "doctrine_cards": [c["id"] for c in cards],
+        "caselaw": caselaw.caselaw_record(case_hits),
         "repairs": repairs,
     }
 

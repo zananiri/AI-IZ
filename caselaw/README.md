@@ -137,6 +137,13 @@ In Colab, open `notebooks/colab_ingest.ipynb`. It mounts Drive, installs the dep
 2,000-document dry run, then the full run and validation, and zips the artifacts. Every cell
 resumes where it stopped after a disconnect.
 
+On Kaggle, open `notebooks/kaggle_caselaw_ingest.ipynb` (GPU T4 x2, Internet on). It works in
+`/tmp`, embeds on both GPUs at once (`embed --shard-stride 2 --shard-offset K --device cuda:K
+--no-store`, then a plain `embed` builds the store), and saves the results within the ~20 GB
+Output limit. A time guard stops it before the 12-hour cap; to continue, turn the Output into a
+dataset and set `RESUME_FROM`. The finished Output is what
+`notebooks/kaggle_legal_eval_gemma4_caselaw.ipynb` takes as its case-law input.
+
 Locally:
 
 ```bash

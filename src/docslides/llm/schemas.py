@@ -72,6 +72,10 @@ class ChatIntent(BaseModel):
     wants_slides: bool = Field(
         description="True only if the user explicitly asked for a PowerPoint/slide deck/presentation"
     )
+    wants_translation: bool = Field(
+        default=False,
+        description="True only if the user asked for the document itself to be translated (not summarized)",
+    )
     target_lang: str | None = Field(
         default=None,
         description="ISO 639-1 code for the language the user asked the output in, if any (e.g. 'fr', 'es')",

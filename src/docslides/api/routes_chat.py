@@ -6,7 +6,9 @@ A chat turn may carry an `attachment_path` (a file already uploaded via
 classification question: does this turn want a PowerPoint deck generated, or
 something else (translate/rewrite/summarize/ask-a-question)? Slide requests
 are handed off to the existing full pipeline (translate -> outline -> fill ->
-PPTX assembly, unchanged from the old dedicated tab); everything else is
+PPTX assembly, unchanged from the old dedicated tab); a request to translate
+the document is translated chunk by chunk so the whole text comes back;
+everything else is
 answered inline in the chat with the document's text as context, so
 "translate this" or "make this more formal" just works as a normal chat
 turn. Both paths stream over the same job's SSE queue (status events during
@@ -18,18 +20,26 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from docslides.api.events import Event, event_bus, job_outputs
+from docslides.cleaning.chunking import chunk_document
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
 from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams, get_client
 from docslides.llm.schemas import ChatIntent
 from docslides.pipeline.orchestrator import extract_document_text, run_pipeline
-from docslides.tone.tone_control import ToneSettings, compose_rewrite_system_prompt, resolve_sampling_params
+from docslides.tone.tone_control import (
+    ToneSettings,
+    compose_rewrite_system_prompt,
+    resolve_sampling_params,
+)
+from docslides.translation.glossary import Glossary
+from docslides.translation.translator import translate_chunk
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -75,11 +85,13 @@ async def _classify_intent(client, user_message: str) -> ChatIntent:
                 role="system",
                 content=(
                     "The user has attached a document to this chat and sent a request about it. "
-                    "Decide only whether they explicitly asked for a PowerPoint / slide deck / "
+                    "Decide whether they explicitly asked for a PowerPoint / slide deck / "
                     "presentation to be generated from it -- translation, rewriting, summarizing, "
-                    "or answering questions about the document are NOT slide requests. If it is a "
-                    "slide request, also extract the target output language they asked for as an "
-                    "ISO 639-1 code, if they named one."
+                    "or answering questions about the document are NOT slide requests. Separately, "
+                    "decide whether they asked for the document itself to be translated (a summary "
+                    "or answer in another language is NOT a translation request). For either, also "
+                    "extract the target output language they asked for as an ISO 639-1 code, if "
+                    "they named one."
                 ),
             ),
             ChatMessage(role="user", content=user_message),
@@ -112,6 +124,24 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
                     return
                 job_outputs[job_id] = str(output_path)
                 return  # run_pipeline already published "done"
+
+            if intent.wants_translation and intent.target_lang:
+                # A whole document doesn't fit one prompt or one reply, so translate
+                # it chunk by chunk (as the slides pipeline does) and stream each.
+                chunks = chunk_document([document_text], [doc_lang])
+                glossary = Glossary.load(Path(req.attachment_path).stem)
+                for chunk in chunks:
+                    await event_bus.publish_status(
+                        job_id, f"Translating part {chunk.index + 1} of {len(chunks)}"
+                    )
+                    result = await translate_chunk(client, chunk, intent.target_lang, glossary)
+                    separator = "\n\n" if chunk.index else ""
+                    await event_bus.publish(
+                        job_id, Event(kind="content_delta", data={"text": separator + result.translated_text})
+                    )
+                glossary.save()
+                await event_bus.publish_done(job_id)
+                return
 
             budget = int(get_config().llm.max_model_len * _ATTACHMENT_CONTEXT_TOKEN_FRACTION)
             document_text = _fit_to_token_budget(document_text, budget)

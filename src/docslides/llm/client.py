@@ -251,12 +251,12 @@ class QwenClient:
         # (Modelfile PARAMETER names), "think" toggles reasoning directly
         # (no chat-template-string juggling), and structured output is a
         # top-level "format" field holding the raw JSON Schema dict.
-        # A model with no thinking mode (supports_thinking: false, e.g. Gemma 3) gets no "think" field at
-        # all: some Ollama versions reject even "think": false for it with HTTP 400, and the streamed
-        # chat path has no retry to fall back on.
+        # "think" is sent even as false for supports_thinking: false: a model that thinks by default
+        # (Gemma 4) otherwise spends max_tokens reasoning and returns empty content. A server that
+        # rejects the field (Gemma 3 on some Ollama versions, HTTP 400) is asked again without it.
         payload = {
             **common,
-            **({"think": thinking} if self._llm_cfg.supports_thinking else {}),
+            "think": thinking,
             "options": {
                 "temperature": sampling.temperature,
                 "top_p": sampling.top_p,
@@ -513,12 +513,17 @@ class QwenClient:
         try:
             for attempt in (1, 2):
                 async with self._client.stream("POST", self._chat_path, json=payload) as resp:
-                    if resp.status_code == 400 and attempt == 1 and thinking:
+                    if resp.status_code == 400 and attempt == 1 and "think" in payload:
                         body = (await resp.aread()).decode("utf-8", "replace")
-                        logger.warning("llm_thinking_unsupported", call_site=call_site.name, error=body[:300])
-                        payload = self._build_payload(messages, call_site, sampling, False, guided_json_schema=None,
-                                                      stream=True)
-                        continue
+                        if thinking:
+                            logger.warning("llm_thinking_unsupported", call_site=call_site.name, error=body[:300])
+                            payload = self._build_payload(messages, call_site, sampling, False,
+                                                          guided_json_schema=None, stream=True)
+                            continue
+                        if "think" in body.lower():
+                            logger.warning("llm_think_field_rejected", call_site=call_site.name, error=body[:300])
+                            payload = {k: v for k, v in payload.items() if k != "think"}
+                            continue
                     if resp.is_error:
                         await resp.aread()  # so the error carries the server's message
                     resp.raise_for_status()

@@ -48,14 +48,33 @@ def test_payload_carries_top_k_seed_thinking_and_context(ollama):
     assert plain["think"] is False and "top_k" not in plain["options"]
 
 
-def test_a_model_without_thinking_gets_no_think_field(ollama):
-    # Gemma 3: some Ollama versions answer HTTP 400 even to "think": false, and the streamed chat
-    # path (the General tab) had no retry without it.
+def test_a_model_without_thinking_is_told_not_to_think(ollama):
+    # Gemma 4 thinks by default when "think" is left out, spending max_tokens on reasoning and
+    # returning empty content.
     gemma = QwenClient(ollama._llm_cfg.model_copy(update={"model": "gemma4:31b", "supports_thinking": False}))
     for site in ("legal_analysis", "chat_general"):
         payload = gemma._build_payload([ChatMessage("user", "hi")], LLMCallSite(site), SamplingParams(), None, None,
                                        stream=True)
-        assert "think" not in payload
+        assert payload["think"] is False
+
+
+def test_a_rejected_think_field_is_dropped_and_the_call_retried(ollama, monkeypatch):
+    import httpx
+
+    gemma = QwenClient(ollama._llm_cfg.model_copy(update={"model": "gemma3:12b", "supports_thinking": False}))
+    request = httpx.Request("POST", "http://localhost:1/api/chat")
+    rejected = httpx.Response(400, text='{"error":"model does not support thinking"}', request=request)
+    sent = []
+
+    async def post(payload):
+        sent.append(payload)
+        if "think" in payload:
+            raise httpx.HTTPStatusError("400", request=request, response=rejected)
+        return Completion("ok", done_reason="stop")
+
+    monkeypatch.setattr(gemma, "_post_completion", post)
+    assert asyncio.run(gemma.complete_text([ChatMessage("user", "q")], LLMCallSite("chat_general"))) == "ok"
+    assert ["think" in p for p in sent] == [True, False]
 
 
 def test_a_timeout_names_the_model_the_step_and_the_setting(ollama, monkeypatch):

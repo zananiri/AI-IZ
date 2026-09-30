@@ -124,7 +124,7 @@ def score_py(work: Path) -> Path:
 
 def run(cmd: list[str], env: dict, log: Path) -> int:
     print("  $", " ".join(cmd), flush=True)
-    with log.open("a", encoding="utf-8") as out:
+    with log.open("a", encoding="utf-8", errors="replace") as out:
         out.write(f"\n$ {' '.join(cmd)}\n")
         out.flush()
         proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT, check=False)
@@ -173,6 +173,7 @@ def main() -> None:
            "DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN": str(a.context_length),
            "DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING": str(a.thinking).lower(),
            "DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S": str(a.timeout_s),
+           "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8",  # Windows: Hebrew in logs and files
            "PYTHONPATH": str(ROOT / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")}
     if a.judge_model:
         env["DOCSLIDES_LEGAL_JUDGE_MODEL"] = a.judge_model
@@ -208,7 +209,10 @@ def main() -> None:
         if not a.thinking:
             cmd.append("--no-thinking")
         if run(cmd, env, log):
-            print(f"  answer step failed for {arm}; see {log}", file=sys.stderr)
+            tail = log.read_text(encoding="utf-8", errors="replace").splitlines()[-25:]
+            print(f"  answer step failed for {arm}; last lines of {log}:\n    " + "\n    ".join(tail), file=sys.stderr)
+            if not (arm_dir / "answers.jsonl").exists():
+                raise SystemExit("stopping: the first arm failed before answering anything -- send the lines above")
         timings[arm] = time.monotonic() - started
         if a.judge:
             scorer = score_py(out)

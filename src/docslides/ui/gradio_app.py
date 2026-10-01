@@ -76,7 +76,10 @@ document.addEventListener("keydown", (e) => {
 </script>
 """
 
-_WORKING_CLASSES = ["ai-working"]
+# The message boxes' own class stays on while they glow: dropping it would lose the orange send
+# arrow and Enter-to-send after the first message.
+_IDLE_CLASSES = ["chat-input"]
+_WORKING_CLASSES = ["chat-input", "ai-working"]
 
 
 def _glow_while_running(handler, outputs: list, box):
@@ -89,7 +92,7 @@ def _glow_while_running(handler, outputs: list, box):
     def with_box(values, working: bool) -> tuple:
         values = list(values)
         update = values[index] if isinstance(values[index], dict) else gr.update(value=values[index])
-        values[index] = {**update, "elem_classes": _WORKING_CLASSES if working else []}
+        values[index] = {**update, "elem_classes": _WORKING_CLASSES if working else _IDLE_CLASSES}
         return tuple(values)
 
     idle = tuple(gr.update() for _ in outputs)
@@ -283,7 +286,7 @@ def build_chat_tab() -> None:
 
     msg_box = gr.MultimodalTextbox(
         label="Message",
-        lines=4,
+        # Same size as the Legal tab's box, so the send arrow looks the same; it grows as text comes in.
         max_lines=24,
         placeholder='Ask a question, paste a large block of text to rewrite/translate/summarize, or say '
         '"make this into a presentation" -- attach a document (PDF, DOCX, PPTX, XLSX, image, or .txt) instead with the 📎 button',
@@ -296,7 +299,7 @@ def build_chat_tab() -> None:
         file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
         file_count="single",
         sources=["upload"],
-        elem_classes=["chat-input"],
+        elem_classes=_IDLE_CLASSES,
     )
 
     with gr.Accordion("Tone control", open=False):
@@ -537,7 +540,7 @@ def build_legal_tab() -> None:
                 file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
                 file_count="single",
                 sources=["upload"],
-                elem_classes=["chat-input"],
+                elem_classes=_IDLE_CLASSES,
             )
         with gr.Column(scale=1):
             gr.Markdown("### Citations")

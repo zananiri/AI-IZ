@@ -64,22 +64,27 @@ they run on; override with `FORCE_BACKEND`/`-ForceBackend`):
 |---|---|---|
 | Hardware | NVIDIA GPU only (24GB-class, e.g. RTX 4090/5090) | Any: CPU, NVIDIA, AMD (ROCm), Apple Silicon (Metal) |
 | Install | Docker image (`vllm/vllm-openai`) | Native host install (not Docker -- see `docker-compose.portable.yml`'s header comment for why, esp. on Mac) |
-| Model | Qwen3-14B AWQ 4-bit (~10GB) via Hugging Face (Qwen3-32B AWQ, ~20GB, for milestone runs) | `gemma4:31b` (Gemma 4 31B dense, 4-bit, ~20GB) via `ollama pull`; `qwen3:14b` / `qwen3:32b` still supported |
+| Model | Qwen3-14B AWQ 4-bit (~10GB) via Hugging Face (Qwen3-32B AWQ, ~20GB, for milestone runs) | General chat: `qwen3:14b` (~9GB, thinking on). Legal tab: `gemma4:31b` (Gemma 4 31B dense, 4-bit, ~20GB). Both via `ollama pull` |
 | Speed | Fastest -- purpose-built for concurrent GPU serving | Slower, especially CPU-only; scales with whatever acceleration the host has |
 | Structured JSON / thinking toggle | `guided_json` extra_body / `chat_template_kwargs` | top-level `format` JSON Schema / `think` field |
 
 Both are driven through the same `src/docslides/llm/client.py` interface --
 nothing above the LLM client needs to know which backend is active.
 
-Under Ollama the default model is Gemma 4 31B dense (`gemma4:31b`, 4-bit; ~25GB
+Under Ollama the general chat (chat, rewrite, translation, slides) runs on Qwen3-14B
+(`qwen3:14b`, ~9GB; `qwen3:4b` under 12GB of RAM) with thinking on -- it rewrites and
+translates better than Gemma. `OLLAMA_CHAT_MODEL` / `-OllamaChatModel` picks another tag;
+`config.yaml`'s `llm.thinking_defaults` sets thinking per call site (chat and rewrite on,
+translation off). The Legal tab's default is Gemma 4 31B dense (`gemma4:31b`, 4-bit; ~25GB
 resident with the Legal tab's 16k context); `scripts/setup.*` fall back to Gemma 4 12B
 (`gemma4:12b`) under 32GB of RAM and `gemma3:4b-it-qat` under 12GB. Gemma runs with
 thinking off (Gemma 3 has no thinking mode, and Gemma 4's stays off so its results compare
-with the earlier Gemma 3 runs), so the setup scripts also write `DOCSLIDES_LLM_SUPPORTS_THINKING=false` /
-`DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (every call
+with the earlier Gemma 3 runs), so the setup scripts also write
+`DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (and
+`DOCSLIDES_LLM_SUPPORTS_THINKING=true` for the Qwen chat model) (every call
 then goes out with an explicit `"think": false`: Gemma 4 thinks by default when the field is
 missing; a server that rejects the field, as some do for Gemma 3, is asked again without it). Under vLLM the default stays Qwen3-14B AWQ.
-Qwen3 still works under Ollama (`qwen3:14b`, ~9GB, with thinking on).
+Qwen3 still works for the Legal tab under Ollama (`OLLAMA_MODEL=qwen3:14b`, with thinking on).
 Qwen3-32B (`qwen3:32b`, ~20GB) is the larger Qwen option: pass
 `OLLAMA_MODEL=qwen3:32b` / `-OllamaModel qwen3:32b` (or
 `QWEN_MODEL_REPO=Qwen/Qwen3-32B-AWQ` with `QWEN_KV_CACHE_DTYPE=fp8` for vLLM).
@@ -126,12 +131,12 @@ Re-running either script is safe -- already-downloaded files are left in place.
 
 ```bash
 # macOS/Linux
-./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_MODEL=gemma4:31b / LEGAL_CONTEXT_LENGTH=16384
+./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_CHAT_MODEL=qwen3:14b / OLLAMA_MODEL=gemma4:31b / LEGAL_CONTEXT_LENGTH=16384
 ```
 
 ```powershell
 # Windows
-.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaModel gemma4:31b / -LegalContextLength 16384
+.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaChatModel qwen3:14b / -OllamaModel gemma4:31b / -LegalContextLength 16384
 ```
 
 When the Ollama backend is selected, the script writes `.env.local` with the
@@ -235,7 +240,7 @@ services.
 
 **No NVIDIA GPU?** Use Ollama instead of the two steps above: install it
 (https://ollama.com/download or your package manager), then
-`ollama pull qwen3:14b` (or `qwen3:32b`, the larger option). No Hugging
+`ollama pull qwen3:14b` (general chat) and `ollama pull gemma4:31b` (Legal tab). No Hugging
 Face download needed for the chat model.
 
 ### 3. Configure

@@ -25,9 +25,15 @@
 .PARAMETER ForceBackend
     "vllm" or "ollama" -- skip NVIDIA GPU auto-detection and use this backend.
 
+.PARAMETER OllamaChatModel
+    Model tag for the general chat (chat, rewrite, translation, slides) when the
+    Ollama backend is selected. Default: qwen3:14b (~9GB, thinking on; better
+    than Gemma at rewriting and translation). Under 12GB of RAM: qwen3:4b. A
+    qwen3 tag runs with thinking on, a gemma tag with thinking off.
+
 .PARAMETER OllamaModel
-    Model tag to pull when the Ollama backend is selected (general chat model
-    + Legal tab orchestrator). Default: gemma4:31b (Gemma 4 31B dense, 4-bit,
+    Model tag for the Legal tab orchestrator when the Ollama backend is
+    selected. Default: gemma4:31b (Gemma 4 31B dense, 4-bit,
     ~20GB; ~25GB resident with the 16k context). Under 32GB of RAM it falls
     back to gemma4:12b (Gemma 4 12B), under 12GB to gemma3:4b-it-qat. A gemma
     tag runs with thinking off (Gemma 3 has no thinking mode; Gemma 4's stays
@@ -57,6 +63,7 @@ param(
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
     [string]$OllamaModel = "gemma4:31b",
+    [string]$OllamaChatModel = "qwen3:14b",
     [int]$LegalContextLength = 16384
 )
 
@@ -212,11 +219,11 @@ if ($Backend -eq "ollama") {
         $CpuOnly = -not ($gpuNames -match "NVIDIA|Radeon")
     } catch {}
 }
+$TotalRamGB = 0
+try {
+    $TotalRamGB = [math]::Round((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).TotalPhysicalMemory / 1GB)
+} catch {}
 if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel")) {
-    $TotalRamGB = 0
-    try {
-        $TotalRamGB = [math]::Round((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).TotalPhysicalMemory / 1GB)
-    } catch {}
     if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 12) {
         $OllamaModel = "gemma3:4b-it-qat"
     } elseif (($TotalRamGB -gt 0 -and $TotalRamGB -lt 32) -or $CpuOnly) {
@@ -232,6 +239,12 @@ if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel"
 $RequestTimeoutS = if ($CpuOnly) { 3600 } else { 900 }
 # Gemma runs with thinking off (Gemma 3 has no thinking mode; Gemma 4 matches it).
 $SupportsThinking = if ($OllamaModel -like "gemma*") { "false" } else { "true" }
+# General chat: Qwen3, which rewrites and translates better than Gemma, with thinking on
+# (config.yaml llm.thinking_defaults picks it per call site: chat + rewrite on, translation off).
+if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaChatModel") -and $TotalRamGB -gt 0 -and $TotalRamGB -lt 12) {
+    $OllamaChatModel = "qwen3:4b"
+}
+$ChatSupportsThinking = if ($OllamaChatModel -like "gemma*") { "false" } else { "true" }
 Write-Host ""
 
 # ---------------------------------------------------------------------------
@@ -323,12 +336,14 @@ if ($Backend -eq "vllm") {
                 try { Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2 | Out-Null; $ollamaUp = $true } catch {}
             }
         }
-        Write-Host "Pulling $OllamaModel (this is a large download, comparable to the vLLM weights)..."
-        ollama pull $OllamaModel
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "[warn] 'ollama pull $OllamaModel' failed. Check the exact tag at" -ForegroundColor Yellow
-            Write-Host "       https://ollama.com/library/$(($OllamaModel -split ':')[0]) and retry: ollama pull <tag>" -ForegroundColor Yellow
-            $Skipped.Add("ollama pull $OllamaModel")
+        foreach ($tag in @($OllamaChatModel, $OllamaModel)) {
+            Write-Host "Pulling $tag (this is a large download, comparable to the vLLM weights)..."
+            ollama pull $tag
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[warn] 'ollama pull $tag' failed. Check the exact tag at" -ForegroundColor Yellow
+                Write-Host "       https://ollama.com/library/$(($tag -split ':')[0]) and retry: ollama pull <tag>" -ForegroundColor Yellow
+                $Skipped.Add("ollama pull $tag")
+            }
         }
     }
 
@@ -343,8 +358,8 @@ if ($Backend -eq "vllm") {
     $EnvLocal = @"
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
-DOCSLIDES_LLM_MODEL=$OllamaModel
-DOCSLIDES_LLM_SUPPORTS_THINKING=$SupportsThinking
+DOCSLIDES_LLM_MODEL=$OllamaChatModel
+DOCSLIDES_LLM_SUPPORTS_THINKING=$ChatSupportsThinking
 DOCSLIDES_LLM_MAX_MODEL_LEN=$LegalContextLength
 DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$RequestTimeoutS
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
@@ -356,7 +371,7 @@ DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
 
 "@
     [System.IO.File]::WriteAllText((Join-Path $RepoRoot ".env.local"), $EnvLocal, (New-Object System.Text.UTF8Encoding $false))
-    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, model=$OllamaModel, legal context=$LegalContextLength)"
+    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, chat model=$OllamaChatModel, legal model=$OllamaModel, legal context=$LegalContextLength)"
 }
 Write-Host ""
 

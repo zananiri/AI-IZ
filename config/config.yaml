@@ -40,7 +40,7 @@ legal:
     # Qwen3-14B: the same weights docker-compose.yml's vLLM serves (QWEN_MODEL_REPO), so the
     # Legal tab and the general chat share one server. The Ollama path (scripts/setup.*,
     # docker-compose.portable.yml, .env.local) defaults to gemma4:31b (Gemma 4 31B dense) instead, with
-    # supports_thinking: false. Qwen3-32B (Qwen/Qwen3-32B-AWQ, qwen3:32b) is the larger Qwen option.
+    # supports_thinking: false; the general chat there stays on qwen3:14b with thinking on. Qwen3-32B (Qwen/Qwen3-32B-AWQ, qwen3:32b) is the larger Qwen option.
     model: "Qwen/Qwen3-14B-AWQ"
     api_key: "not-needed"
     request_timeout_s: 900

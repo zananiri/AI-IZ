@@ -15,7 +15,13 @@
 # Env overrides:
 #   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-14B-AWQ
 #                        (Qwen/Qwen3-32B-AWQ for the larger model)
-#   OLLAMA_MODEL         Ollama path model tag (general + Legal orchestrator).
+#   OLLAMA_CHAT_MODEL    Ollama path model tag for the general chat (chat,
+#                        rewrite, translation, slides). default: qwen3:14b
+#                        (~9GB, thinking on; better than Gemma at rewriting
+#                        and translation). Under 12GB of RAM: qwen3:4b. A
+#                        qwen3 tag runs with thinking on, a gemma tag with
+#                        thinking off.
+#   OLLAMA_MODEL         Ollama path model tag for the Legal orchestrator.
 #                        default: gemma4:31b (Gemma 4 31B dense, 4-bit,
 #                        ~20GB; ~25GB resident with the 16k context). Under
 #                        32GB of RAM the default falls back to gemma4:12b
@@ -161,6 +167,18 @@ else
     gemma*) SUPPORTS_THINKING=false ;;  # Gemma runs with thinking off (Gemma 3 has none)
     *) SUPPORTS_THINKING=true ;;
   esac
+  # General chat: Qwen3, which rewrites and translates better than Gemma, with thinking on
+  # (config.yaml llm.thinking_defaults picks it per call site: chat + rewrite on, translation off).
+  if [ -z "${OLLAMA_CHAT_MODEL:-}" ]; then
+    OLLAMA_CHAT_MODEL="qwen3:14b"
+    if [ "${TOTAL_RAM_GB:-0}" -gt 0 ] && [ "${TOTAL_RAM_GB:-0}" -lt 12 ]; then
+      OLLAMA_CHAT_MODEL="qwen3:4b"
+    fi
+  fi
+  case "$OLLAMA_CHAT_MODEL" in
+    gemma*) CHAT_SUPPORTS_THINKING=false ;;
+    *) CHAT_SUPPORTS_THINKING=true ;;
+  esac
   if ! command -v ollama >/dev/null 2>&1; then
     if [ "$OS_NAME" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
       brew install ollama || SKIPPED+=("ollama (brew)")
@@ -214,12 +232,14 @@ else
       echo "       and reopen the app) so OLLAMA_MAX_LOADED_MODELS=1, OLLAMA_FLASH_ATTENTION=1"
       echo "       and OLLAMA_KV_CACHE_TYPE=q8_0 take effect."
     fi
-    echo "Pulling $OLLAMA_MODEL (this is a large download, comparable to the vLLM weights)..."
-    ollama pull "$OLLAMA_MODEL" || {
-      echo "[warn] 'ollama pull $OLLAMA_MODEL' failed. Check the exact tag at"
-      echo "       https://ollama.com/library/${OLLAMA_MODEL%%:*} and retry: ollama pull <tag>"
-      SKIPPED+=("ollama pull $OLLAMA_MODEL")
-    }
+    for tag in "$OLLAMA_CHAT_MODEL" "$OLLAMA_MODEL"; do
+      echo "Pulling $tag (this is a large download, comparable to the vLLM weights)..."
+      ollama pull "$tag" || {
+        echo "[warn] 'ollama pull $tag' failed. Check the exact tag at"
+        echo "       https://ollama.com/library/${tag%%:*} and retry: ollama pull <tag>"
+        SKIPPED+=("ollama pull $tag")
+      }
+    done
   fi
 
   # Read by the GUI launcher / any local (non-Docker) run of the app so
@@ -229,8 +249,8 @@ else
   cat > .env.local <<EOF
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
-DOCSLIDES_LLM_MODEL=$OLLAMA_MODEL
-DOCSLIDES_LLM_SUPPORTS_THINKING=$SUPPORTS_THINKING
+DOCSLIDES_LLM_MODEL=$OLLAMA_CHAT_MODEL
+DOCSLIDES_LLM_SUPPORTS_THINKING=$CHAT_SUPPORTS_THINKING
 DOCSLIDES_LLM_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
 DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
@@ -240,7 +260,7 @@ DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SUPPORTS_THINKING
 DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
 DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 EOF
-  echo "wrote $REPO_ROOT/.env.local (backend=ollama, model=$OLLAMA_MODEL, legal context=$LEGAL_CONTEXT_LENGTH)"
+  echo "wrote $REPO_ROOT/.env.local (backend=ollama, chat model=$OLLAMA_CHAT_MODEL, legal model=$OLLAMA_MODEL, legal context=$LEGAL_CONTEXT_LENGTH)"
 fi
 echo
 

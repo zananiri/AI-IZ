@@ -13,8 +13,9 @@
 #   ./scripts/setup.sh [models_dir]
 #
 # Env overrides:
-#   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-14B-AWQ
-#                        (Qwen/Qwen3-32B-AWQ for the larger model)
+#   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3.8-27B-FP8
+#                        (Qwen 3.8 27B, ~30GB: the Ollama path's model; needs
+#                        a GPU above 24GB)
 #   OLLAMA_CHAT_MODEL    Ollama path model tag for the general chat (chat,
 #                        rewrite, translation, slides). default:
 #                        qwen3.8:27b-q4_K_M (Qwen 3.8 27B dense, Q4_K_M,

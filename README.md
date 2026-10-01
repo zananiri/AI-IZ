@@ -62,9 +62,9 @@ they run on; override with `FORCE_BACKEND`/`-ForceBackend`):
 
 | | **vLLM** | **Ollama** |
 |---|---|---|
-| Hardware | NVIDIA GPU only (24GB-class, e.g. RTX 4090/5090) | Any: CPU, NVIDIA, AMD (ROCm), Apple Silicon (Metal) |
+| Hardware | NVIDIA GPU only, above 24GB (e.g. RTX 5090 32GB, 48GB+ workstation/data-center cards) | Any: CPU, NVIDIA, AMD (ROCm), Apple Silicon (Metal) |
 | Install | Docker image (`vllm/vllm-openai`) | Native host install (not Docker -- see `docker-compose.portable.yml`'s header comment for why, esp. on Mac) |
-| Model | Qwen3-14B AWQ 4-bit (~10GB) via Hugging Face (Qwen3-32B AWQ, ~20GB, for milestone runs) | General chat: `qwen3.8:27b-q4_K_M` (Qwen 3.8 27B dense, Q4_K_M, ~18GB, thinking on, 16k context). Legal tab: `gemma4:31b` (Gemma 4 31B dense, 4-bit, ~20GB). Both via `ollama pull` |
+| Model | Qwen 3.8 27B, `Qwen/Qwen3.8-27B-FP8` (Qwen's official FP8, ~30GB) via Hugging Face -- the same model as the Ollama tag; vLLM can't serve the Q4_K_M GGUF | General chat: `qwen3.8:27b-q4_K_M` (Qwen 3.8 27B dense, Q4_K_M, ~18GB, thinking on, 16k context). Legal tab: `gemma4:31b` (Gemma 4 31B dense, 4-bit, ~20GB). Both via `ollama pull` |
 | Speed | Fastest -- purpose-built for concurrent GPU serving | Slower, especially CPU-only; scales with whatever acceleration the host has |
 | Structured JSON / thinking toggle | `guided_json` extra_body / `chat_template_kwargs` | top-level `format` JSON Schema / `think` field |
 
@@ -86,11 +86,10 @@ with the earlier Gemma 3 runs), so the setup scripts also write
 `DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (and
 `DOCSLIDES_LLM_SUPPORTS_THINKING=true` for the Qwen chat model) (every call
 then goes out with an explicit `"think": false`: Gemma 4 thinks by default when the field is
-missing; a server that rejects the field, as some do for Gemma 3, is asked again without it). Under vLLM the default stays Qwen3-14B AWQ.
+missing; a server that rejects the field, as some do for Gemma 3, is asked again without it). Under vLLM both run on `Qwen/Qwen3.8-27B-FP8`.
 Qwen3 still works for the Legal tab under Ollama (`OLLAMA_MODEL=qwen3:14b`, with thinking on).
 Qwen3-32B (`qwen3:32b`, ~20GB) is the larger Qwen option: pass
-`OLLAMA_MODEL=qwen3:32b` / `-OllamaModel qwen3:32b` (or
-`QWEN_MODEL_REPO=Qwen/Qwen3-32B-AWQ` with `QWEN_KV_CACHE_DTYPE=fp8` for vLLM).
+`OLLAMA_MODEL=qwen3:32b` / `-OllamaModel qwen3:32b`.
 On a CPU-only host it needs ~48GB of RAM (~36GB on a Mac): below that,
 qwen3:32b's ~20GB GGUF plus llama.cpp's CPU "repack" buffer (a second,
 similarly sized buffer briefly resident while loading) fails to allocate (`std::bad_alloc` /
@@ -107,8 +106,7 @@ context's memory.
 (`legal.orchestrator.max_model_len: 16384`): up to 5k tokens of evidence
 (`legal.retrieval.max_evidence_tokens`) plus the thinking analysis pass and
 the memo/draft outputs. vLLM serves 16k (`QWEN_MAX_MODEL_LEN` in `docker-compose.yml`; set
-`QWEN_KV_CACHE_DTYPE=fp8` with the 32B model so it still fits next to its
-weights on a 24GB card); under Ollama it is the
+`QWEN_KV_CACHE_DTYPE=fp8` if it doesn't fit next to the ~30GB FP8 weights); under Ollama it is the
 `num_ctx` sent with every request. `DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`
 / `DOCSLIDES_LLM_MAX_MODEL_LEN` override it per host (`LEGAL_CONTEXT_LENGTH` /
 `-LegalContextLength` in the setup scripts).
@@ -199,7 +197,7 @@ instead of sharing one with the FastAPI/Gradio app.
 
 ### 2. Download models (ONE-TIME, ONLINE step)
 
-First, verify the configured Qwen3-32B repo still matches the current
+First, verify the configured Qwen repo still matches the current
 Hugging Face listing (repo names/quantizations do change) and see the
 resulting `vllm serve` command:
 
@@ -366,8 +364,8 @@ Reference `vllm serve` command (also printed by
 `scripts/verify_vllm_launch.py`):
 
 ```bash
-vllm serve <Qwen3-32B-AWQ-or-GPTQ-repo> \
-  --quantization awq \
+vllm serve Qwen/Qwen3.8-27B-FP8 \
+  --quantization fp8 \
   --max-model-len 16384 \
   --gpu-memory-utilization 0.90 \
   --guided-decoding-backend xgrammar \
@@ -380,7 +378,7 @@ vllm serve <Qwen3-32B-AWQ-or-GPTQ-repo> \
 
 ```bash
 # terminal 1
-vllm serve <repo> --quantization awq --max-model-len 16384 --gpu-memory-utilization 0.90 --port 8000
+vllm serve Qwen/Qwen3.8-27B-FP8 --quantization fp8 --max-model-len 16384 --gpu-memory-utilization 0.90 --port 8000
 
 # terminal 2
 docslides-api   # FastAPI + Gradio UI on :8456 (UI at /ui)

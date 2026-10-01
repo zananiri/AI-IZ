@@ -60,7 +60,7 @@ param(
     [string]$ModelsDir = "./models",
     [switch]$SkipMineru,
     [switch]$SkipHeavyOcr,
-    [string]$QwenModelRepo = "Qwen/Qwen3-14B-AWQ",
+    [string]$QwenModelRepo = "Qwen/Qwen3.8-27B-FP8",
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
     [string]$OllamaModel = "gemma4:31b",

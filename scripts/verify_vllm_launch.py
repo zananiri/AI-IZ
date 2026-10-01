@@ -44,7 +44,7 @@ def check_model_repo_exists(model_repo: str) -> None:
     except Exception as exc:  # noqa: BLE001
         print(
             f"[warn] Could not verify model repo '{model_repo}': {exc}\n"
-            "        Confirm the repo name against the current Qwen3 AWQ/GPTQ "
+            "        Confirm the repo name against the current Qwen "
             "checkpoint listings before deploying -- quantized repo names change "
             "as new checkpoints are published."
         )

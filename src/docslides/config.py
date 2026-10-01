@@ -398,7 +398,7 @@ class LoggingConfig(BaseModel):
 
 
 class VLLMLaunchConfig(BaseModel):
-    quantization: str = "awq"
+    quantization: str = "fp8"
     gpu_memory_utilization: float = 0.90
     port: int = 8000
 

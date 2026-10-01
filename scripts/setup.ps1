@@ -27,10 +27,10 @@
 
 .PARAMETER OllamaChatModel
     Model tag for the general chat (chat, rewrite, translation, slides) when the
-    Ollama backend is selected. Default: qwen3:14b (~9GB, thinking on; better
-    than Gemma at rewriting and translation). With 32GB of RAM or more and a
-    GPU: qwen3.6:27b (Qwen 3.6 27B dense, 4-bit, ~18GB). Under 12GB of RAM:
-    qwen3:4b. A qwen tag runs with thinking on, a gemma tag with thinking off.
+    Ollama backend is selected. Default: qwen3.8:27b-q4_K_M (Qwen 3.8 27B
+    dense, Q4_K_M, ~18GB, thinking on; better than Gemma at rewriting and
+    translation) on every host, whatever its RAM or GPU, with a 16384-token
+    context. A qwen tag runs with thinking on, a gemma tag with thinking off.
 
 .PARAMETER OllamaModel
     Model tag for the Legal tab orchestrator when the Ollama backend is
@@ -64,7 +64,7 @@ param(
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
     [string]$OllamaModel = "gemma4:31b",
-    [string]$OllamaChatModel = "qwen3:14b",
+    [string]$OllamaChatModel = "qwen3.8:27b-q4_K_M",
     [int]$LegalContextLength = 16384
 )
 
@@ -242,15 +242,9 @@ $RequestTimeoutS = if ($CpuOnly) { 3600 } else { 900 }
 $SupportsThinking = if ($OllamaModel -like "gemma*") { "false" } else { "true" }
 # General chat: Qwen, which rewrites and translates better than Gemma, with thinking on
 # (config.yaml llm.thinking_defaults picks it per call site: chat + rewrite on, translation off).
-# qwen3.6:27b from 32GB of RAM up -- the Legal tab's 31B tier; Ollama swaps the two models in
-# and out rather than holding both. Not on a CPU-only host, where a 27B dense model writes ~1 token/s.
-if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaChatModel")) {
-    if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 12) {
-        $OllamaChatModel = "qwen3:4b"
-    } elseif ($TotalRamGB -ge 32 -and -not $CpuOnly) {
-        $OllamaChatModel = "qwen3.6:27b"
-    }
-}
+# Always qwen3.8:27b-q4_K_M, whatever the host's RAM or GPU (Ollama swaps it with the Legal
+# model rather than holding both). On a CPU-only or small-RAM host it is slow or may not load.
+$ChatContextLength = 16384
 $ChatSupportsThinking = if ($OllamaChatModel -like "gemma*") { "false" } else { "true" }
 Write-Host ""
 
@@ -367,7 +361,7 @@ DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OllamaChatModel
 DOCSLIDES_LLM_SUPPORTS_THINKING=$ChatSupportsThinking
-DOCSLIDES_LLM_MAX_MODEL_LEN=$LegalContextLength
+DOCSLIDES_LLM_MAX_MODEL_LEN=$ChatContextLength
 DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$RequestTimeoutS
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
@@ -378,7 +372,7 @@ DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
 
 "@
     [System.IO.File]::WriteAllText((Join-Path $RepoRoot ".env.local"), $EnvLocal, (New-Object System.Text.UTF8Encoding $false))
-    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, chat model=$OllamaChatModel, legal model=$OllamaModel, legal context=$LegalContextLength)"
+    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, chat model=$OllamaChatModel, chat context=$ChatContextLength, legal model=$OllamaModel, legal context=$LegalContextLength)"
 }
 Write-Host ""
 

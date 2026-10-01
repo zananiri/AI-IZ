@@ -16,12 +16,12 @@
 #   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3-14B-AWQ
 #                        (Qwen/Qwen3-32B-AWQ for the larger model)
 #   OLLAMA_CHAT_MODEL    Ollama path model tag for the general chat (chat,
-#                        rewrite, translation, slides). default: qwen3:14b
-#                        (~9GB, thinking on; better than Gemma at rewriting
-#                        and translation). With 32GB of RAM or more and a
-#                        GPU: qwen3.6:27b (Qwen 3.6 27B dense, 4-bit, ~18GB).
-#                        Under 12GB of RAM: qwen3:4b. A qwen tag runs with
-#                        thinking on, a gemma tag with thinking off.
+#                        rewrite, translation, slides). default:
+#                        qwen3.8:27b-q4_K_M (Qwen 3.8 27B dense, Q4_K_M,
+#                        ~18GB, thinking on; better than Gemma at rewriting
+#                        and translation) on every host, whatever its RAM or
+#                        GPU, with a 16384-token context. A qwen tag runs
+#                        with thinking on, a gemma tag with thinking off.
 #   OLLAMA_MODEL         Ollama path model tag for the Legal orchestrator.
 #                        default: gemma4:31b (Gemma 4 31B dense, 4-bit,
 #                        ~20GB; ~25GB resident with the 16k context). Under
@@ -145,7 +145,6 @@ else
   fi
   REQUEST_TIMEOUT_S=900
   [ "$CPU_ONLY" = true ] && REQUEST_TIMEOUT_S=3600
-  # Measured even when OLLAMA_MODEL is set: the chat model's default depends on it too.
   TOTAL_RAM_GB=0
   if [ "$OS_NAME" = "Darwin" ]; then
     TOTAL_RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
@@ -171,16 +170,10 @@ else
   esac
   # General chat: Qwen, which rewrites and translates better than Gemma, with thinking on
   # (config.yaml llm.thinking_defaults picks it per call site: chat + rewrite on, translation off).
-  # qwen3.6:27b from 32GB of RAM up -- the Legal tab's 31B tier; Ollama swaps the two models in
-  # and out rather than holding both. Not on a CPU-only host, where a 27B dense model writes ~1 token/s.
-  if [ -z "${OLLAMA_CHAT_MODEL:-}" ]; then
-    OLLAMA_CHAT_MODEL="qwen3:14b"
-    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 12 ]; then
-      OLLAMA_CHAT_MODEL="qwen3:4b"
-    elif [ "$TOTAL_RAM_GB" -ge 32 ] && [ "$CPU_ONLY" != true ]; then
-      OLLAMA_CHAT_MODEL="qwen3.6:27b"
-    fi
-  fi
+  # Always qwen3.8:27b-q4_K_M, whatever the host's RAM or GPU (Ollama swaps it with the Legal
+  # model rather than holding both). On a CPU-only or small-RAM host it is slow or may not load.
+  OLLAMA_CHAT_MODEL="${OLLAMA_CHAT_MODEL:-qwen3.8:27b-q4_K_M}"
+  CHAT_CONTEXT_LENGTH=16384
   case "$OLLAMA_CHAT_MODEL" in
     gemma*) CHAT_SUPPORTS_THINKING=false ;;
     *) CHAT_SUPPORTS_THINKING=true ;;
@@ -257,7 +250,7 @@ DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
 DOCSLIDES_LLM_MODEL=$OLLAMA_CHAT_MODEL
 DOCSLIDES_LLM_SUPPORTS_THINKING=$CHAT_SUPPORTS_THINKING
-DOCSLIDES_LLM_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
+DOCSLIDES_LLM_MAX_MODEL_LEN=$CHAT_CONTEXT_LENGTH
 DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
 DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
@@ -266,7 +259,7 @@ DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SUPPORTS_THINKING
 DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
 DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 EOF
-  echo "wrote $REPO_ROOT/.env.local (backend=ollama, chat model=$OLLAMA_CHAT_MODEL, legal model=$OLLAMA_MODEL, legal context=$LEGAL_CONTEXT_LENGTH)"
+  echo "wrote $REPO_ROOT/.env.local (backend=ollama, chat model=$OLLAMA_CHAT_MODEL, chat context=$CHAT_CONTEXT_LENGTH, legal model=$OLLAMA_MODEL, legal context=$LEGAL_CONTEXT_LENGTH)"
 fi
 echo
 

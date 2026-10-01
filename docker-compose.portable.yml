@@ -36,10 +36,12 @@ services:
       - DOCSLIDES_APP_PORT=8456
       - DOCSLIDES_LLM_BACKEND=ollama
       - DOCSLIDES_LLM_BASE_URL=http://host.docker.internal:11434
-      # General chat (chat, rewrite, translation, slides): Qwen3 with thinking on -- it rewrites
-      # and translates better than Gemma. Set CHAT_SUPPORTS_THINKING=false with a gemma tag.
-      - DOCSLIDES_LLM_MODEL=${OLLAMA_CHAT_MODEL:-qwen3:14b}
+      # General chat (chat, rewrite, translation, slides): Qwen 3.8 27B (Q4_K_M) with thinking on --
+      # it rewrites and translates better than Gemma. Set CHAT_SUPPORTS_THINKING=false with a gemma tag.
+      - DOCSLIDES_LLM_MODEL=${OLLAMA_CHAT_MODEL:-qwen3.8:27b-q4_K_M}
       - DOCSLIDES_LLM_SUPPORTS_THINKING=${CHAT_SUPPORTS_THINKING:-true}
+      # General chat context window (Ollama num_ctx).
+      - DOCSLIDES_LLM_MAX_MODEL_LEN=16384
       # Legal tab: an independent deployment (see config/config.yaml's `legal:`
       # section) -- also routed to the same host Ollama instance rather than
       # config.yaml's vLLM-only default (http://vllm:8000). Gemma runs with

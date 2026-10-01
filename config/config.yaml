@@ -12,7 +12,8 @@ llm:
   model: "Qwen/Qwen3-14B-AWQ"             # verify against the current model repo before deploying
   api_key: "not-needed"                   # vLLM does not require a real key locally
   request_timeout_s: 600
-  max_model_len: 8192
+  # Ollama num_ctx for the general chat; vLLM serves 16384 (docker-compose.yml QWEN_MAX_MODEL_LEN).
+  max_model_len: 16384
   guided_decoding_backend: "xgrammar"     # xgrammar | outlines
   # Per call-site defaults for the `enable_thinking` chat-template flag.
   thinking_defaults:
@@ -40,7 +41,7 @@ legal:
     # Qwen3-14B: the same weights docker-compose.yml's vLLM serves (QWEN_MODEL_REPO), so the
     # Legal tab and the general chat share one server. The Ollama path (scripts/setup.*,
     # docker-compose.portable.yml, .env.local) defaults to gemma4:31b (Gemma 4 31B dense) instead, with
-    # supports_thinking: false; the general chat there stays on Qwen with thinking on (qwen3:14b; qwen3.6:27b from 32GB of RAM with a GPU). Qwen3-32B (Qwen/Qwen3-32B-AWQ, qwen3:32b) is the larger Qwen option.
+    # supports_thinking: false; the general chat there runs qwen3.8:27b-q4_K_M with thinking on, on every host. Qwen3-32B (Qwen/Qwen3-32B-AWQ, qwen3:32b) is the larger Qwen option.
     model: "Qwen/Qwen3-14B-AWQ"
     api_key: "not-needed"
     request_timeout_s: 900

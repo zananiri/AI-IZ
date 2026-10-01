@@ -7,8 +7,11 @@ before more-generic ones can swallow part of them:
   2. placeholder -- {{var}}, {var}, %s/%(name)s, <VAR>, [PLACEHOLDER]
   3. unit        -- a number immediately followed by a recognized unit
   4. number      -- remaining bare numeric literals
-  5. named_entity -- via per-language NER (spaCy where available, Stanza
-                     otherwise), run last over whatever text remains
+  5. named_entity -- person names only, via per-language NER (spaCy where
+                     available, Stanza otherwise), run last over whatever text
+                     remains. Places, groups, organizations, dates etc. are
+                     ordinary vocabulary that must be translated ("the Holy
+                     Land", "Christians", "today"), so they are left to the LLM.
 
 Each masked span becomes an indexed token like [[NUM_0]], [[UNIT_1]],
 [[ENT_2]], [[PLACEHOLDER_3]], [[FORMULA_4]]. The LLM is instructed (see
@@ -35,6 +38,11 @@ _UNIT_RE = re.compile(
     rf"(?<![\w.])(\d[\d.,]*)\s?({_UNITS})(?![\w])"
 )
 _NUMBER_RE = re.compile(r"(?<![\w.])\d[\d.,]*%?(?![\w])")
+# OCR engines emit plain numbers/percentages as inline math ("$54 %$", "$54\%$");
+# unwrap those to plain text so they aren't preserved verbatim as formulas.
+_TRIVIAL_MATH_RE = re.compile(r"\$\s*(\d[\d.,]*)\s*\\?(%?)\s*\$")
+# NER labels worth keeping verbatim: person names (spaCy PERSON, Stanza PER).
+_KEEP_ENTITY_LABELS = {"PERSON", "PER"}
 
 
 @dataclass
@@ -65,6 +73,8 @@ def mask_non_translatable_spans(text: str, lang: str, run_ner: bool = True) -> M
     spans: list[MaskedSpan] = []
     counters = {"formula": [0], "placeholder": [0], "unit": [0], "number": [0], "entity": [0]}
 
+    text = _TRIVIAL_MATH_RE.sub(lambda m: m.group(1) + m.group(2), text)
+
     text = _mask_with_regex(text, _FORMULA_RE, "formula", counters["formula"], spans)
     text = _mask_with_regex(text, _PLACEHOLDER_RE, "placeholder", counters["placeholder"], spans)
     text = _mask_with_regex(text, _UNIT_RE, "unit", counters["unit"], spans)
@@ -92,7 +102,11 @@ def _mask_named_entities(text: str, lang: str, counter: list[int], spans: list[M
             if "sentencizer" not in nlp.pipe_names and "senter" not in nlp.pipe_names:
                 nlp.add_pipe("sentencizer")
             doc = nlp(text)
-            entities = [(ent.start_char, ent.end_char, ent.text) for ent in doc.ents]
+            entities = [
+                (ent.start_char, ent.end_char, ent.text)
+                for ent in doc.ents
+                if ent.label_ in _KEEP_ENTITY_LABELS
+            ]
         elif lang in cfg.stanza_models:
             import stanza
 
@@ -103,6 +117,7 @@ def _mask_named_entities(text: str, lang: str, counter: list[int], spans: list[M
                 (ent.start_char, ent.end_char, ent.text)
                 for sent in doc.sentences
                 for ent in sent.ents
+                if ent.type in _KEEP_ENTITY_LABELS
             ]
     except Exception as exc:  # noqa: BLE001 -- NER model may be missing; degrade gracefully
         from docslides.logging_setup import get_logger

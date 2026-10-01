@@ -92,6 +92,11 @@ legal = [
     # BM25 over the bulk corpus (legal/corpus_lexical.py): a sparse matrix, with scipy.
     # sentence-transformers already pulls both in; named here because the code uses them directly.
     "scikit-learn>=1.2",
+    # Supreme Court case-law index (legal/caselaw.py), only needed once legal.corpus.caselaw_dir is
+    # set: lancedb reads the ingest's chunk store, bm25s its lexical shards. Same versions as
+    # caselaw/requirements.txt, which built the index.
+    "lancedb==0.39.0",
+    "bm25s==0.3.11",
 ]
 # Bulk legal corpus: fetchers + vectorize.py in scripts/legal_data/ (src/docslides/legal_data/).
 # Use together with `legal` (chromadb, sentence-transformers). Also: requirements-legal-data.txt.

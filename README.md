@@ -278,6 +278,37 @@ laws and sections), then searched and reranked the same way as the bulk eval
 (`scripts/legal_data/eval_run.py`). The law PDFs in `legal_txt/` are not used.
 Set `source: "signed_index"` to answer from the signed index below instead.
 
+### Legal tab: Supreme Court case law
+
+Alongside whichever source answers the question (bulk corpus or signed index), the Legal tab can
+also draw on Israeli Supreme Court judgments decided before 2022 (`caselaw/`, see
+`caselaw/README.md`), built on Kaggle or Colab from the `LevMuchnik/SupremeCourtOfIsrael` dataset
+and searched by `src/docslides/legal/caselaw.py`. It's off until you point the app at a built
+index:
+
+```bash
+pip install -e ".[legal]"   # pulls in lancedb and bm25s, needed to read the index
+```
+
+Unzip the ingest's output (the Output of `notebooks/kaggle_caselaw_ingest.ipynb`, or
+`israeli_caselaw_ingest all --root ./out --embed` run locally -- see `caselaw/README.md`)
+somewhere on this machine, e.g. `data/legal_caselaw/`. It must contain `lancedb/` and
+`state/embed.done.json`; `bm25/` is optional (dense search alone still works without it). Then in
+`config/config.yaml`:
+
+```yaml
+legal:
+  corpus:
+    caselaw_dir: "./data/legal_caselaw"
+```
+
+and restart the app. The embedding model named in `state/embed.done.json` must match
+`legal.retrieval.embedding_model` (`BAAI/bge-m3` by default) -- a mismatch is logged
+(`caselaw_model_mismatch`) and case law is skipped for that run, statute answers are unaffected.
+When it's on, each question's best-matching judgment excerpts (reranked, one per judgment, capped
+by `caselaw_top_k` / `caselaw_max_tokens`) go into the prompt as their own `<case_law>` block,
+labelled as judgments the model may cite but not treat as the statute text itself.
+
 ### Legal tab: building the signed Israeli-law index
 
 With `legal.retrieval.source: "signed_index"`, the Legal tab answers only from

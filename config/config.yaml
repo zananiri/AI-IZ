@@ -129,6 +129,10 @@ legal:
     fold_final_letters_for_embedding: false
     categories: ["laws", "procedural_rules"]   # searched by the Legal tab when retrieval.source is "corpus"
     top_k: 12                                  # chunks kept after reranking, then cut to max_evidence_tokens
+    # Supreme Court case law (caselaw/, src/docslides/legal/caselaw.py): path to a built index's
+    # folder (holds lancedb/, state/embed.done.json, optionally bm25/). null = off. See README's
+    # "Legal tab: Supreme Court case law".
+    caselaw_dir: 'C:\Users\iB\Projects\CaseDatabase\israeli_caselaw'   # single quotes: backslashes are literal
 
 # Corpus acquisition: scripts/legal_data/fetch_*.py (see scripts/legal_data/README.md). Only the
 # hosts below are contacted, robots.txt is honoured, at most one request per second per host.

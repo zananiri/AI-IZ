@@ -91,8 +91,9 @@ class ChatIntent(BaseModel):
     instruction: str = Field(
         default="",
         description=(
-            "When the message starts with an instruction followed by the text to translate, that "
-            "instruction copied verbatim (e.g. 'Translate this into German:'); otherwise empty"
+            "When the message starts with an instruction followed by the text it applies to (to "
+            "translate or rewrite), that instruction copied verbatim (e.g. 'Translate this into "
+            "German:'); otherwise empty"
         ),
     )
 

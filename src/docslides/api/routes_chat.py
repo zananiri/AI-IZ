@@ -11,7 +11,9 @@ TranslateGemma (translation/translator.py): a request to translate the
 document or the pasted text is translated chunk by chunk, and any other reply
 asked for in another language (a summary, an answer) is written by Gemma 4 in
 the material's own language and then translated. Everything else is answered
-inline by Gemma 4, with the document's text as context. Both paths stream over the same job's SSE queue (status events during
+inline by Gemma 4, with the document's text as context. A tone rewrite asked
+for in another language is rewritten by Gemma 4 in the text's own language,
+then translated by TranslateGemma. Both paths stream over the same job's SSE queue (status events during
 slide generation, reasoning_delta/content_delta for normal chat text) so the
 UI only needs one event handler -- see ui/gradio_app.py's `_stream_job`.
 """
@@ -115,8 +117,8 @@ async def _classify_intent(client, user_message: str, has_attachment: bool) -> C
                     "in the message) to be translated; a summary or answer in another language is NOT "
                     "a translation request. Extract the language they want the reply in as an ISO "
                     "639-1 code, if they named one or wrote the request in a language different from "
-                    "the material. If the message starts with an instruction followed by the text to "
-                    "translate, copy that instruction verbatim."
+                    "the material. If the message starts with an instruction followed by the text it "
+                    "applies to (to translate or rewrite), copy that instruction verbatim."
                 ),
             ),
             ChatMessage(role="user", content=_classification_view(user_message)),
@@ -174,6 +176,26 @@ async def _stream_translation(
     if glossary_id is not None:
         glossary.save()
     await event_bus.publish_done(job_id)
+
+
+def _write_in_note(answer_lang: str, what: str) -> str:
+    return (
+        f"Write your {what} in {LANGUAGE_NAMES.get(answer_lang, answer_lang)}, whatever language the "
+        "request asks for: a dedicated translator renders it into that language afterwards."
+    )
+
+
+async def _publish_translated(
+    job_id: str, client, text: str, written_lang: str | None, target_lang: str
+) -> None:
+    """Publish `text` (Gemma 4's reply or rewrite) in `target_lang`: translated by TranslateGemma,
+    unless it already came back in the target language."""
+    written_in = detect_language(text) or written_lang
+    if written_in == target_lang:
+        await event_bus.publish(job_id, Event(kind="content_delta", data={"text": text}))
+        await event_bus.publish_done(job_id)
+        return
+    await _stream_translation(job_id, client, text, written_in, target_lang)
 
 
 async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
@@ -247,22 +269,14 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
             # (Gemma's chat template takes a system message only first, so the note joins the
             # user's turn.)
             answer_lang = source_lang or "en"
-            note = (
-                f"(Write your reply in {LANGUAGE_NAMES.get(answer_lang, answer_lang)}, whatever language "
-                "the request asks for: a dedicated translator renders it into that language afterwards.)"
-            )
+            note = f"({_write_in_note(answer_lang, 'reply')})"
             if messages and messages[-1].role == "user":
                 messages[-1] = ChatMessage(role="user", content=f"{messages[-1].content}\n\n{note}")
             else:
                 messages = [*messages, ChatMessage(role="user", content=note)]
             await event_bus.publish_status(job_id, "Writing the answer")
             answer = await client.complete_text(messages, LLMCallSite("chat_general"))
-            written_in = detect_language(answer) or answer_lang
-            if written_in == target_lang:  # answered in the target language anyway: nothing to translate
-                await event_bus.publish(job_id, Event(kind="content_delta", data={"text": answer}))
-                await event_bus.publish_done(job_id)
-                return
-            await _stream_translation(job_id, client, answer, written_in, target_lang)
+            await _publish_translated(job_id, client, answer, answer_lang, target_lang)
             return
 
         await event_bus.publish_status(job_id, "Waiting for model response")
@@ -278,23 +292,44 @@ async def _run_tone_rewrite(job_id: str, req: ToneRewriteRequest) -> None:
     """Rewrites either the pasted `text` or, when the same message box's
     attach button was used instead, the attached document's extracted text --
     the two are mutually exclusive inputs to the same "what am I rewriting"
-    slot, not separate features."""
+    slot, not separate features.
+
+    A rewrite asked for in another language is done in two steps: Gemma 4
+    rewrites in the text's own language (with the tone settings), then
+    TranslateGemma translates the rewrite into the target language."""
     client = get_client()
     try:
         task_description = req.task_description
+        budget = int(get_config().llm.max_model_len * _ATTACHMENT_CONTEXT_TOKEN_FRACTION)
+
+        target_lang = None
+        instruction = ""
+        if req.text:
+            await event_bus.publish_status(job_id, "Reading your request")
+            intent = await _classify_intent(client, req.text, has_attachment=bool(req.attachment_path))
+            target_lang = intent.target_lang
+            instruction = intent.instruction.strip()
 
         if req.attachment_path:
-            document_text, _ = await extract_document_text(job_id, req.attachment_path)
-            budget = int(get_config().llm.max_model_len * _ATTACHMENT_CONTEXT_TOKEN_FRACTION)
+            document_text, source_lang = await extract_document_text(job_id, req.attachment_path)
             text_to_rewrite = _fit_to_token_budget(document_text, budget)
             if req.text:
                 # Typed text alongside an attachment is extra instruction, not the rewrite target.
                 task_description = f"{req.task_description}\n\nAdditional instructions: {req.text}"
         else:
+            text = req.text
+            if target_lang and instruction and instruction in text:
+                # "Rewrite this in German: <text>": the instruction is not part of what gets rewritten.
+                text = _text_to_translate(text, instruction)
+                task_description = f"{req.task_description}\n\nAdditional instructions: {instruction}"
             # Large pasted text (paste-to-rewrite) gets the same cap an
             # attachment's extracted text gets -- see _run_chat_turn above.
-            budget = int(get_config().llm.max_model_len * _ATTACHMENT_CONTEXT_TOKEN_FRACTION)
-            text_to_rewrite = _fit_to_token_budget(req.text, budget)
+            text_to_rewrite = _fit_to_token_budget(text, budget)
+            source_lang = detect_language(text_to_rewrite)
+
+        translate = bool(target_lang) and target_lang != source_lang
+        if translate:
+            task_description = f"{task_description}\n\n{_write_in_note(source_lang or 'en', 'rewrite')}"
 
         tone = ToneSettings(professionalism=req.professionalism, creativity=req.creativity)
         system_prompt = compose_rewrite_system_prompt(tone, task_description)
@@ -303,6 +338,12 @@ async def _run_tone_rewrite(job_id: str, req: ToneRewriteRequest) -> None:
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=text_to_rewrite),
         ]
+
+        if translate:
+            await event_bus.publish_status(job_id, "Rewriting")
+            rewrite = await client.complete_text(messages, LLMCallSite("tone_rewrite"), sampling=sampling)
+            await _publish_translated(job_id, client, rewrite, source_lang or "en", target_lang)
+            return
 
         await event_bus.publish_status(job_id, "Waiting for model response")
         async for delta in client.stream_chat(messages, LLMCallSite("tone_rewrite"), sampling=sampling):

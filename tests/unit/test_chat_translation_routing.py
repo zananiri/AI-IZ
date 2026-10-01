@@ -124,3 +124,27 @@ def test_an_instruction_the_model_did_not_copy_exactly_drops_the_first_line():
         "Line one.\nLine two."
     )
     assert rc._text_to_translate("Translate: Hello world", "Translate:") == "Hello world"
+
+
+def _rewrite(run_fixture, monkeypatch, gemma, translator, text):
+    monkeypatch.setattr(rc, "get_client", lambda: gemma)
+    monkeypatch.setattr(rc, "get_translator_client", lambda: translator)
+    req = rc.ToneRewriteRequest(text=text, professionalism=4, creativity=2)
+    asyncio.run(rc._run_tone_rewrite("job-2", req))
+
+
+def test_a_rewrite_in_another_language_is_rewritten_in_place_then_translated(run, monkeypatch):
+    intent = ChatIntent(wants_slides=False, target_lang="de", instruction="Make this formal, in German:")
+    gemma, translator = FakeGemma(intent, answer="The summary."), FakeTranslateGemma()
+    _rewrite(run, monkeypatch, gemma, translator, "Make this formal, in German: the land gave hope")
+    system, user = gemma.answer_prompts[0]
+    assert user.content == "the land gave hope"  # the instruction isn't rewritten as text
+    assert "Write your rewrite in English" in system.content
+    assert "Make this formal, in German:" in system.content
+    assert translator.texts == ["The summary."]
+
+
+def test_a_rewrite_in_the_texts_own_language_streams_from_gemma(run, monkeypatch):
+    gemma, translator = FakeGemma(ChatIntent(wants_slides=False)), FakeTranslateGemma()
+    _rewrite(run, monkeypatch, gemma, translator, "the land gave hope")
+    assert gemma.streamed and translator.texts == []

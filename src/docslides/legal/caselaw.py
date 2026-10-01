@@ -85,6 +85,26 @@ class CaseLawIndex:
         return self.table.search().where(f"chunk_id IN ({quoted})").select(COLUMNS).limit(len(chunk_ids)).to_list()
 
 
+def caselaw_stats() -> dict | None:
+    """Judgments/chunks in the installed case-law index (legal.corpus.caselaw_dir) and when it was
+    last built, read from the ingest's state files -- no LanceDB connection. None if it's off or
+    not built."""
+    root = get_config().legal.corpus.caselaw_dir
+    if not root:
+        return None
+    state = Path(root) / "state"
+    chunk_path, embed_path = state / "chunk.done.json", state / "embed.done.json"
+    if not chunk_path.exists() or not (Path(root) / "lancedb").exists():
+        return None
+    chunked = json.loads(chunk_path.read_text(encoding="utf-8"))
+    embedded = json.loads(embed_path.read_text(encoding="utf-8")) if embed_path.exists() else {}
+    return {
+        "judgments": chunked.get("documents", 0),
+        "chunks": embedded.get("chunks") or chunked.get("chunks", 0),
+        "built_at": embedded.get("finished_at") or chunked.get("finished_at"),
+    }
+
+
 @lru_cache(maxsize=2)
 def open_index(root: str) -> CaseLawIndex | None:
     path = Path(root)

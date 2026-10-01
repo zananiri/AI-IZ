@@ -23,6 +23,7 @@ import httpx
 
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
+from docslides.legal.caselaw import caselaw_stats
 from docslides.legal.corpus_retrieval import corpus_stats
 
 API_BASE_URL = os.environ.get("DOCSLIDES_API_URL", "http://localhost:8456")
@@ -50,13 +51,28 @@ APP_CSS = """
 @keyframes ai-working-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { .ai-working::after { animation: none; } }
 /* Both chat tabs' send arrow: orange, and two text rows taller (growing
-   downward from the top of the box). */
+   downward from the top of the box). A fixed size in every state -- idle,
+   disabled while a request runs, after the box is cleared -- so it never
+   changes size once a message is sent. */
 .chat-input button.submit-button {
   background: #f97316 !important; color: #fff !important;
-  min-height: calc(var(--size-9, 36px) + 3em) !important;
+  box-sizing: border-box !important; flex: 0 0 auto !important;
+  width: var(--size-9, 36px) !important; min-width: var(--size-9, 36px) !important;
+  max-width: var(--size-9, 36px) !important; padding: 0 !important;
+  height: calc(var(--size-9, 36px) + 42px) !important;
+  min-height: calc(var(--size-9, 36px) + 42px) !important;
+  max-height: calc(var(--size-9, 36px) + 42px) !important;
   align-self: flex-start;
 }
 .chat-input button.submit-button:hover { background: #ea580c !important; }
+/* Right-to-left text (Hebrew, Arabic) in the chats: each paragraph, list
+   item and the message box take their direction from their own text, so a
+   Hebrew line reads right-to-left (punctuation and numbers in place) next to
+   an English one. APP_HEAD sets dir="auto" on the chat messages' blocks. */
+.chat-log .message-content [dir="auto"] { text-align: start !important; }
+.chat-input textarea {
+  unicode-bidi: plaintext; text-align: start !important;
+}
 """
 
 # Enter sends the prompt in both chat tabs (Shift+Enter still adds a line):
@@ -73,6 +89,26 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault(); e.stopPropagation();
   btn.click();
 }, true);
+// Chat messages: every block takes its direction from its own first strong
+// character, so Hebrew/Arabic lines (and lists) read right-to-left while
+// English ones stay left-to-right. Re-applied as answers stream in.
+(() => {
+  const BLOCKS = "p, li, ul, ol, h1, h2, h3, h4, h5, h6, blockquote, td, th, pre";
+  const mark = (root) => {
+    root.querySelectorAll(".chat-log .message-content").forEach((msg) => {
+      if (msg.getAttribute("dir") !== "auto") msg.setAttribute("dir", "auto");
+      msg.querySelectorAll(BLOCKS).forEach((el) => {
+        if (el.getAttribute("dir") !== "auto") el.setAttribute("dir", "auto");
+      });
+    });
+  };
+  let queued = false;
+  new MutationObserver(() => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; mark(document); });
+  }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+})();
 </script>
 """
 
@@ -280,7 +316,7 @@ def build_chat_tab() -> None:
     cfg = get_config()
     gr.Markdown(f"_Model: **{cfg.llm.model}** via **{cfg.llm.backend}**_")
 
-    chatbot = gr.Chatbot(label="Chat")
+    chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log"])
     llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
     reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
 
@@ -496,6 +532,29 @@ def send_legal_message(message: dict, mode: str, history: list):
     yield from _stream_legal_job(job_id, history)
 
 
+def _legal_sources_table() -> str:
+    """The small summary above the Legal tab's citations: when the sources were last updated and
+    how many laws and judgments the answers can draw on."""
+    corpus = corpus_stats()
+    caselaw = caselaw_stats()
+    records = (corpus or {}).get("records_by_category", {})
+    dates = [d[:10] for d in ((corpus or {}).get("built_at"), (caselaw or {}).get("built_at")) if d]
+    # Judgments indexed into the corpus itself (vectorize.py's supreme_court category) count too
+    # when the separate case-law index isn't installed.
+    judgments = caselaw["judgments"] if caselaw else records.get("supreme_court")
+
+    def count(value) -> str:
+        return f"{value:,}" if value else "not installed"
+
+    return (
+        "| Legal sources | |\n|---|---:|\n"
+        f"| Last update | {max(dates) if dates else 'unknown'} |\n"
+        f"| Laws | {count(records.get('laws'))} |\n"
+        f"| Procedural regulations | {count(records.get('procedural_rules'))} |\n"
+        f"| Case law (Supreme Court) | {count(judgments)} |"
+    )
+
+
 def build_legal_tab() -> None:
     legal = get_config().legal
     source = (
@@ -520,7 +579,7 @@ def build_legal_tab() -> None:
 
     with gr.Row():
         with gr.Column(scale=3):
-            legal_chatbot = gr.Chatbot(label="Legal Assistant")
+            legal_chatbot = gr.Chatbot(label="Legal Assistant", elem_classes=["chat-log"])
             legal_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
             legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
             legal_mode = gr.Radio(
@@ -543,6 +602,7 @@ def build_legal_tab() -> None:
                 elem_classes=_IDLE_CLASSES,
             )
         with gr.Column(scale=1):
+            gr.Markdown(_legal_sources_table())
             gr.Markdown("### Citations")
             citations_panel = gr.Markdown(value="_No citations yet._")
             with gr.Accordion("Research memorandum (Pass A)", open=False):

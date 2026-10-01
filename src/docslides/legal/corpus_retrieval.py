@@ -163,6 +163,7 @@ def corpus_stats() -> dict | None:
         "chunks": sum(c.get("chunks", 0) for c in categories.values()),
         "records": sum(c.get("records", 0) for c in categories.values()),
         "categories": {name: c.get("chunks", 0) for name, c in categories.items()},
+        "records_by_category": {name: c.get("records", 0) for name, c in categories.items()},
         "built_at": info.get("built_at"),
     }
 

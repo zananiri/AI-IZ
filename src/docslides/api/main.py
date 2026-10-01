@@ -72,10 +72,10 @@ async def health() -> dict:
 def _mount_ui() -> None:
     import gradio as gr
 
-    from docslides.ui.gradio_app import APP_CSS, build_app
+    from docslides.ui.gradio_app import APP_CSS, APP_HEAD, build_app
 
     demo = build_app()
-    gr.mount_gradio_app(app, demo, path="/ui", css=APP_CSS)
+    gr.mount_gradio_app(app, demo, path="/ui", css=APP_CSS, head=APP_HEAD)
 
 
 _mount_ui()

@@ -49,6 +49,31 @@ APP_CSS = """
 }
 @keyframes ai-working-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { .ai-working::after { animation: none; } }
+/* Both chat tabs' send arrow: orange, and two text rows taller (growing
+   downward from the top of the box). */
+.chat-input button.submit-button {
+  background: #f97316 !important; color: #fff !important;
+  min-height: calc(var(--size-9, 36px) + 3em) !important;
+  align-self: flex-start;
+}
+.chat-input button.submit-button:hover { background: #ea580c !important; }
+"""
+
+# Enter sends the prompt in both chat tabs (Shift+Enter still adds a line):
+# multi-line MultimodalTextboxes otherwise only insert a newline on Enter.
+# Passed as `head=` next to APP_CSS.
+APP_HEAD = """
+<script>
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  const box = e.target.closest && e.target.closest(".chat-input");
+  if (!box || e.target.tagName !== "TEXTAREA") return;
+  const btn = box.querySelector("button.submit-button");
+  if (!btn || btn.disabled) return;
+  e.preventDefault(); e.stopPropagation();
+  btn.click();
+}, true);
+</script>
 """
 
 _WORKING_CLASSES = ["ai-working"]
@@ -271,6 +296,7 @@ def build_chat_tab() -> None:
         file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
         file_count="single",
         sources=["upload"],
+        elem_classes=["chat-input"],
     )
 
     with gr.Accordion("Tone control", open=False):
@@ -511,6 +537,7 @@ def build_legal_tab() -> None:
                 file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
                 file_count="single",
                 sources=["upload"],
+                elem_classes=["chat-input"],
             )
         with gr.Column(scale=1):
             gr.Markdown("### Citations")
@@ -537,7 +564,7 @@ def build_app() -> gr.Blocks:
 
 def run() -> None:
     demo = build_app()
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS)
+    demo.queue().launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS, head=APP_HEAD)
 
 
 if __name__ == "__main__":

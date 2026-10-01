@@ -30,7 +30,12 @@ from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
 from docslides.legal import amendments, corpus_navigation
 from docslides.legal.models import ChunkMetadata
-from docslides.legal.retrieval import RetrievalResult, RetrievedLegalChunk
+from docslides.legal.retrieval import (
+    RetrievalResult,
+    RetrievedLegalChunk,
+    cpu_on_gpu_oom,
+    move_retrieval_to_cpu,
+)
 from docslides.legal_data.hebrew import normalize_for_embedding
 from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams
 from docslides.llm.schemas import EvalIssue, EvalRetrievalPlan
@@ -212,6 +217,7 @@ def _lexical_hits(collection, category: str, ranked: list[tuple[str, float]], so
             for chunk_id, _ in ranked if chunk_id in by_id]
 
 
+@cpu_on_gpu_oom
 def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[str], top_k: int,
                      per_issue_slot: bool = False) -> list[dict]:
     """Retrieval steered by the answering model's own reading of the question:
@@ -411,11 +417,31 @@ def _roomiest_gpu() -> str:
     return "cuda"
 
 
+# Free GPU memory retrieval needs left after warm-up: each search allocates ~50-500 MB on top of the
+# loaded models. With less, the 30 Sep gemma4:31b run loaded fine and then OOM'd on every question.
+MIN_FREE_GPU_BYTES = 1536 * 1024**2
+
+
+def _gpu_short_of_headroom(device: str | None) -> str | None:
+    """Why `device` hasn't room left for searches, or None (also when it isn't a GPU)."""
+    if not device or not device.startswith("cuda"):
+        return None
+    try:
+        import torch
+
+        free = torch.cuda.mem_get_info(torch.device(device))[0]
+    except Exception:  # noqa: BLE001 -- can't tell: assume it fits
+        return None
+    if free < MIN_FREE_GPU_BYTES:
+        return f"only {free / 1024**2:.0f} MiB free on {device} after loading retrieval"
+    return None
+
+
 def warm_up_retrieval() -> str:
     """Loads the embedder, the reranker and the BM25 indexes before the first question, so it isn't
     charged for them -- and moves retrieval to the CPU (legal.retrieval.device) when the GPU hasn't
-    room for it beside the LLM. Raises if the reranker can't load even there: an eval must not run
-    on embedding distance alone. Returns the device retrieval now runs on ("auto" = library default)."""
+    room for it beside the LLM, or leaves too little over to search with (MIN_FREE_GPU_BYTES). Raises
+    if the reranker can't load even there: an eval must not run on embedding distance alone. Returns the device retrieval now runs on ("auto" = library default)."""
     from docslides.legal.corpus_lexical import lexical_index
     from docslides.legal.retrieval import _reranker
 
@@ -432,17 +458,13 @@ def warm_up_retrieval() -> str:
 
     try:
         load(retrieval.device)
+        short = _gpu_short_of_headroom(retrieval.device)
+        if short:
+            raise RuntimeError(short)
     except Exception as exc:
         if retrieval.device == "cpu":
             raise
-        logger.warning("legal_retrieval_moved_to_cpu", device=retrieval.device, error=f"{type(exc).__name__}: {exc}")
-        retrieval.device = "cpu"
-        try:
-            import torch
-
-            torch.cuda.empty_cache()
-        except Exception:  # noqa: BLE001, S110 -- nothing to free without torch/CUDA
-            pass
+        move_retrieval_to_cpu(f"{type(exc).__name__}: {exc}")
         load("cpu")
     if retrieval.corpus_lexical:
         for category in legal_cfg.corpus.categories:

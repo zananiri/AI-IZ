@@ -318,6 +318,45 @@ def _reranker(model_name: str, device: str | None = None):
     return model
 
 
+def is_gpu_oom(exc: BaseException) -> bool:
+    """A CUDA out-of-memory error (torch.cuda.OutOfMemoryError, or the RuntimeError older torch raises)."""
+    return type(exc).__name__ == "OutOfMemoryError" or "CUDA out of memory" in str(exc)
+
+
+def move_retrieval_to_cpu(reason: str) -> None:
+    """Sets legal.retrieval.device to "cpu" and drops the GPU copies of the embedder and the reranker,
+    so the next search loads them on the CPU and their GPU memory goes back to the LLM."""
+    retrieval = get_config().legal.retrieval
+    logger.warning("legal_retrieval_moved_to_cpu", device=retrieval.device, error=reason)
+    retrieval.device = "cpu"
+    _reranker.cache_clear()
+    rag_embedding._get_embedder.cache_clear()
+    try:
+        import torch
+
+        torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001, S110 -- nothing to free without torch/CUDA
+        pass
+
+
+def cpu_on_gpu_oom(fn):
+    """Runs `fn`; if retrieval runs out of GPU memory mid-run (the LLM, split over the GPUs, grows its
+    share after warm-up), moves retrieval to the CPU and runs it once more there."""
+    from functools import wraps
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            if get_config().legal.retrieval.device == "cpu" or not is_gpu_oom(exc):
+                raise
+            move_retrieval_to_cpu(f"{type(exc).__name__}: {exc}")
+            return fn(*args, **kwargs)
+
+    return wrapper
+
+
 @dataclass
 class _Candidate:
     chunk_id: str

@@ -22,6 +22,7 @@ from pathlib import Path
 
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
+from docslides.legal.retrieval import cpu_on_gpu_oom
 from docslides.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -97,6 +98,7 @@ def open_index(root: str) -> CaseLawIndex | None:
         return None
 
 
+@cpu_on_gpu_oom
 def search_caselaw(question: str, issues: list[str]) -> list[dict]:
     """Up to caselaw_top_k judgment excerpts for the question (one per judgment), best first."""
     legal_cfg = get_config().legal

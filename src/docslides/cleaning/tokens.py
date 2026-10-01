@@ -1,6 +1,6 @@
 """Token counting for chunk-budget decisions.
 
-Uses the real Qwen tokenizer via `transformers` when it's available locally
+Uses the configured model's own tokenizer via `transformers` when it's available locally
 (recommended -- download it alongside the model weights, no internet needed
 at inference time), falling back to a conservative heuristic otherwise so
 chunking still works before that dependency is set up.

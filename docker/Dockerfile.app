@@ -9,7 +9,7 @@
 # spaCy's small pipelines are baked in at build time (they're small, pure
 # pip-installed model packages, not runtime weight downloads) -- this is the
 # one online step for this image; everything else (fastText, Stanza,
-# PaddleOCR, Surya, Qwen weights) is pulled at runtime from the bind-mounted
+# PaddleOCR, Surya, Gemma weights) is pulled at runtime from the bind-mounted
 # caches populated by scripts/download_models.sh on the host. See README.md.
 FROM python:3.11-slim
 

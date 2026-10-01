@@ -54,6 +54,12 @@ class TranslatedChunk(BaseModel):
     new_terms: list[GlossaryTerm] = Field(default_factory=list)
 
 
+class TranslationRevision(BaseModel):
+    """Gemma 4's fix of a TranslateGemma chunk translation that missed glossary terms."""
+
+    translated_text: str
+
+
 class ChunkSummary(BaseModel):
     """Used to compress chunks into the outline stage's context budget for
     long documents -- see slides/outline.py."""
@@ -122,7 +128,7 @@ class ContraryAuthority(SupportingAuthority):
 
 
 class ResearchMemorandum(BaseModel):
-    """Legal tab Pass A (Qwen): the claim -> evidence graph that the draft is
+    """Legal tab Pass A (Gemma 4): the claim -> evidence graph that the draft is
     only allowed to cite from. Checked by legal/validation.py's gate before
     Pass B may run."""
 

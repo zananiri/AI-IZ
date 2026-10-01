@@ -15,7 +15,7 @@ from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
 from docslides.ingestion.models import PageKind, ParsedDocument
 from docslides.ingestion.parser import parse_document
-from docslides.llm.client import get_client
+from docslides.llm.client import get_client, get_translator_client
 from docslides.llm.schemas import SlideContent
 from docslides.logging_setup import get_logger
 from docslides.ocr.router import recognize_page
@@ -23,8 +23,7 @@ from docslides.slides.fill import fill_all_slides
 from docslides.slides.outline import generate_outline
 from docslides.slides.fill import fill_slide
 from docslides.slides.pptx_builder import build_pptx
-from docslides.translation.glossary import Glossary
-from docslides.translation.translator import translate_chunk
+from docslides.translation.translator import prepare_glossary, translate_chunk
 
 logger = get_logger(__name__)
 
@@ -102,9 +101,14 @@ async def run_pipeline(job_id: str, file_path: str | Path, target_lang: str) -> 
         chunks = chunk_document(cleaned_pages, page_languages)
 
         translated_chunks = []
-        glossary = Glossary.load(document_id)
+        await event_bus.publish_status(job_id, "Preparing the terminology glossary")
+        source_lang = chunks[0].language if chunks else (page_languages[0] if page_languages else "en")
+        glossary = await prepare_glossary(
+            client, document_id, "\n\n".join(cleaned_pages), source_lang, target_lang
+        )
+        translator = get_translator_client()
         for i, chunk in enumerate(chunks):
-            result = await translate_chunk(client, chunk, target_lang, glossary)
+            result = await translate_chunk(client, chunk, target_lang, glossary, translator)
             glossary.save()
             translated_chunks.append(result)
             await event_bus.publish_status(

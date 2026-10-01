@@ -7,7 +7,7 @@
     -> unverified sentences removed -> wrong-script words repaired
     -> final citation check -> numeric grounding check -> audit log
 
-One model (the orchestrator, Qwen) does all of it: research, drafting and
+One model (the orchestrator, Gemma 4) does all of it: research, drafting and
 verification. The reply is always in the question's language. Every model call
 -- with its reasoning -- is recorded in the audit entry (llm_calls) and the LLM
 trace (llm/trace.py).
@@ -65,7 +65,7 @@ from docslides.llm import trace
 from docslides.llm.client import (
     ChatMessage,
     LLMCallSite,
-    QwenClient,
+    LLMClient,
     SamplingParams,
     get_legal_orchestrator_client,
 )
@@ -234,8 +234,8 @@ def _dominant_rtl_script(text: str) -> str | None:
     return None
 
 
-async def detect_reply_language(qwen: QwenClient, query: str) -> str:
-    """Hebrew/Arabic are unambiguous by script. Anything else goes to Qwen,
+async def detect_reply_language(llm: LLMClient, query: str) -> str:
+    """Hebrew/Arabic are unambiguous by script. Anything else goes to the model,
     because the local detector is restricted to config.languages.supported
     and would force e.g. a Russian question into the nearest supported
     language -- the spec forbids defaulting away from the asker's language."""
@@ -243,7 +243,7 @@ async def detect_reply_language(qwen: QwenClient, query: str) -> str:
     if script:
         return script
     try:
-        result = await qwen.complete_json(
+        result = await llm.complete_json(
             [ChatMessage("system", prompts.LANGUAGE_ID_PROMPT), ChatMessage("user", query)],
             LLMCallSite("legal_language_id"),
             schema=ReplyLanguage,
@@ -364,7 +364,7 @@ def _task_input(evidence_text: str, question: str, notes: str = "") -> str:
 # --- Pass 0 ---------------------------------------------------------------------------
 
 
-async def analyze_question(qwen: QwenClient, evidence_text: str, question: str) -> str:
+async def analyze_question(llm: LLMClient, evidence_text: str, question: str) -> str:
     """Pass 0: with thinking on, the model reads the evidence against the question and
     writes notes -- what is asked, the decisive words, a direct answer (or NOT STATED /
     DELEGATED / AMBIGUOUS / NOT IN INDEX), the exceptions, the pitfalls -- that the
@@ -380,10 +380,10 @@ async def analyze_question(qwen: QwenClient, evidence_text: str, question: str) 
     if not cfg.analysis_pass:
         return ""
     try:
-        notes = await qwen.complete_text(
+        notes = await llm.complete_text(
             [ChatMessage("system", prompts.ANALYSIS_PROMPT), ChatMessage("user", _task_input(evidence_text, question))],
             LLMCallSite("legal_analysis"),
-            # Qwen3's recommended thinking-mode sampling: greedy decoding makes it loop.
+            # The recommended thinking-mode sampling: greedy decoding makes it loop.
             sampling=SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=cfg.analysis_max_tokens,
                                     seed=0),
         )
@@ -397,7 +397,7 @@ async def analyze_question(qwen: QwenClient, evidence_text: str, question: str) 
 
 
 async def research_memorandum(
-    qwen: QwenClient,
+    llm: LLMClient,
     evidence_text: str,
     question: str,
     evidence: dict[str, ChunkMetadata],
@@ -420,7 +420,7 @@ async def research_memorandum(
     best: tuple[ResearchMemorandum, list[str], list[str], str] | None = None  # memo, errors, uncovered, json
     for attempt in range(1 + max_revisions):
         try:
-            grounded = await qwen.complete_json(
+            grounded = await llm.complete_json(
                 messages,
                 LLMCallSite("legal_research_memo"),
                 schema=schema,
@@ -472,12 +472,12 @@ async def research_memorandum(
 
 
 async def _entailment(
-    qwen: QwenClient, check: CitationCheck, claim_text: str, parts: list[RetrievedLegalChunk], sem: asyncio.Semaphore
+    llm: LLMClient, check: CitationCheck, claim_text: str, parts: list[RetrievedLegalChunk], sem: asyncio.Semaphore
 ) -> None:
     source_text = _hebrew_safe("\n".join(p.text for p in parts))  # it quotes the source in its explanation
     async with sem:
         try:
-            result = await qwen.complete_json(
+            result = await llm.complete_json(
                 [
                     ChatMessage("system", prompts.ENTAILMENT_PROMPT),
                     ChatMessage(
@@ -540,7 +540,7 @@ def _repair_source_ids(text: str, memo: ResearchMemorandum, evidence: dict[str, 
 
 
 async def verify_citations(
-    qwen: QwenClient, draft: str, memo: ResearchMemorandum, retrieval: RetrievalResult, evidence: dict[str, ChunkMetadata]
+    llm: LLMClient, draft: str, memo: ResearchMemorandum, retrieval: RetrievalResult, evidence: dict[str, ChunkMetadata]
 ) -> list[CitationCheck]:
     grouped = retrieval.by_source_id()
     claims = {c.claim_id: c.text for c in memo.governing_law}
@@ -559,7 +559,7 @@ async def verify_citations(
     sem = asyncio.Semaphore(get_config().legal.pipeline.entailment_concurrency)
     await asyncio.gather(
         *(
-            _entailment(qwen, check, claims[check.claim_id], grouped[check.source_id], sem)
+            _entailment(llm, check, claims[check.claim_id], grouped[check.source_id], sem)
             for check in checks
             if not check.structural_problems
         )
@@ -680,7 +680,7 @@ def _parse_draft(raw: str, truncated: bool = False) -> LegalDraft | None:
 
 
 async def draft_answer(
-    qwen: QwenClient,
+    llm: LLMClient,
     reply_language: str,
     evidence_text: str,
     question: str,
@@ -709,7 +709,7 @@ async def draft_answer(
     sampling = SamplingParams(temperature=0.0, max_tokens=2048)  # same memo, same draft
     for attempt in range(1 + max_revisions):
         try:
-            as_written = await qwen.complete_text(messages, LLMCallSite("legal_draft"), sampling=sampling)
+            as_written = await llm.complete_text(messages, LLMCallSite("legal_draft"), sampling=sampling)
             call = next((c for c in reversed(trace.current_calls() or []) if c.get("call_site") == "legal_draft"), {})
             draft = _parse_draft(as_written, truncated=call.get("done_reason") == "length")
             if draft is None:
@@ -721,7 +721,7 @@ async def draft_answer(
             raise DraftUnavailable(f"{type(exc).__name__}: {exc}") from exc
         repaired_text, repaired = _repair_source_ids(draft.answer_draft, memo, evidence)
         draft.answer_draft = expand_citations(repaired_text, evidence)
-        checks = await verify_citations(qwen, draft.answer_draft, memo, retrieval, evidence)
+        checks = await verify_citations(llm, draft.answer_draft, memo, retrieval, evidence)
         failures = _citation_failures(checks)
         no_citations = not checks and bool(memo.supporting_authority)
         if no_citations:
@@ -765,7 +765,7 @@ async def draft_answer(
 
 
 async def repair_foreign_words(
-    qwen: QwenClient, text: str, reply_language: str, allowed: set[str]
+    llm: LLMClient, text: str, reply_language: str, allowed: set[str]
 ) -> tuple[str, dict]:
     """Replaces words written in the wrong script (legal/script_check.py) with the
     reply-language words the model gives for them. Only the flagged words change:
@@ -776,7 +776,7 @@ async def repair_foreign_words(
     if not words:
         return text, log
     try:
-        result = await qwen.complete_json(
+        result = await llm.complete_json(
             [
                 ChatMessage("system", prompts.script_repair_prompt(reply_language)),
                 ChatMessage("user", "Words:\n- " + "\n- ".join(words) + "\n\nSentences:\n"
@@ -880,11 +880,11 @@ def _amendment_notes(evidence: dict[str, ChunkMetadata]) -> dict[str, list]:
     return {sid: n for sid, n in notes.items() if n}
 
 
-async def _localized_notice(qwen: QwenClient, reply_language: str, notices: dict[str, str]) -> str:
+async def _localized_notice(llm: LLMClient, reply_language: str, notices: dict[str, str]) -> str:
     if reply_language in notices:
         return notices[reply_language]
     try:
-        return await qwen.complete_text(
+        return await llm.complete_text(
             [
                 ChatMessage("system", f"Translate the user's text into {prompts.language_name(reply_language)}. "
                                       "Return only the translation."),
@@ -898,7 +898,7 @@ async def _localized_notice(qwen: QwenClient, reply_language: str, notices: dict
 
 
 async def _no_answer(
-    qwen: QwenClient,
+    llm: LLMClient,
     entry: dict,
     reply_language: str,
     notices: dict[str, str],
@@ -908,7 +908,7 @@ async def _no_answer(
     coverage_gaps: str | None = None,
 ) -> LegalTurnResult:
     """A turn that ends without an answer: a notice in the reply language, escalated."""
-    notice = await _localized_notice(qwen, reply_language, notices)
+    notice = await _localized_notice(llm, reply_language, notices)
     output = {
         "research_memorandum": memo.model_dump() if memo else None,
         "answer_draft": notice,
@@ -929,13 +929,13 @@ def _write_audit(entry: dict) -> Path:
 
 
 async def _retrieve(
-    qwen: QwenClient, query: str, status: StatusFn, entry: dict, max_issues: int = 3
+    llm: LLMClient, query: str, status: StatusFn, entry: dict, max_issues: int = 3
 ) -> RetrievalResult:
     """The evidence for the turn, from legal.retrieval.source: the bulk corpus (planned retrieval,
     legal/corpus_retrieval.py) or the signed index of drop-in law PDFs (legal/retrieval.py)."""
     if get_config().legal.retrieval.source == "corpus":
         await status("Planning the search")
-        issues = await corpus_retrieval.plan_issues(qwen, query, max_issues)
+        issues = await corpus_retrieval.plan_issues(llm, query, max_issues)
         entry["retrieval_plan"] = [i.model_dump() for i in issues]
         await status("Searching the Israeli-law corpus")
         return await asyncio.to_thread(corpus_retrieval.retrieve_corpus, query, issues)
@@ -955,8 +955,8 @@ async def run_legal_turn(
 async def _legal_turn(
     query: str, job_id: str, status: StatusFn, attachment_path: str | None = None
 ) -> LegalTurnResult:
-    qwen = get_legal_orchestrator_client()
-    entry: dict = {"job_id": job_id, "query": query, "orchestrator_model": qwen.model, "attachment_path": attachment_path}
+    llm = get_legal_orchestrator_client()
+    entry: dict = {"job_id": job_id, "query": query, "orchestrator_model": llm.model, "attachment_path": attachment_path}
 
     attachment_text = None
     if attachment_path:
@@ -965,10 +965,10 @@ async def _legal_turn(
         attachment_text = _fit_to_token_budget(raw_text)
 
     await status("Detecting the question's language")
-    reply_language = await detect_reply_language(qwen, query)
+    reply_language = await detect_reply_language(llm, query)
     entry["reply_language"] = reply_language
 
-    retrieval = await _retrieve(qwen, query, status, entry)
+    retrieval = await _retrieve(llm, query, status, entry)
     grouped = retrieval.by_source_id()
     evidence = {source_id: parts[0].metadata for source_id, parts in grouped.items()}
     amendment_notes = _amendment_notes(evidence)
@@ -1004,14 +1004,14 @@ async def _legal_turn(
     analysis_notes = ""
     if grouped:
         await status(f"Pass 0: reading {len(grouped)} source(s) against the question (thinking)")
-        analysis_notes = await analyze_question(qwen, evidence_text, question)
+        analysis_notes = await analyze_question(llm, evidence_text, question)
         entry["analysis_notes"] = analysis_notes
 
     await status(f"Pass A: research memorandum over {len(grouped)} source(s)")
     memo_attempts: list = []
     evidence_texts = {source_id: "\n".join(p.text for p in parts) for source_id, parts in grouped.items()}
     memo, gate_errors = await research_memorandum(
-        qwen, evidence_text, question, evidence, evidence_texts, memo_attempts, retrieval.laws_in_play,
+        llm, evidence_text, question, evidence, evidence_texts, memo_attempts, retrieval.laws_in_play,
         analysis_notes,
     )
     entry["memorandum_attempts"] = memo_attempts
@@ -1024,21 +1024,21 @@ async def _legal_turn(
             # Nothing in the evidence states what was asked -- which is the answer (a count of cases, a
             # fine the law never set), not a failure to produce one.
             reasons.insert(0, "No retrieved provision states what was asked (Pass 0: NOT STATED)")
-            return await _no_answer(qwen, entry, reply_language, _NOT_STATED_NOTICE, reasons, memo, retrieved)
-        return await _no_answer(qwen, entry, reply_language, _GATE_FAILED_NOTICE, reasons, memo, retrieved)
+            return await _no_answer(llm, entry, reply_language, _NOT_STATED_NOTICE, reasons, memo, retrieved)
+        return await _no_answer(llm, entry, reply_language, _GATE_FAILED_NOTICE, reasons, memo, retrieved)
 
     await status("Pass B: drafting the answer and verifying every citation")
     draft_attempts: list = []
     entry["draft_attempts"] = draft_attempts
     try:
         draft, checks, draft_failures = await draft_answer(
-            qwen, reply_language, evidence_text, question, memo, retrieval, evidence, draft_attempts,
+            llm, reply_language, evidence_text, question, memo, retrieval, evidence, draft_attempts,
             retrieval.laws_in_play, analysis_notes,
         )
     except DraftUnavailable as exc:
         reasons = [f"No well-formed draft could be generated: {exc}"]
         reasons += _escalation_reasons(None, memo, retrieval, evidence, [])
-        return await _no_answer(qwen, entry, reply_language, _UNVERIFIED_NOTICE, reasons, memo, retrieved)
+        return await _no_answer(llm, entry, reply_language, _UNVERIFIED_NOTICE, reasons, memo, retrieved)
     notes: list[str] = []
     final_text = draft.answer_draft
 
@@ -1064,7 +1064,7 @@ async def _legal_turn(
         reasons = ["The draft's citations failed verification, so no answer was given: " + "; ".join(failures[:5])]
         reasons += _escalation_reasons(draft, memo, retrieval, evidence, [])
         entry["withheld_draft"] = draft.answer_draft
-        return await _no_answer(qwen, entry, reply_language, _UNVERIFIED_NOTICE, reasons, memo, retrieved,
+        return await _no_answer(llm, entry, reply_language, _UNVERIFIED_NOTICE, reasons, memo, retrieved,
                                 draft.coverage_gaps)
 
     await status("Checking the answer's wording")
@@ -1072,7 +1072,7 @@ async def _legal_turn(
     if echoed:
         entry["dropped_field_lines"] = echoed
     allowed = script_check.allowed_words([query, *evidence_texts.values()])
-    final_text, script_log = await repair_foreign_words(qwen, final_text, reply_language, allowed)
+    final_text, script_log = await repair_foreign_words(llm, final_text, reply_language, allowed)
     entry["script_check"] = script_log
 
     await status("Final citation check")
@@ -1172,7 +1172,7 @@ async def run_case_turn(
     return result
 
 
-async def _verify_case_citations(qwen: QwenClient, text: str, retrieval: RetrievalResult) -> list[CitationCheck]:
+async def _verify_case_citations(llm: LLMClient, text: str, retrieval: RetrievalResult) -> list[CitationCheck]:
     """verify_citations without a memorandum: each cited sentence is itself the claim."""
     grouped = retrieval.by_source_id()
     checks = []
@@ -1183,7 +1183,7 @@ async def _verify_case_citations(qwen: QwenClient, text: str, retrieval: Retriev
                                     relation=citation.relation or "supports",
                                     sentence=sentence_before(text, citation.start), structural_problems=problems))
     sem = asyncio.Semaphore(get_config().legal.pipeline.entailment_concurrency)
-    await asyncio.gather(*(_entailment(qwen, check, check.sentence, grouped[check.source_id], sem)
+    await asyncio.gather(*(_entailment(llm, check, check.sentence, grouped[check.source_id], sem)
                            for check in checks if not check.structural_problems))
     for check in checks:
         if (check.verdict == "not_entailed" and check.relation == "supports" and not check.structural_problems
@@ -1196,8 +1196,8 @@ async def _verify_case_citations(qwen: QwenClient, text: str, retrieval: Retriev
 
 async def _case_turn(case_text: str, job_id: str, status: StatusFn, attachment_path: str | None) -> LegalTurnResult:
     cfg = get_config().legal.pipeline
-    qwen = get_legal_orchestrator_client()
-    entry: dict = {"job_id": job_id, "mode": "case", "query": case_text, "orchestrator_model": qwen.model,
+    llm = get_legal_orchestrator_client()
+    entry: dict = {"job_id": job_id, "mode": "case", "query": case_text, "orchestrator_model": llm.model,
                    "attachment_path": attachment_path}
 
     material = case_text.strip()
@@ -1211,10 +1211,10 @@ async def _case_turn(case_text: str, job_id: str, status: StatusFn, attachment_p
     entry["case_material"] = material
 
     await status("Detecting the case file's language")
-    reply_language = await detect_reply_language(qwen, (case_text.strip() or material)[:2000])
+    reply_language = await detect_reply_language(llm, (case_text.strip() or material)[:2000])
     entry["reply_language"] = reply_language
 
-    retrieval = await _retrieve(qwen, _fit_to_token_budget(material, _CASE_QUERY_TOKEN_BUDGET), status, entry,
+    retrieval = await _retrieve(llm, _fit_to_token_budget(material, _CASE_QUERY_TOKEN_BUDGET), status, entry,
                                 max_issues=_CASE_MAX_ISSUES)
     grouped = retrieval.by_source_id()
     evidence = {source_id: parts[0].metadata for source_id, parts in grouped.items()}
@@ -1233,13 +1233,13 @@ async def _case_turn(case_text: str, job_id: str, status: StatusFn, attachment_p
 
     await status(f"Writing the case work file from {len(grouped)} source(s) (thinking)")
     today = datetime.now().astimezone().date().isoformat()  # the server's local date: deadlines count from it
-    work_file = await qwen.complete_text(
+    work_file = await llm.complete_text(
         [
             ChatMessage("system", prompts.case_prompt(reply_language, today)),
             ChatMessage("user", f"<evidence_set>\n{evidence_text}\n</evidence_set>\n\n<case_file>\n{material}\n</case_file>"),
         ],
         LLMCallSite("legal_case_analysis"),
-        # Qwen3's recommended thinking-mode sampling, as in the analysis pass: greedy decoding loops.
+        # The recommended thinking-mode sampling, as in the analysis pass: greedy decoding loops.
         sampling=SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=cfg.case_max_tokens, seed=0),
         enable_thinking=True,
     )
@@ -1262,7 +1262,7 @@ async def _case_turn(case_text: str, job_id: str, status: StatusFn, attachment_p
     citations = parse_citations(work_file)
     if citations:
         await status(f"Verifying {len(citations)} citation(s) against their sources")
-    checks = await _verify_case_citations(qwen, work_file, retrieval)
+    checks = await _verify_case_citations(llm, work_file, retrieval)
     entry["citation_checks"] = [asdict(c) for c in checks]
     failed = [c for c in checks if not c.ok]
     if not citations:

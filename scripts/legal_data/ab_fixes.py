@@ -147,7 +147,7 @@ def main() -> None:
     p.add_argument("--ids", default=",".join(QUESTIONS), help="a subset of the ten question ids")
     p.add_argument("--model", default="gemma4:12b", help="the Ollama model that answers")
     p.add_argument("--base-url", default="http://localhost:11434")
-    p.add_argument("--thinking", action="store_true", help="for a model with a thinking mode (Qwen3); off for Gemma")
+    p.add_argument("--thinking", action="store_true", help="for a model with a thinking mode; Gemma runs with it off")
     p.add_argument("--context-length", type=int, default=16384, help="Ollama num_ctx, as in the Kaggle runs")
     p.add_argument("--max-tokens", type=int, default=6144)
     p.add_argument("--timeout-s", type=int, default=1800, help="per model call")

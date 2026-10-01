@@ -1,7 +1,7 @@
 # docslides
 
 An offline, multilingual document-to-PowerPoint generation system with a
-chat interface, powered by a locally-hosted Qwen3. **Nothing in the runtime
+chat interface, powered by locally-hosted Gemma 4 and TranslateGemma. **Nothing in the runtime
 path calls out to the internet** -- model/package downloads are the only
 online step, done once ahead of time.
 
@@ -27,12 +27,11 @@ docs/images/PDFs  --> ingestion (MinerU / PyMuPDF fallback, per-page scan detect
                       stripping, de-hyphenation, sentence segmentation, masking
                       of non-translatable spans)
                   --> chunking (paragraph/sentence-safe, token-budgeted)
-                  --> translation (Qwen3-32B itself, per-chunk, with a running
-                      glossary injected into every subsequent chunk's prompt)
-                  --> Stage 1: outline generation (Qwen3-32B, thinking ON,
-                      guided JSON)
-                  --> Stage 2: per-slide fill (Qwen3-32B, thinking OFF,
-                      guided JSON)
+                  --> translation (TranslateGemma per chunk; Gemma 4 builds a
+                      glossary first and fixes any glossary term a chunk's
+                      translation missed)
+                  --> Stage 1: outline generation (Gemma 4, guided JSON)
+                  --> Stage 2: per-slide fill (Gemma 4, guided JSON)
                   --> PPTX assembly (python-pptx + direct OOXML RTL handling)
 ```
 
@@ -46,7 +45,7 @@ Module layout (`src/docslides/`):
 | `ingestion/` | Document parsing (MinerU primary, PyMuPDF fallback), per-page scan detection, language detection |
 | `ocr/` | OCR engine wrappers, language/script routing, confidence-based GPU escalation, GPU arbitration vs. vLLM |
 | `cleaning/` | Unicode/control-char cleanup, header/footer stripping, sentence segmentation, masking, chunking, token counting |
-| `translation/` | Per-chunk translation via Qwen3-32B, running glossary |
+| `translation/` | Per-chunk translation via TranslateGemma, with a Gemma 4-built glossary |
 | `llm/` | Dual-backend chat client (vLLM OpenAI-compatible API or Ollama's native API), guided-JSON schemas, prompts |
 | `slides/` | Two-stage outline/fill generation, PPTX building, explicit RTL OOXML handling |
 | `tone/` | Reusable tone-control component (professionalism + creativity sliders) for any rewrite request |
@@ -62,40 +61,39 @@ they run on; override with `FORCE_BACKEND`/`-ForceBackend`):
 
 | | **vLLM** | **Ollama** |
 |---|---|---|
-| Hardware | NVIDIA GPU only, above 24GB (e.g. RTX 5090 32GB, 48GB+ workstation/data-center cards) | Any: CPU, NVIDIA, AMD (ROCm), Apple Silicon (Metal) |
+| Hardware | NVIDIA GPU only, above 40GB (48GB+ workstation/data-center cards) | Any: CPU, NVIDIA, AMD (ROCm), Apple Silicon (Metal) |
 | Install | Docker image (`vllm/vllm-openai`) | Native host install (not Docker -- see `docker-compose.portable.yml`'s header comment for why, esp. on Mac) |
-| Model | Qwen 3.8 27B, `Qwen/Qwen3.8-27B-FP8` (Qwen's official FP8, ~30GB) via Hugging Face -- the same model as the Ollama tag; vLLM can't serve the Q4_K_M GGUF | General chat: `qwen3.8:27b-q4_K_M` (Qwen 3.8 27B dense, Q4_K_M, ~18GB, thinking on, 16k context). Legal tab: `gemma4:31b` (Gemma 4 31B dense, 4-bit, ~20GB). Both via `ollama pull` |
+| Model | Gemma 4 31B, `google/gemma-4-31B-it` (gated; FP8-quantized on load, ~33GB) via Hugging Face, for the general chat and the Legal tab; Gemma 4 also translates | General chat and Legal tab: the same Gemma tag (`gemma4:31b`, `gemma4:12b` or `gemma3:4b-it-qat` by host memory). Translation: TranslateGemma of the matching size (`translategemma:27b` / `:12b` / `:4b`). All via `ollama pull` |
 | Speed | Fastest -- purpose-built for concurrent GPU serving | Slower, especially CPU-only; scales with whatever acceleration the host has |
 | Structured JSON / thinking toggle | `guided_json` extra_body / `chat_template_kwargs` | top-level `format` JSON Schema / `think` field |
 
 Both are driven through the same `src/docslides/llm/client.py` interface --
 nothing above the LLM client needs to know which backend is active.
 
-Under Ollama the general chat (chat, rewrite, translation, slides) always runs on Qwen 3.8
-27B dense (`qwen3.8:27b-q4_K_M`, Q4_K_M, ~18GB) with thinking on and a 16384-token context
-(`DOCSLIDES_LLM_MAX_MODEL_LEN=16384`, Ollama's `num_ctx`) -- it rewrites and translates
-better than Gemma. The setup scripts pick it whatever the host's RAM or GPU, so on a
-CPU-only host it is slow (~1 token/s) and with under ~24GB of RAM it may fail to load.
-`OLLAMA_CHAT_MODEL` / `-OllamaChatModel` picks another tag;
-`config.yaml`'s `llm.thinking_defaults` sets thinking per call site (chat and rewrite on,
-translation off). The Legal tab's default is Gemma 4 31B dense (`gemma4:31b`, 4-bit; ~25GB
-resident with the Legal tab's 16k context); `scripts/setup.*` fall back to Gemma 4 12B
-(`gemma4:12b`) under 32GB of RAM and `gemma3:4b-it-qat` under 12GB. Gemma runs with
-thinking off (Gemma 3 has no thinking mode, and Gemma 4's stays off so its results compare
-with the earlier Gemma 3 runs), so the setup scripts also write
-`DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (and
-`DOCSLIDES_LLM_SUPPORTS_THINKING=true` for the Qwen chat model) (every call
-then goes out with an explicit `"think": false`: Gemma 4 thinks by default when the field is
-missing; a server that rejects the field, as some do for Gemma 3, is asked again without it). Under vLLM both run on `Qwen/Qwen3.8-27B-FP8`.
-Qwen3 still works for the Legal tab under Ollama (`OLLAMA_MODEL=qwen3:14b`, with thinking on).
-Qwen3-32B (`qwen3:32b`, ~20GB) is the larger Qwen option: pass
-`OLLAMA_MODEL=qwen3:32b` / `-OllamaModel qwen3:32b`.
-On a CPU-only host it needs ~48GB of RAM (~36GB on a Mac): below that,
-qwen3:32b's ~20GB GGUF plus llama.cpp's CPU "repack" buffer (a second,
-similarly sized buffer briefly resident while loading) fails to allocate (`std::bad_alloc` /
-`ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate ...` in
-Ollama's server log) -- which looks like the chat/Legal tabs hanging or not
-responding rather than an install error. The setup scripts also set
+The general chat (chat, rewrite, slides) runs on the same Gemma as the Legal tab, picked by
+the same rule. Under Ollama that is Gemma 4 31B dense (`gemma4:31b`, 4-bit; ~25GB resident
+with the 16k context); `scripts/setup.*` fall back to Gemma 4 12B (`gemma4:12b`) under 32GB of
+RAM or without an NVIDIA/AMD GPU, and to `gemma3:4b-it-qat` under 12GB. `OLLAMA_MODEL` /
+`-OllamaModel` picks another tag for both. Both get a 16384-token context
+(`DOCSLIDES_LLM_MAX_MODEL_LEN` / `DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`, Ollama's
+`num_ctx`). Gemma runs with thinking off (Gemma 3 has no thinking mode, and Gemma 4's stays
+off), so the setup scripts write `DOCSLIDES_LLM_SUPPORTS_THINKING=false` and
+`DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (every call then goes
+out with an explicit `"think": false`: Gemma 4 thinks by default when the field is missing; a
+server that rejects the field, as some do for Gemma 3, is asked again without it). Under vLLM
+both run on `google/gemma-4-31B-it`.
+
+**Translation** pairs two models (`src/docslides/translation/translator.py`): Gemma 4 reads
+the document once and builds a glossary of terms to render consistently, TranslateGemma
+translates each chunk with its own prompt, and any glossary term a chunk's translation missed
+goes back to Gemma 4 to fix. Under Ollama the setup scripts pull the TranslateGemma size that
+matches the Gemma above -- `translategemma:27b` with `gemma4:31b`, `:12b` with `gemma4:12b`,
+`:4b` with `gemma3:4b-it-qat` (`OLLAMA_TRANSLATE_MODEL` / `-OllamaTranslateModel` override) --
+and write it as `DOCSLIDES_TRANSLATOR_*` (config `translation.translator`). Under vLLM it is
+unset and Gemma 4 translates on its own. The glossary is saved per document and target
+language under `paths.glossary_dir`.
+
+The setup scripts also set
 `OLLAMA_MAX_LOADED_MODELS=1` so that when two Ollama models are called back
 to back (e.g. the Legal orchestrator and an evaluation's judge model) the
 second evicts the first instead of both trying to stay resident at once, and
@@ -105,12 +103,12 @@ context's memory.
 **Context window.** The Legal tab runs with a 16k-token window
 (`legal.orchestrator.max_model_len: 16384`): up to 5k tokens of evidence
 (`legal.retrieval.max_evidence_tokens`) plus the thinking analysis pass and
-the memo/draft outputs. vLLM serves 16k (`QWEN_MAX_MODEL_LEN` in `docker-compose.yml`; set
-`QWEN_KV_CACHE_DTYPE=fp8` if it doesn't fit next to the ~30GB FP8 weights); under Ollama it is the
+the memo/draft outputs. vLLM serves 16k (`VLLM_MAX_MODEL_LEN` in `docker-compose.yml`; set
+`VLLM_KV_CACHE_DTYPE=fp8` if it doesn't fit next to the ~33GB FP8 weights); under Ollama it is the
 `num_ctx` sent with every request. `DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`
 / `DOCSLIDES_LLM_MAX_MODEL_LEN` override it per host (`LEGAL_CONTEXT_LENGTH` /
 `-LegalContextLength` in the setup scripts).
-The Legal tab uses one model, the Qwen orchestrator, for every stage and
+The Legal tab uses one model, the Gemma 4 orchestrator, for every stage and
 answers in the question's language, Hebrew included.
 
 OCR runs on CPU by default (PaddleOCR PP-OCRv6, Tesseract). Only the
@@ -132,19 +130,20 @@ Re-running either script is safe -- already-downloaded files are left in place.
 
 ```bash
 # macOS/Linux
-./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_CHAT_MODEL=qwen3.8:27b-q4_K_M / OLLAMA_MODEL=gemma4:31b / LEGAL_CONTEXT_LENGTH=16384
+./scripts/setup.sh [models_dir]          # SKIP_MINERU=1 / SKIP_HEAVY_OCR=1 / FORCE_BACKEND=ollama / OLLAMA_MODEL=gemma4:31b / OLLAMA_TRANSLATE_MODEL=translategemma:27b / LEGAL_CONTEXT_LENGTH=16384
 ```
 
 ```powershell
 # Windows
-.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaChatModel qwen3.8:27b-q4_K_M / -OllamaModel gemma4:31b / -LegalContextLength 16384
+.\scripts\setup.ps1                      # -SkipMineru / -SkipHeavyOcr / -ForceBackend ollama / -OllamaModel gemma4:31b / -OllamaTranslateModel translategemma:27b / -LegalContextLength 16384
 ```
 
 When the Ollama backend is selected, the script writes `.env.local` with the
 `DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` triple (general chat model) plus
 a matching `DOCSLIDES_LEGAL_ORCHESTRATOR_*` set for the Legal tab's
-independent Qwen orchestrator deployment (backend, URL, model and
-`_MAX_MODEL_LEN`, its context window) -- all overriding
+independent orchestrator deployment (backend, URL, model and
+`_MAX_MODEL_LEN`, its context window) and a `DOCSLIDES_TRANSLATOR_*` set for
+TranslateGemma -- all overriding
 `config/config.yaml`'s vLLM defaults. Both scripts also install the
 `legal` and `legal-data` extras the Legal tab needs. See
 [Hardware requirements](#hardware-requirements).
@@ -197,7 +196,7 @@ instead of sharing one with the FastAPI/Gradio app.
 
 ### 2. Download models (ONE-TIME, ONLINE step)
 
-First, verify the configured Qwen repo still matches the current
+First, verify the configured Gemma repo still matches the current
 Hugging Face listing (repo names/quantizations do change) and see the
 resulting `vllm serve` command:
 
@@ -206,7 +205,8 @@ pip install -U "huggingface_hub[cli]"
 python scripts/verify_vllm_launch.py
 ```
 
-Then download everything -- the Qwen3-32B checkpoint (~20GB, via `hf
+Then download everything -- the Gemma 4 31B checkpoint (`google/gemma-4-31B-it`, ~62GB, gated:
+accept its license on huggingface.co and run `hf auth login` first; via `hf
 download` -- the `huggingface_hub` CLI was renamed from `huggingface-cli` to
 `hf` in newer releases; `download_models.sh` uses whichever is installed --
 into the standard HF hub cache so vLLM can resolve it by repo id while
@@ -235,14 +235,15 @@ docker compose build app
 docker compose run --rm --no-deps app bash scripts/download_models.sh ./models
 ```
 
-This also downloads the Qwen weights into `./hf_cache`, which the `vllm`
+This also downloads the Gemma weights into `./hf_cache`, which the `vllm`
 service mounts at the same path -- so one download step covers both
 services.
 
 **No NVIDIA GPU?** Use Ollama instead of the two steps above: install it
 (https://ollama.com/download or your package manager), then
-`ollama pull qwen3.8:27b-q4_K_M` (general chat) and `ollama pull gemma4:31b` (Legal tab). No Hugging
-Face download needed for the chat model.
+`ollama pull gemma4:31b` (general chat and Legal tab) and `ollama pull translategemma:27b`
+(translation) -- or the smaller pair for a smaller host (see above). No Hugging Face download
+needed for either.
 
 ### 3. Configure
 
@@ -257,7 +258,8 @@ Edit `config/config.yaml`:
 
 Or leave `config.yaml` as-is and override the LLM sections via env vars --
 `DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` for the general model, and
-`DOCSLIDES_LEGAL_ORCHESTRATOR_*` for the Legal tab's Qwen deployment --
+`DOCSLIDES_LEGAL_ORCHESTRATOR_*` for the Legal tab's deployment, `DOCSLIDES_TRANSLATOR_*` for
+TranslateGemma --
 this is what
 `.env.local` (written by the setup scripts) and `docker-compose.portable.yml`
 do.
@@ -342,7 +344,7 @@ docker compose up --build
 ```
 
 This starts:
-- `vllm` -- serves Qwen3-32B on port 8000 (OpenAI-compatible API)
+- `vllm` -- serves Gemma 4 31B on port 8000 (OpenAI-compatible API)
 - `app` -- FastAPI backend on port 8456, with the Gradio chat UI mounted at
   `http://localhost:8456/ui`
 
@@ -364,7 +366,7 @@ Reference `vllm serve` command (also printed by
 `scripts/verify_vllm_launch.py`):
 
 ```bash
-vllm serve Qwen/Qwen3.8-27B-FP8 \
+vllm serve google/gemma-4-31B-it \
   --quantization fp8 \
   --max-model-len 16384 \
   --gpu-memory-utilization 0.90 \
@@ -378,7 +380,7 @@ vllm serve Qwen/Qwen3.8-27B-FP8 \
 
 ```bash
 # terminal 1
-vllm serve Qwen/Qwen3.8-27B-FP8 --quantization fp8 --max-model-len 16384 --gpu-memory-utilization 0.90 --port 8000
+vllm serve google/gemma-4-31B-it --quantization fp8 --max-model-len 16384 --gpu-memory-utilization 0.90 --port 8000
 
 # terminal 2
 docslides-api   # FastAPI + Gradio UI on :8456 (UI at /ui)
@@ -433,7 +435,7 @@ The Israeli legal eval set (`legal_txt/Evals/israeli_legal_eval.zip`) runs again
 | `notebooks/kaggle_legal_eval_dictalm.ipynb` | Kaggle, 2× T4 | the same test with DictaLM 3.0 answering |
 
 The judge is `legal.judge_model` (default `gpt-oss:20b`, overridden by `DOCSLIDES_LEGAL_JUDGE_MODEL`): a
-family other than the models under test, so neither qwen3 nor gemma grades its own answers. Saved answers
+family other than the models under test, so no model grades its own answers. Saved answers
 can be re-judged without re-answering: `score.py prepare`, then `scripts/legal_data/eval_run.py judge`,
 then `score.py report` (see `eval_run.py`'s docstring). `scripts/legal_data/check_corpus_coverage.py`
 checks every law and section the gold answers cite against the installed corpus.

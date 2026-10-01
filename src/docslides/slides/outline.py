@@ -1,6 +1,6 @@
 """Stage 1: slide-by-slide outline generation.
 
-Qwen3-32B, thinking ENABLED (config: llm.thinking_defaults.outline_generation),
+Gemma 4 (the general `llm:` model), thinking per llm.thinking_defaults.outline_generation (off: Gemma runs without),
 reads the cleaned/translated document (chunk summaries + structure) and
 produces the outline as guided JSON against `OutlineResult`.
 
@@ -16,7 +16,7 @@ import asyncio
 
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
-from docslides.llm.client import ChatMessage, LLMCallSite, QwenClient
+from docslides.llm.client import ChatMessage, LLMCallSite, LLMClient
 from docslides.llm.prompts import chunk_summary_system_prompt, outline_system_prompt
 from docslides.llm.schemas import ChunkSummary, OutlineResult
 from docslides.translation.translator import TranslatedResult
@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 OUTLINE_PROMPT_TOKEN_BUDGET_FRACTION = 0.55
 
 
-async def _summarize_chunk(client: QwenClient, chunk: TranslatedResult) -> str:
+async def _summarize_chunk(client: LLMClient, chunk: TranslatedResult) -> str:
     result = await client.complete_json(
         messages=[
             ChatMessage(role="system", content=chunk_summary_system_prompt()),
@@ -43,7 +43,7 @@ async def _summarize_chunk(client: QwenClient, chunk: TranslatedResult) -> str:
     return f"{result.summary} (Key points: {points})" if points else result.summary
 
 
-async def _build_document_summary(client: QwenClient, translated_chunks: list[TranslatedResult]) -> str:
+async def _build_document_summary(client: LLMClient, translated_chunks: list[TranslatedResult]) -> str:
     full_text = "\n\n".join(
         f"[Chunk {c.chunk_index}]\n{c.translated_text}" for c in translated_chunks
     )
@@ -62,7 +62,7 @@ async def _build_document_summary(client: QwenClient, translated_chunks: list[Tr
 
 
 async def generate_outline(
-    client: QwenClient,
+    client: LLMClient,
     translated_chunks: list[TranslatedResult],
     target_lang: str,
 ) -> OutlineResult:

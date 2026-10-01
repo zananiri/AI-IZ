@@ -25,24 +25,25 @@
 .PARAMETER ForceBackend
     "vllm" or "ollama" -- skip NVIDIA GPU auto-detection and use this backend.
 
-.PARAMETER OllamaChatModel
-    Model tag for the general chat (chat, rewrite, translation, slides) when the
-    Ollama backend is selected. Default: qwen3.8:27b-q4_K_M (Qwen 3.8 27B
-    dense, Q4_K_M, ~18GB, thinking on; better than Gemma at rewriting and
-    translation) on every host, whatever its RAM or GPU, with a 16384-token
-    context. A qwen tag runs with thinking on, a gemma tag with thinking off.
+.PARAMETER VllmModelRepo
+    Hugging Face repo vLLM serves (general chat + Legal tab) on the vLLM path.
+    Default: google/gemma-4-31B-it (a gated repo: accept its license on
+    huggingface.co and run `hf auth login` first).
 
 .PARAMETER OllamaModel
-    Model tag for the Legal tab orchestrator when the Ollama backend is
-    selected. Default: gemma4:31b (Gemma 4 31B dense, 4-bit,
-    ~20GB; ~25GB resident with the 16k context). Under 32GB of RAM it falls
-    back to gemma4:12b (Gemma 4 12B), under 12GB to gemma3:4b-it-qat. A gemma
-    tag runs with thinking off (Gemma 3 has no thinking mode; Gemma 4's stays
-    off so its runs compare with the Gemma 3 ones): *_SUPPORTS_THINKING=false. qwen3:14b / qwen3:32b still work
-    (thinking on); qwen3:32b's llama.cpp CPU "repack" step needs a second
-    ~20GB buffer while loading, so on a CPU-only host under ~48GB it fails
-    with "std::bad_alloc" -- which makes the chat/Legal tabs look like they
-    hang.
+    Gemma tag for both the Legal tab and the general chat (chat, rewrite,
+    slides, the glossary work around translation) when the Ollama backend is
+    selected. Default: gemma4:31b (Gemma 4 31B dense, 4-bit, ~20GB; ~25GB
+    resident with the 16k context). Under 32GB of RAM, or without an
+    NVIDIA/AMD GPU, it falls back to gemma4:12b (Gemma 4 12B), under 12GB to
+    gemma3:4b-it-qat. Gemma runs with thinking off (Gemma 3 has no thinking
+    mode; Gemma 4's stays off): *_SUPPORTS_THINKING=false.
+
+.PARAMETER OllamaTranslateModel
+    TranslateGemma tag that translates documents, next to the Gemma above.
+    Default: the size matching -OllamaModel -- translategemma:27b with
+    gemma4:31b, translategemma:12b with gemma4:12b, translategemma:4b with
+    gemma3:4b-it-qat.
 
 .PARAMETER LegalContextLength
     Legal tab context window (Ollama num_ctx), written to .env.local.
@@ -60,11 +61,11 @@ param(
     [string]$ModelsDir = "./models",
     [switch]$SkipMineru,
     [switch]$SkipHeavyOcr,
-    [string]$QwenModelRepo = "Qwen/Qwen3.8-27B-FP8",
+    [string]$VllmModelRepo = "google/gemma-4-31B-it",
     [ValidateSet("", "vllm", "ollama")]
     [string]$ForceBackend = "",
     [string]$OllamaModel = "gemma4:31b",
-    [string]$OllamaChatModel = "qwen3.8:27b-q4_K_M",
+    [string]$OllamaTranslateModel = "",
     [int]$LegalContextLength = 16384
 )
 
@@ -240,12 +241,15 @@ if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel"
 $RequestTimeoutS = if ($CpuOnly) { 3600 } else { 900 }
 # Gemma runs with thinking off (Gemma 3 has no thinking mode; Gemma 4 matches it).
 $SupportsThinking = if ($OllamaModel -like "gemma*") { "false" } else { "true" }
-# General chat: Qwen, which rewrites and translates better than Gemma, with thinking on
-# (config.yaml llm.thinking_defaults picks it per call site: chat + rewrite on, translation off).
-# Always qwen3.8:27b-q4_K_M, whatever the host's RAM or GPU (Ollama swaps it with the Legal
-# model rather than holding both). On a CPU-only or small-RAM host it is slow or may not load.
+# General chat: the same Gemma as the Legal tab, with the same context window.
 $ChatContextLength = 16384
-$ChatSupportsThinking = if ($OllamaChatModel -like "gemma*") { "false" } else { "true" }
+# Translation: TranslateGemma, sized to match that Gemma (Gemma 4 builds the glossary around it).
+if (-not $OllamaTranslateModel) {
+    $OllamaTranslateModel = if ($OllamaModel -like "gemma4:31b*") { "translategemma:27b" }
+        elseif ($OllamaModel -like "gemma4:12b*") { "translategemma:12b" }
+        elseif ($OllamaModel -like "*4b*") { "translategemma:4b" }
+        else { "translategemma:12b" }
+}
 Write-Host ""
 
 # ---------------------------------------------------------------------------
@@ -271,11 +275,11 @@ if ($Backend -eq "vllm") {
     $HfCmd = Get-Command hf -ErrorAction SilentlyContinue
     if (-not $HfCmd) { $HfCmd = Get-Command huggingface-cli -ErrorAction SilentlyContinue }
     if ($HfCmd) {
-        & $HfCmd.Source download $QwenModelRepo
-        if ($LASTEXITCODE -ne 0) { $Skipped.Add("Qwen weights: $QwenModelRepo") }
+        & $HfCmd.Source download $VllmModelRepo
+        if ($LASTEXITCODE -ne 0) { $Skipped.Add("Gemma weights: $VllmModelRepo (gated: accept the license, then hf auth login)") }
     } else {
         Write-Host "[skip] Neither 'hf' nor 'huggingface-cli' found on PATH." -ForegroundColor Yellow
-        $Skipped.Add("Qwen weights: $QwenModelRepo")
+        $Skipped.Add("Gemma weights: $VllmModelRepo")
     }
     # config/config.yaml already defaults to backend: vllm -- no override file needed.
     Remove-Item ".env.local" -ErrorAction SilentlyContinue
@@ -304,7 +308,7 @@ if ($Backend -eq "vllm") {
         # model on a modest host. Pin it to one resident model at a time so
         # the second call evicts the first instead of fighting it for RAM.
         # Flash attention + an 8-bit KV cache halve the context's memory, so
-        # the Legal tab's 16k window costs qwen3:14b ~1.3GB instead of ~2.6GB.
+        # the Legal tab's 16k window costs a 12B model ~1.3GB instead of ~2.6GB.
         $NeedsRestart = $false
         $OllamaSettings = [ordered]@{ OLLAMA_MAX_LOADED_MODELS = "1"; OLLAMA_FLASH_ATTENTION = "1"; OLLAMA_KV_CACHE_TYPE = "q8_0" }
         foreach ($name in $OllamaSettings.Keys) {
@@ -337,7 +341,7 @@ if ($Backend -eq "vllm") {
                 try { Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2 | Out-Null; $ollamaUp = $true } catch {}
             }
         }
-        foreach ($tag in @($OllamaChatModel, $OllamaModel)) {
+        foreach ($tag in @($OllamaModel, $OllamaTranslateModel)) {
             Write-Host "Pulling $tag (this is a large download, comparable to the vLLM weights)..."
             ollama pull $tag
             if ($LASTEXITCODE -ne 0) {
@@ -359,8 +363,8 @@ if ($Backend -eq "vllm") {
     $EnvLocal = @"
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
-DOCSLIDES_LLM_MODEL=$OllamaChatModel
-DOCSLIDES_LLM_SUPPORTS_THINKING=$ChatSupportsThinking
+DOCSLIDES_LLM_MODEL=$OllamaModel
+DOCSLIDES_LLM_SUPPORTS_THINKING=$SupportsThinking
 DOCSLIDES_LLM_MAX_MODEL_LEN=$ChatContextLength
 DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$RequestTimeoutS
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
@@ -369,10 +373,15 @@ DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
 DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SupportsThinking
 DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LegalContextLength
 DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
+DOCSLIDES_TRANSLATOR_BACKEND=ollama
+DOCSLIDES_TRANSLATOR_BASE_URL=http://localhost:11434
+DOCSLIDES_TRANSLATOR_MODEL=$OllamaTranslateModel
+DOCSLIDES_TRANSLATOR_MAX_MODEL_LEN=8192
+DOCSLIDES_TRANSLATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
 
 "@
     [System.IO.File]::WriteAllText((Join-Path $RepoRoot ".env.local"), $EnvLocal, (New-Object System.Text.UTF8Encoding $false))
-    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, chat model=$OllamaChatModel, chat context=$ChatContextLength, legal model=$OllamaModel, legal context=$LegalContextLength)"
+    Write-Host "wrote $RepoRoot\.env.local (backend=ollama, chat + legal model=$OllamaModel, translation model=$OllamaTranslateModel, chat context=$ChatContextLength, legal context=$LegalContextLength)"
 }
 Write-Host ""
 

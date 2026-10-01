@@ -1,5 +1,5 @@
 """Chunk cleaned document text at paragraph/section boundaries within a safe
-token budget for Qwen3-32B's context window -- never splitting mid-sentence.
+token budget for the model's context window -- never splitting mid-sentence.
 
 Strategy: split into paragraphs, sentence-segment each paragraph with the
 correct per-language model, then greedily pack sentences into chunks up to

@@ -30,7 +30,13 @@ from docslides.api.events import Event, event_bus, job_outputs
 from docslides.cleaning.chunking import chunk_document
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
-from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams, get_client
+from docslides.llm.client import (
+    ChatMessage,
+    LLMCallSite,
+    SamplingParams,
+    get_client,
+    get_translator_client,
+)
 from docslides.llm.schemas import ChatIntent
 from docslides.pipeline.orchestrator import extract_document_text, run_pipeline
 from docslides.tone.tone_control import (
@@ -38,8 +44,7 @@ from docslides.tone.tone_control import (
     compose_rewrite_system_prompt,
     resolve_sampling_params,
 )
-from docslides.translation.glossary import Glossary
-from docslides.translation.translator import translate_chunk
+from docslides.translation.translator import prepare_glossary, translate_chunk
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -128,13 +133,22 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
             if intent.wants_translation and intent.target_lang:
                 # A whole document doesn't fit one prompt or one reply, so translate
                 # it chunk by chunk (as the slides pipeline does) and stream each.
+                # TranslateGemma translates; Gemma 4 builds the glossary and fixes missed terms.
                 chunks = chunk_document([document_text], [doc_lang])
-                glossary = Glossary.load(Path(req.attachment_path).stem)
+                await event_bus.publish_status(job_id, "Preparing the terminology glossary")
+                glossary = await prepare_glossary(
+                    client,
+                    Path(req.attachment_path).stem,
+                    document_text,
+                    chunks[0].language if chunks else (doc_lang or "en"),
+                    intent.target_lang,
+                )
+                translator = get_translator_client()
                 for chunk in chunks:
                     await event_bus.publish_status(
                         job_id, f"Translating part {chunk.index + 1} of {len(chunks)}"
                     )
-                    result = await translate_chunk(client, chunk, intent.target_lang, glossary)
+                    result = await translate_chunk(client, chunk, intent.target_lang, glossary, translator)
                     separator = "\n\n" if chunk.index else ""
                     await event_bus.publish(
                         job_id, Event(kind="content_delta", data={"text": separator + result.translated_text})

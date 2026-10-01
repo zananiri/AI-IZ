@@ -41,6 +41,47 @@ def translation_system_prompt(
     )
 
 
+def translategemma_prompt(source_lang: str, target_lang: str, text: str) -> str:
+    """TranslateGemma's own prompt, verbatim from its model card (ollama.com/library/translategemma),
+    including the two blank lines before the text: it is trained on exactly this."""
+    src_name = LANGUAGE_NAMES.get(source_lang, source_lang)
+    tgt_name = LANGUAGE_NAMES.get(target_lang, target_lang)
+    return (
+        f"You are a professional {src_name} ({source_lang}) to {tgt_name} ({target_lang}) translator. "
+        f"Your goal is to accurately convey the meaning and nuances of the original {src_name} text "
+        f"while adhering to {tgt_name} grammar, vocabulary, and cultural sensitivities.\n"
+        f"Produce only the {tgt_name} translation, without any additional explanations or commentary. "
+        f"Please translate the following {src_name} text into {tgt_name}:\n\n\n"
+        f"{text}"
+    )
+
+
+def glossary_build_system_prompt(source_lang: str, target_lang: str, max_terms: int) -> str:
+    src_name = LANGUAGE_NAMES.get(source_lang, source_lang)
+    tgt_name = LANGUAGE_NAMES.get(target_lang, target_lang)
+    return (
+        f"You prepare a terminology glossary for translating the user's {src_name} document into "
+        f"{tgt_name}. List at most {max_terms} terms that must be translated the same way every time "
+        "they appear: domain-specific terms, names of places, institutions, programmes and groups, and "
+        "recurring key phrases. Give each its standard, idiomatic "
+        f"{tgt_name} translation (keep a person's name as it is). Skip ordinary words that any "
+        "translator would render the same way anyway. Output only the JSON the schema asks for."
+    )
+
+
+def glossary_fix_system_prompt(source_lang: str, target_lang: str, terms: list[GlossaryTerm]) -> str:
+    src_name = LANGUAGE_NAMES.get(source_lang, source_lang)
+    tgt_name = LANGUAGE_NAMES.get(target_lang, target_lang)
+    lines = "\n".join(f"- {g.source_term} -> {g.target_term}" for g in terms)
+    return (
+        f"You are a {tgt_name} copy editor. The user gives you a {src_name} source text and its "
+        f"{tgt_name} translation. The translation does not use the glossary below for terms that "
+        "occur in the source. Return the translation with those terms rendered as the glossary says, "
+        "inflected to fit the sentence, and nothing else changed: keep every other word, the "
+        f"sentence order and the line breaks exactly as they are.\n\nGlossary:\n{lines}"
+    )
+
+
 def outline_system_prompt(target_lang: str, num_source_chunks: int) -> str:
     tgt_name = LANGUAGE_NAMES.get(target_lang, target_lang)
     return (

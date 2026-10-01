@@ -9,7 +9,7 @@ from __future__ import annotations
 from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.retrieval import RetrievedLegalChunk
 
-# --- Qwen ----------------------------------------------------------------------
+# --- Orchestrator --------------------------------------------------------------
 
 LANGUAGE_NAMES = {
     "he": "Hebrew",

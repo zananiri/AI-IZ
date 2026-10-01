@@ -34,14 +34,14 @@ require_module() {
   python -c "import $1" >/dev/null 2>&1
 }
 
-QWEN_MODEL_REPO="${QWEN_MODEL_REPO:-Qwen/Qwen3.8-27B-FP8}"
+VLLM_MODEL_REPO="${VLLM_MODEL_REPO:-google/gemma-4-31B-it}"
 
-if [ "${SKIP_QWEN:-0}" = "1" ]; then
-  echo "== Qwen3 (vLLM/Hugging Face weights): skipped (SKIP_QWEN=1) =="
-  echo "   (Ollama backend selected -- the chat model was already pulled via 'ollama pull'.)"
+if [ "${SKIP_VLLM_WEIGHTS:-0}" = "1" ]; then
+  echo "== vLLM/Hugging Face weights: skipped (SKIP_VLLM_WEIGHTS=1) =="
+  echo "   (Ollama backend selected -- the Gemma models were already pulled via 'ollama pull'.)"
   echo
 else
-echo "== Qwen weights: $QWEN_MODEL_REPO (~30GB for Qwen 3.8 27B FP8) =="
+echo "== Gemma weights: $VLLM_MODEL_REPO (~62GB for Gemma 4 31B; gated: accept its license, then 'hf auth login') =="
 echo "Verify this is still the repo you want (see scripts/verify_vllm_launch.py"
 echo "to check it against the current Hugging Face listing) before this runs."
 # `huggingface-cli` was renamed to `hf` in newer huggingface_hub releases;
@@ -59,13 +59,13 @@ if [ "${#HF_DOWNLOAD_CMD[@]}" -gt 0 ]; then
   # cache layout (respecting $HF_HOME if set), which is what lets vLLM
   # resolve the model BY REPO ID while offline (HF_HUB_OFFLINE=1) -- both
   # locally and via the ./hf_cache bind mount in docker-compose.yml.
-  "${HF_DOWNLOAD_CMD[@]}" "$QWEN_MODEL_REPO" || SKIPPED+=("Qwen weights: $QWEN_MODEL_REPO")
+  "${HF_DOWNLOAD_CMD[@]}" "$VLLM_MODEL_REPO" || SKIPPED+=("Gemma weights: $VLLM_MODEL_REPO")
 else
   echo "[skip] Neither 'hf' nor 'huggingface-cli' found. Install with:"
   echo "       pip install -U \"huggingface_hub[cli]\""
   echo "       then re-run, or run directly:"
-  echo "       hf download $QWEN_MODEL_REPO"
-  SKIPPED+=("Qwen weights: $QWEN_MODEL_REPO")
+  echo "       hf download $VLLM_MODEL_REPO"
+  SKIPPED+=("Gemma weights: $VLLM_MODEL_REPO")
 fi
 echo
 fi

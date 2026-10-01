@@ -1,6 +1,6 @@
 """Stage 2: per-slide content generation.
 
-Qwen3-32B, thinking DISABLED (config: llm.thinking_defaults.slide_fill),
+Gemma 4 (the general `llm:` model), thinking DISABLED (config: llm.thinking_defaults.slide_fill),
 guided JSON decoding against `SlideContent`. Each call gets the slide's plan
 from Stage 1 plus the (possibly summarized, same budget logic as the outline
 stage) document content as grounding context, so bullets stay faithful to the
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 
-from docslides.llm.client import ChatMessage, LLMCallSite, QwenClient
+from docslides.llm.client import ChatMessage, LLMCallSite, LLMClient
 from docslides.llm.prompts import slide_fill_system_prompt
 from docslides.llm.schemas import SlideContent, SlidePlan
 from docslides.logging_setup import get_logger
@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 
 
 async def fill_slide(
-    client: QwenClient,
+    client: LLMClient,
     slide_plan: SlidePlan,
     document_context: str,
     target_lang: str,
@@ -48,7 +48,7 @@ async def fill_slide(
 
 
 async def fill_all_slides(
-    client: QwenClient,
+    client: LLMClient,
     slide_plans: list[SlidePlan],
     document_context: str,
     target_lang: str,

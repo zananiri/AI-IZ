@@ -229,7 +229,7 @@ class LegalCorpusConfig(BaseModel):
 
 class LegalConfig(BaseModel):
     """Legal tab: grounded RAG over Israeli law (see src/docslides/legal/).
-    `orchestrator` (Qwen) does research, drafting and every verification
+    `orchestrator` (Gemma 4) does research, drafting and every verification
     step. It is a full `LLMConfig` -- an independent deployment from the
     general `llm:` section."""
 
@@ -240,8 +240,8 @@ class LegalConfig(BaseModel):
     corpus: LegalCorpusConfig = Field(default_factory=LegalCorpusConfig)
     audit_dir: str = "./data/legal/audit"
     # Evals only (legal/evaluation.get_judge_client): the grading model, served by the same Ollama
-    # as the orchestrator. A family other than the models under test (qwen3, gemma), so neither
-    # is graded by itself. None = the orchestrator grades its own answers.
+    # as the orchestrator. A family other than the model under test (gemma), so it is not graded
+    # by itself. None = the orchestrator grades its own answers.
     # DOCSLIDES_LEGAL_JUDGE_MODEL overrides it.
     judge_model: str | None = "gpt-oss:20b"
 
@@ -360,6 +360,11 @@ class CleaningConfig(BaseModel):
 
 class TranslationConfig(BaseModel):
     glossary_max_terms: int = 200
+    # Dedicated translation model (TranslateGemma), an independent deployment like the Legal
+    # orchestrator: it translates each chunk, while the general `llm:` model (Gemma 4) builds the
+    # glossary and fixes glossary terms the translation missed (translation/translator.py).
+    # None = the general model translates on its own. DOCSLIDES_TRANSLATOR_* set it.
+    translator: LLMConfig | None = None
 
 
 class SlidesConfig(BaseModel):
@@ -428,8 +433,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 # between the vLLM and Ollama backends without maintaining a second full
 # config.yaml -- config/config.yaml stays the single source of truth for
 # everything else (languages, OCR routing, sampling defaults, ...). The Legal
-# tab's orchestrator is an independent deployment (see LegalConfig) with its
-# own override set, so it can be pointed at Ollama separately from -- or
+# tab's orchestrator and the translator are independent deployments (see
+# LegalConfig, TranslationConfig) with their own override sets, so it can be pointed at Ollama separately from -- or
 # together with -- the general `llm:` section. *_REQUEST_TIMEOUT_S sets how long
 # one model call may take (a CPU-only host needs far more than config.yaml's
 # GPU-sized limits). *_MAX_MODEL_LEN sets the context
@@ -442,6 +447,13 @@ _LLM_ENV_OVERRIDES = {
     "DOCSLIDES_LLM_MAX_MODEL_LEN": "max_model_len",
     "DOCSLIDES_LLM_SUPPORTS_THINKING": "supports_thinking",
     "DOCSLIDES_LLM_REQUEST_TIMEOUT_S": "request_timeout_s",
+}
+_TRANSLATOR_ENV_OVERRIDES = {
+    "DOCSLIDES_TRANSLATOR_BACKEND": "backend",
+    "DOCSLIDES_TRANSLATOR_BASE_URL": "base_url",
+    "DOCSLIDES_TRANSLATOR_MODEL": "model",
+    "DOCSLIDES_TRANSLATOR_MAX_MODEL_LEN": "max_model_len",
+    "DOCSLIDES_TRANSLATOR_REQUEST_TIMEOUT_S": "request_timeout_s",
 }
 _LEGAL_ORCHESTRATOR_ENV_OVERRIDES = {
     "DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND": "backend",
@@ -467,6 +479,13 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
         legal = raw.get("legal", {})
         legal = {**legal, "orchestrator": {**legal.get("orchestrator", {}), **orchestrator_overrides}}
         raw = {**raw, "legal": legal}
+
+    translator_overrides = _env_overrides(_TRANSLATOR_ENV_OVERRIDES)
+    if translator_overrides:
+        translation = raw.get("translation") or {}
+        # TranslateGemma has no thinking mode: it is never asked to think.
+        translator = {"supports_thinking": False, **(translation.get("translator") or {}), **translator_overrides}
+        raw = {**raw, "translation": {**translation, "translator": translator}}
 
     if os.environ.get("DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL"):
         legal_data = {**(raw.get("legal_data") or {}), "contact_email": os.environ["DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL"]}

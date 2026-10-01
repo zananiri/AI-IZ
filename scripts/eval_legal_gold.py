@@ -235,7 +235,7 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
     local_gazettes = _gazette_map()
     answers = _load(run_dir / "answers.json")
     graded = _load(run_dir / "graded.json")
-    qwen = get_judge_client()
+    llm = get_judge_client()
     try:
         for q in questions:
             a, g = answers.get(q["id"]), items[q["id"]]
@@ -267,7 +267,7 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
                 f"Question:\n{q['question']}\n\nGold answer:\n{g['gold_answer']}\n\nAnswer to grade:\n{shown}"
             )
             try:
-                judgement = await qwen.complete_json(
+                judgement = await llm.complete_json(
                     [ChatMessage("system", system), ChatMessage("user", user)], LLMCallSite("legal_eval_judge"),
                     schema=EvalJudgement, sampling=SamplingParams(temperature=0.0, max_tokens=JUDGE_MAX_TOKENS),
                 )
@@ -278,7 +278,7 @@ async def grade_phase(questions: list[dict], run_dir: Path) -> None:
             if g["type"] in ("answerable", "multi_law") and verdict in ("incorrect", "partially_correct"):
                 shim = type("Q", (), {"question": q["question"], "gold": g["gold_answer"]})()
                 try:
-                    check = await contradiction(qwen, shim, shown)
+                    check = await contradiction(llm, shim, shown)
                     record["contradiction_check"] = {"contradicts_gold": check.contradicts_gold, "conflict": check.conflict}
                     record["needs_review"] = not check.contradicts_gold  # graded down, yet nothing contradicts
                     if verdict == "incorrect" and not check.contradicts_gold:

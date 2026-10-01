@@ -56,7 +56,7 @@ Hebrew phrase in the statute's own terms (at most ten words) -- it is searched f
 
 <question>{question}</question>"""
 
-# 512 cut the JSON off mid-plan for 1 of 100 questions with Qwen and 4 with Gemma 12B (29 Sept
+# 512 cut the JSON off mid-plan for 1 of 100 questions with a 14B model and 4 with Gemma 12B (29 Sept
 # eval review) -- each then retrieved on the question alone. The four-digit year in PLAN_PROMPT:
 # Gemma 27B wrote Hebrew years with an ASCII quote (תשי"ד), which ends the JSON string, so 39 of
 # 105 plans in the 29 Sept 27B run lost the rest of the law's name and every section number.
@@ -178,11 +178,11 @@ def section_numbers(sections: list[str]) -> list[str]:
     return out
 
 
-async def plan_issues(qwen, question: str, max_issues: int = 3) -> list[EvalIssue]:
+async def plan_issues(llm, question: str, max_issues: int = 3) -> list[EvalIssue]:
     """The orchestrator's own list of issues and governing laws (thinking off: a short,
     structured call). An empty list on failure, which leaves retrieval on the question alone."""
     try:
-        plan = await qwen.complete_json(
+        plan = await llm.complete_json(
             [ChatMessage("user", PLAN_PROMPT.format(max_issues=max_issues, question=question))],
             LLMCallSite("legal_retrieval_plan"), schema=EvalRetrievalPlan,
             sampling=SamplingParams(temperature=0.0, max_tokens=PLAN_MAX_TOKENS), enable_thinking=False,

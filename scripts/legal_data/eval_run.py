@@ -366,9 +366,9 @@ def drop_empty_conclusion(text: str) -> str:
     return _EMPTY_CONCLUSION_RE.sub("", text).rstrip()
 
 
-async def extract_provisions(qwen, qtext: str, context: str) -> Extraction | None:
+async def extract_provisions(llm, qtext: str, context: str) -> Extraction | None:
     try:
-        return await qwen.complete_json(
+        return await llm.complete_json(
             [ChatMessage("user", EXTRACT_PROMPT.format(question=qtext, context=context))],
             LLMCallSite("legal_eval_extract"), schema=Extraction,
             sampling=SamplingParams(temperature=0.0, max_tokens=2048), enable_thinking=False,
@@ -377,7 +377,7 @@ async def extract_provisions(qwen, qtext: str, context: str) -> Extraction | Non
         return None
 
 
-async def complete_answer(qwen, qtext: str, extraction: Extraction, text: str) -> tuple[str, list[str]]:
+async def complete_answer(llm, qtext: str, extraction: Extraction, text: str) -> tuple[str, list[str]]:
     """(the answer, revised to cover what it missed; the points it missed) -- the answer unchanged
     when nothing is missing or a call fails.
 
@@ -392,7 +392,7 @@ async def complete_answer(qwen, qtext: str, extraction: Extraction, text: str) -
     if not elements or not text:
         return text, []
     try:
-        verdict = await qwen.complete_json(
+        verdict = await llm.complete_json(
             [ChatMessage("user", COMPLETENESS_PROMPT.format(
                 question=qtext, elements="\n".join(f"- {e}" for e in elements), answer=text))],
             LLMCallSite("legal_eval_completeness"), schema=Completeness,
@@ -404,7 +404,7 @@ async def complete_answer(qwen, qtext: str, extraction: Extraction, text: str) -
     if not missing:
         return text, []
     provisions = "\n".join(f"- {p.law} סעיף {p.section}: \"{p.quote}\"" for p in cited)
-    revised = (await qwen.complete_text(
+    revised = (await llm.complete_text(
         [ChatMessage("user", REVISE_PROMPT.format(missing="\n".join(f"- {m}" for m in missing),
                                                   provisions=provisions, question=qtext, answer=text))],
         LLMCallSite("legal_eval_completeness"), sampling=eval_sampling(ANSWER_MAX_TOKENS, False),
@@ -441,10 +441,10 @@ def strip_template_tokens(text: str) -> str:
     return _TEMPLATE_TOKEN_RE.sub(" ", text).strip() if _TEMPLATE_TOKEN_RE.search(text) else text
 
 
-async def check_scope(qwen, qtext: str) -> ScopeVerdict:
+async def check_scope(llm, qtext: str) -> ScopeVerdict:
     """in_scope on failure: a failed check must never turn an ordinary question into a refusal."""
     try:
-        return await qwen.complete_json(
+        return await llm.complete_json(
             [ChatMessage("user", SCOPE_PROMPT.format(question=qtext))],
             LLMCallSite("legal_eval_scope"), schema=ScopeVerdict,
             sampling=SamplingParams(temperature=0.0, max_tokens=256), enable_thinking=False,
@@ -469,7 +469,7 @@ JUDGE_MAX_TOKENS = 4096  # same as eval_cases.py
 
 
 def eval_sampling(max_tokens: int, thinking: bool) -> SamplingParams:
-    """Greedy without thinking (reproducible). With thinking, Qwen3's recommended sampling
+    """Greedy without thinking (reproducible). With thinking, the recommended thinking-mode sampling
     (temperature 0.6, top_p 0.95, top_k 20) with a fixed seed: its model card warns that greedy
     decoding in thinking mode degrades answers and loops -- the 26 Sept trace has reasoning that
     repeats "Wait, no..." until the budget runs out (IL-283)."""
@@ -568,7 +568,7 @@ class LabelVerdict(BaseModel):
     answer: Literal["yes", "no", "unclear"]
 
 
-async def check_label(qwen, question: str, text: str) -> tuple[str, str | None]:
+async def check_label(llm, question: str, text: str) -> tuple[str, str | None]:
     """A rule_conclusion answer that opens with a label: one the model wrote is kept, a missing one
     is added from what the explanation (read on its own) supports. Returns (answer, repair or None).
 
@@ -580,7 +580,7 @@ async def check_label(qwen, question: str, text: str) -> tuple[str, str | None]:
     if label is not None or first_words[:1] in (["כן"], ["לא"]):
         return text, None
     try:
-        verdict = await qwen.complete_json(
+        verdict = await llm.complete_json(
             [ChatMessage("user", LABEL_CHECK_PROMPT.format(question=question, explanation=explanation.strip()))],
             LLMCallSite("legal_eval_label_check"), schema=LabelVerdict,
             sampling=SamplingParams(temperature=0.0, max_tokens=256), enable_thinking=False,
@@ -593,11 +593,11 @@ async def check_label(qwen, question: str, text: str) -> tuple[str, str | None]:
     return f"{wanted}. {explanation.lstrip()}", "label_added"
 
 
-async def plan_issues(qwen, q: dict, max_issues: int) -> list[EvalIssue]:
+async def plan_issues(llm, q: dict, max_issues: int) -> list[EvalIssue]:
     """The answering model's own list of issues and governing laws (thinking off: a short,
     structured call). An empty list on failure, which leaves retrieval on the question alone."""
     try:
-        plan = await qwen.complete_json(
+        plan = await llm.complete_json(
             [ChatMessage("user", PLAN_PROMPT.format(max_issues=max_issues, question=_question_text(q)))],
             LLMCallSite("legal_eval_plan"), schema=EvalRetrievalPlan,
             sampling=SamplingParams(temperature=0.0, max_tokens=PLAN_MAX_TOKENS), enable_thinking=False,
@@ -608,7 +608,7 @@ async def plan_issues(qwen, q: dict, max_issues: int) -> list[EvalIssue]:
     return [i for i in plan.issues if i.law.strip()][:max_issues]
 
 
-async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking: bool = True,
+async def answer_one(llm, q: dict, categories: list[str], top_k: int, thinking: bool = True,
                      max_tokens: int = ANSWER_MAX_TOKENS) -> dict:
     qtext = _question_text(q)
     issues: list[EvalIssue] = []
@@ -617,8 +617,8 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
         spotting = q.get("category") == "issue_spotting"
         conclusion = q.get("category") == "rule_conclusion"
         temporal = q.get("category") == "temporal_amendment" or bool(TEMPORAL_RE.search(q["question"]))
-        scope = await check_scope(qwen, qtext)
-        issues = await plan_issues(qwen, q, max_issues=6 if spotting else 3)
+        scope = await check_scope(llm, qtext)
+        issues = await plan_issues(llm, q, max_issues=6 if spotting else 3)
         search_issues = list(issues)
         if temporal and issues:
             search_issues.append(EvalIssue(issue=TEMPORAL_ISSUE, law=issues[0].law))
@@ -627,7 +627,7 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
         corpus_cfg = get_config().legal.corpus
         extra: list[dict] = []
         if corpus_cfg.toc_navigation and scope.scope == "in_scope":
-            extra += await corpus_navigation.navigate_toc(qwen, qtext, hits)
+            extra += await corpus_navigation.navigate_toc(llm, qtext, hits)
         if corpus_cfg.cross_references:
             extra += corpus_navigation.cross_reference_hits(hits + extra)
         if corpus_cfg.whole_sections or extra:
@@ -656,7 +656,7 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
                 user += "\n\n" + caselaw.render_caselaw(case_hits)
         extraction = None
         if corpus_cfg.extract_then_answer and scope.scope == "in_scope":
-            extraction = await extract_provisions(qwen, qtext, context)
+            extraction = await extract_provisions(llm, qtext, context)
             if extraction is not None and extraction.provisions:
                 user += f"\n\n<extracted>\n{render_extraction(extraction)}\n</extracted>"
         notes = [ISSUE_SPOTTING_NOTE] if spotting else []
@@ -672,7 +672,7 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
             user += "\n\n" + "\n\n".join(notes)
         messages = [ChatMessage("system", ANSWER_SYSTEM), ChatMessage("user", user)]
 
-        text = (await qwen.complete_text(
+        text = (await llm.complete_text(
             messages, LLMCallSite("legal_eval_baseline"), sampling=eval_sampling(max_tokens, thinking),
             enable_thinking=thinking,  # the point of this run: capture how the model reasons, for fine-tuning
         )).strip()
@@ -680,21 +680,21 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
         if not text and thinking:
             # The reasoning used the whole budget and no answer was written: answer without it.
             repairs.append("empty_answer_retry")
-            text = (await qwen.complete_text(messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
+            text = (await llm.complete_text(messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
                                              enable_thinking=False)).strip()
         missing: list[str] = []
         if corpus_cfg.completeness_check and extraction is not None and q.get("category") not in NO_COMPLETENESS:
-            revised, missing = await complete_answer(qwen, qtext, extraction, text)
+            revised, missing = await complete_answer(llm, qtext, extraction, text)
             if revised != text:
                 repairs.append("completeness_revision")
                 text = revised
-        # Up to two passes: the 29 Sept review found one rewrite leaving script in 26 Qwen answers.
+        # Up to two passes: the 29 Sept review found one rewrite leaving script in 26 answers.
         for _ in range(MAX_REWRITE_PASSES):
             stray = foreign_words(text)
             if not stray:
                 break
             repairs.append("hebrew_rewrite")
-            rewritten = (await qwen.complete_text(
+            rewritten = (await llm.complete_text(
                 [ChatMessage("user", REWRITE_PROMPT.format(words=", ".join(dict.fromkeys(stray)), answer=text))],
                 LLMCallSite("legal_eval_rewrite"), sampling=sampling, enable_thinking=False,
             )).strip()
@@ -709,7 +709,7 @@ async def answer_one(qwen, q: dict, categories: list[str], top_k: int, thinking:
         elif conclusion and text:
             text, repair = place_conclusion(text)
             if repair is None:  # no conclusion line: add a missing label as before
-                text, repair = await check_label(qwen, qtext, text)
+                text, repair = await check_label(llm, qtext, text)
             if repair:
                 repairs.append(repair)
         trimmed = drop_empty_conclusion(text)
@@ -748,7 +748,7 @@ async def cmd_answer(a) -> None:
     changed = apply_variants(variants)
     if changed:
         _log(f"variant {'+'.join(variants)}: legal.corpus {changed}")
-    qwen = get_legal_orchestrator_client()
+    llm = get_legal_orchestrator_client()
     started = time.monotonic()
     device = warm_up_retrieval()
     _log(f"retrieval ready on {device} ({round(time.monotonic() - started)}s)")
@@ -758,7 +758,7 @@ async def cmd_answer(a) -> None:
             continue
         started = time.monotonic()
         try:
-            row = await answer_one(qwen, q, categories, a.top_k, thinking=a.thinking, max_tokens=a.max_tokens)
+            row = await answer_one(llm, q, categories, a.top_k, thinking=a.thinking, max_tokens=a.max_tokens)
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
             row = {"id": q["id"], "answer": "", "error": f"{type(exc).__name__}: {exc}"}
         if variants:
@@ -782,10 +782,10 @@ hallucination is for an invented law, section, number or date, or one that plain
 - Judge meaning, not wording. The answer is usually in Hebrew."""
 
 
-async def judge_one(qwen, item: dict, thinking: bool = True, max_tokens: int = JUDGE_MAX_TOKENS) -> dict:
+async def judge_one(llm, item: dict, thinking: bool = True, max_tokens: int = JUDGE_MAX_TOKENS) -> dict:
     with trace.collect(job_id=item["id"]):
         try:
-            verdict = await qwen.complete_json(
+            verdict = await llm.complete_json(
                 [ChatMessage("system", JUDGE_SYSTEM), ChatMessage("user", item["prompt"])],
                 LLMCallSite("legal_eval_judge"),
                 schema=BulkEvalJudgement,
@@ -802,13 +802,13 @@ async def cmd_judge(a) -> None:
     requests = _load_jsonl(Path(a.requests))
     out = Path(a.out)
     done = _load_done(out)
-    qwen = get_judge_client()
+    llm = get_judge_client()
     _log(f"{len(requests)} judge requests, {len(done)} already judged")
     for item in requests:
         if item["id"] in done:
             continue
         started = time.monotonic()
-        row = await judge_one(qwen, item, thinking=a.thinking, max_tokens=a.max_tokens)
+        row = await judge_one(llm, item, thinking=a.thinking, max_tokens=a.max_tokens)
         _append(out, row)
         _log(f"{item['id']}: correctness={row['correctness']} ({round(time.monotonic() - started)}s)")
 

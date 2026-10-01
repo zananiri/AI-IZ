@@ -1,4 +1,4 @@
-# Two services, per the target architecture: vLLM serving Qwen 3.8 27B (FP8), and the
+# Two services, per the target architecture: vLLM serving Gemma 4 31B (FP8), and the
 # app (FastAPI + Gradio UI + pipeline). Both are GPU-visible so the app's
 # opportunistic GPU-OCR fallback can run on the same card as vLLM without
 # ever being resident at the same time as a vLLM generation batch (see
@@ -15,18 +15,21 @@ services:
   vllm:
     image: vllm/vllm-openai:latest
     command:
-      # Qwen 3.8 27B, Qwen's official FP8 checkpoint: the same model the Ollama path runs as
-      # qwen3.8:27b-q4_K_M (vLLM can't serve that GGUF). ~30GB of weights: needs a GPU above 24GB.
-      - "--model=${QWEN_MODEL_REPO:-Qwen/Qwen3.8-27B-FP8}"
-      - "--quantization=${QWEN_QUANTIZATION:-fp8}"
+      # Gemma 4 31B, the Legal tab's and the general chat's model (the Ollama path runs it as
+      # gemma4:31b), quantized to FP8 on load: ~33GB of weights, so a GPU above 40GB. A gated repo:
+      # accept its license on huggingface.co before scripts/download_models.sh fetches it.
+      # Translation here is Gemma 4 alone (config.yaml translation.translator: null); TranslateGemma
+      # runs on the Ollama path.
+      - "--model=${VLLM_MODEL_REPO:-google/gemma-4-31B-it}"
+      - "--quantization=${VLLM_QUANTIZATION:-fp8}"
       # 16k: the Legal tab's evidence + thinking pass (config.yaml legal.orchestrator.max_model_len)
       # and the general chat's window. On a card too small for that at full precision, set
-      # QWEN_KV_CACHE_DTYPE=fp8.
-      - "--max-model-len=${QWEN_MAX_MODEL_LEN:-16384}"
-      - "--kv-cache-dtype=${QWEN_KV_CACHE_DTYPE:-auto}"
-      - "--gpu-memory-utilization=${QWEN_GPU_MEM_UTIL:-0.90}"
+      # VLLM_KV_CACHE_DTYPE=fp8.
+      - "--max-model-len=${VLLM_MAX_MODEL_LEN:-16384}"
+      - "--kv-cache-dtype=${VLLM_KV_CACHE_DTYPE:-auto}"
+      - "--gpu-memory-utilization=${VLLM_GPU_MEM_UTIL:-0.90}"
       - "--port=8000"
-      - "--guided-decoding-backend=${QWEN_GUIDED_BACKEND:-xgrammar}"
+      - "--guided-decoding-backend=${VLLM_GUIDED_BACKEND:-xgrammar}"
       - "--enable-auto-tool-choice"
     ports:
       - "8000:8000"

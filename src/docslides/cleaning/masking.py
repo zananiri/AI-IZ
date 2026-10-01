@@ -69,11 +69,16 @@ def _mask_with_regex(text: str, pattern: re.Pattern, category: str, counter: lis
     return pattern.sub(_replace, text)
 
 
+def unwrap_trivial_math(text: str) -> str:
+    """OCR inline math that is only a number or percentage ("$54 %$") as plain text ("54%")."""
+    return _TRIVIAL_MATH_RE.sub(lambda m: m.group(1) + m.group(2), text)
+
+
 def mask_non_translatable_spans(text: str, lang: str, run_ner: bool = True) -> MaskedText:
     spans: list[MaskedSpan] = []
     counters = {"formula": [0], "placeholder": [0], "unit": [0], "number": [0], "entity": [0]}
 
-    text = _TRIVIAL_MATH_RE.sub(lambda m: m.group(1) + m.group(2), text)
+    text = unwrap_trivial_math(text)
 
     text = _mask_with_regex(text, _FORMULA_RE, "formula", counters["formula"], spans)
     text = _mask_with_regex(text, _PLACEHOLDER_RE, "placeholder", counters["placeholder"], spans)

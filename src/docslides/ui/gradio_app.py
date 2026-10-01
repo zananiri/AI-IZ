@@ -328,7 +328,7 @@ def build_chat_tab() -> None:
 
 # ---------------------------------------------------------------------------
 # Legal tab -- grounded RAG over Israeli law (see api/routes_legal.py,
-# legal/pipeline.py): Qwen plans the search, retrieves from the bulk legal
+# legal/pipeline.py): Gemma 4 plans the search, retrieves from the bulk legal
 # corpus (legal/corpus_retrieval.py; legal.retrieval.source), researches,
 # drafts and verifies against what it retrieved, and answers in the
 # question's language.

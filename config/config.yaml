@@ -9,12 +9,18 @@ llm:
   # vars -- see docker-compose.portable.yml and scripts/setup.*.
   backend: "vllm"
   base_url: "http://vllm:8000/v1"        # OpenAI-compatible endpoint served by vLLM
-  model: "Qwen/Qwen3.8-27B-FP8"           # vLLM: the Ollama path runs the same model as qwen3.8:27b-q4_K_M
+  # General chat (chat, rewrite, slides, and the glossary work around translation): the same
+  # Gemma 4 as the Legal tab. vLLM serves Gemma 4 31B; under Ollama, scripts/setup.* pick the
+  # Legal tab's tag for this host (gemma4:31b / gemma4:12b / gemma3:4b-it-qat) for both.
+  model: "google/gemma-4-31B-it"
   api_key: "not-needed"                   # vLLM does not require a real key locally
   request_timeout_s: 600
-  # Ollama num_ctx for the general chat; vLLM serves 16384 (docker-compose.yml QWEN_MAX_MODEL_LEN).
+  # Ollama num_ctx for the general chat; vLLM serves 16384 (docker-compose.yml VLLM_MAX_MODEL_LEN).
   max_model_len: 16384
   guided_decoding_backend: "xgrammar"     # xgrammar | outlines
+  # Gemma runs with thinking off, as on the Legal tab (Gemma 3 has no thinking mode; Gemma 4's
+  # stays off). The per-call-site defaults below only apply to a model with supports_thinking.
+  supports_thinking: false
   # Per call-site defaults for the `enable_thinking` chat-template flag.
   thinking_defaults:
     outline_generation: true
@@ -29,7 +35,7 @@ llm:
     max_tokens: 2048
 
 legal:
-  # Legal tab: grounded RAG over Israeli law (src/docslides/legal/). Qwen
+  # Legal tab: grounded RAG over Israeli law (src/docslides/legal/). Gemma 4
   # researches (Pass A memorandum), drafts (Pass B), runs every
   # verification step and answers in the question's language. Sources are
   # staged, human-reviewed and signed into the index offline with
@@ -38,15 +44,16 @@ legal:
   orchestrator:
     backend: "vllm"
     base_url: "http://vllm:8000/v1"
-    # Qwen 3.8 27B FP8: the same weights docker-compose.yml's vLLM serves (QWEN_MODEL_REPO), so the
+    # Gemma 4 31B: the same weights docker-compose.yml's vLLM serves (VLLM_MODEL_REPO), so the
     # Legal tab and the general chat share one server. The Ollama path (scripts/setup.*,
-    # docker-compose.portable.yml, .env.local) defaults to gemma4:31b (Gemma 4 31B dense) instead, with
-    # supports_thinking: false; the general chat there runs qwen3.8:27b-q4_K_M with thinking on, on every host.
-    model: "Qwen/Qwen3.8-27B-FP8"
+    # docker-compose.portable.yml, .env.local) picks the tag by host memory: gemma4:31b, gemma4:12b
+    # under 32GB of RAM or without a GPU, gemma3:4b-it-qat under 12GB -- the general chat too.
+    model: "google/gemma-4-31B-it"
+    supports_thinking: false
     api_key: "not-needed"
     request_timeout_s: 900
     # Must not exceed the served --max-model-len (docker-compose.yml:
-    # QWEN_MAX_MODEL_LEN, default 16384). Under Ollama it is the num_ctx sent
+    # VLLM_MAX_MODEL_LEN, default 16384). Under Ollama it is the num_ctx sent
     # with every request (DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN overrides
     # it). Output budgets are capped to fit it (llm/client.py): 16384 holds
     # the full evidence budget below plus the thinking analysis pass's
@@ -101,14 +108,14 @@ legal:
     max_memo_revisions: 2
     max_draft_revisions: 1
     entailment_concurrency: 4
-    # Pass 0 (legal/pipeline.analyze_question): Qwen reads the evidence against
+    # Pass 0 (legal/pipeline.analyze_question): the model reads the evidence against
     # the question with thinking ON and writes notes that the memorandum and
     # the draft both start from. Budget = thinking + notes.
     analysis_pass: true
     analysis_max_tokens: 4096
   audit_dir: "./data/legal/audit"
   # Evals only: the grading model (legal/evaluation.get_judge_client), on the orchestrator's Ollama.
-  # Neither family under test (qwen3, gemma) grades itself. DOCSLIDES_LEGAL_JUDGE_MODEL overrides it;
+  # The family under test (gemma) never grades itself. DOCSLIDES_LEGAL_JUDGE_MODEL overrides it;
   # null = the orchestrator grades its own answers.
   judge_model: "gpt-oss:20b"
   # Bulk corpus built from legal_txt/ JSONL by scripts/legal_data/vectorize.py: its own Chroma
@@ -329,6 +336,12 @@ cleaning:
 
 translation:
   glossary_max_terms: 200
+  # TranslateGemma translates each chunk; Gemma 4 (llm: above) builds the glossary first and
+  # fixes any glossary term a chunk's translation missed (translation/translator.py). Under
+  # Ollama, scripts/setup.* set it (DOCSLIDES_TRANSLATOR_*) to the size matching the Legal tab's
+  # Gemma: translategemma:27b with gemma4:31b, :12b with gemma4:12b, :4b with gemma3:4b-it-qat.
+  # null (the vLLM default) = Gemma 4 translates on its own.
+  translator: null
 
 slides:
   default_bullet_count: 4

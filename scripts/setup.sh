@@ -13,28 +13,22 @@
 #   ./scripts/setup.sh [models_dir]
 #
 # Env overrides:
-#   QWEN_MODEL_REPO      vLLM path model repo. default: Qwen/Qwen3.8-27B-FP8
-#                        (Qwen 3.8 27B, ~30GB: the Ollama path's model; needs
-#                        a GPU above 24GB)
-#   OLLAMA_CHAT_MODEL    Ollama path model tag for the general chat (chat,
-#                        rewrite, translation, slides). default:
-#                        qwen3.8:27b-q4_K_M (Qwen 3.8 27B dense, Q4_K_M,
-#                        ~18GB, thinking on; better than Gemma at rewriting
-#                        and translation) on every host, whatever its RAM or
-#                        GPU, with a 16384-token context. A qwen tag runs
-#                        with thinking on, a gemma tag with thinking off.
-#   OLLAMA_MODEL         Ollama path model tag for the Legal orchestrator.
-#                        default: gemma4:31b (Gemma 4 31B dense, 4-bit,
-#                        ~20GB; ~25GB resident with the 16k context). Under
-#                        32GB of RAM the default falls back to gemma4:12b
-#                        (Gemma 4 12B), under 12GB to gemma3:4b-it-qat. A
-#                        gemma tag runs with thinking off (Gemma 3 has no
-#                        thinking mode; Gemma 4's stays off so its runs compare
-#                        with the Gemma 3 ones): *_SUPPORTS_THINKING=false.
-#                        qwen3:14b / qwen3:32b still work (thinking on); 32b
-#                        needs ~48GB RAM on a CPU-only host (llama.cpp's CPU
-#                        "repack" buffer, briefly resident while loading, hits
-#                        std::bad_alloc below that).
+#   VLLM_MODEL_REPO      vLLM path model repo (general chat + Legal tab).
+#                        default: google/gemma-4-31B-it (gated: accept its
+#                        license on huggingface.co and `hf auth login` first)
+#   OLLAMA_MODEL         Ollama path Gemma tag for both the Legal tab and the
+#                        general chat (chat, rewrite, slides, the glossary work
+#                        around translation). default: gemma4:31b (Gemma 4 31B
+#                        dense, 4-bit, ~20GB; ~25GB resident with the 16k
+#                        context). Under 32GB of RAM, or on a CPU-only Linux
+#                        host, it falls back to gemma4:12b (Gemma 4 12B), under
+#                        12GB to gemma3:4b-it-qat. Gemma runs with thinking
+#                        off (Gemma 3 has no thinking mode; Gemma 4's stays
+#                        off): *_SUPPORTS_THINKING=false.
+#   OLLAMA_TRANSLATE_MODEL  TranslateGemma tag that translates documents.
+#                        default: the size matching OLLAMA_MODEL --
+#                        translategemma:27b with gemma4:31b, :12b with
+#                        gemma4:12b, :4b with gemma3:4b-it-qat.
 #   LEGAL_CONTEXT_LENGTH Legal tab context window (Ollama num_ctx). default:
 #                        16384 -- the evidence budget plus the thinking pass
 #                        (config/config.yaml legal.orchestrator.max_model_len).
@@ -165,20 +159,19 @@ else
       echo "       so the Ollama model defaults to $OLLAMA_MODEL. Set OLLAMA_MODEL=gemma4:31b to override."
     fi
   fi
-  case "$OLLAMA_MODEL" in
-    gemma*) SUPPORTS_THINKING=false ;;  # Gemma runs with thinking off (Gemma 3 has none)
-    *) SUPPORTS_THINKING=true ;;
-  esac
-  # General chat: Qwen, which rewrites and translates better than Gemma, with thinking on
-  # (config.yaml llm.thinking_defaults picks it per call site: chat + rewrite on, translation off).
-  # Always qwen3.8:27b-q4_K_M, whatever the host's RAM or GPU (Ollama swaps it with the Legal
-  # model rather than holding both). On a CPU-only or small-RAM host it is slow or may not load.
-  OLLAMA_CHAT_MODEL="${OLLAMA_CHAT_MODEL:-qwen3.8:27b-q4_K_M}"
+  # Gemma runs with thinking off (Gemma 3 has no thinking mode; Gemma 4 matches it).
+  SUPPORTS_THINKING=false
+  # General chat: the same Gemma as the Legal tab, with the same context window.
   CHAT_CONTEXT_LENGTH=16384
-  case "$OLLAMA_CHAT_MODEL" in
-    gemma*) CHAT_SUPPORTS_THINKING=false ;;
-    *) CHAT_SUPPORTS_THINKING=true ;;
-  esac
+  # Translation: TranslateGemma, sized to match that Gemma (Gemma 4 builds the glossary around it).
+  if [ -z "${OLLAMA_TRANSLATE_MODEL:-}" ]; then
+    case "$OLLAMA_MODEL" in
+      gemma4:31b*) OLLAMA_TRANSLATE_MODEL="translategemma:27b" ;;
+      gemma4:12b*) OLLAMA_TRANSLATE_MODEL="translategemma:12b" ;;
+      *4b*) OLLAMA_TRANSLATE_MODEL="translategemma:4b" ;;
+      *) OLLAMA_TRANSLATE_MODEL="translategemma:12b" ;;
+    esac
+  fi
   if ! command -v ollama >/dev/null 2>&1; then
     if [ "$OS_NAME" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
       brew install ollama || SKIPPED+=("ollama (brew)")
@@ -203,7 +196,7 @@ else
     # first instead of fighting it for RAM.
     #
     # Flash attention + an 8-bit KV cache halve the context's memory, so the
-    # Legal tab's 16k window costs qwen3:14b ~1.3GB instead of ~2.6GB.
+    # Legal tab's 16k window costs a 12B model ~1.3GB instead of ~2.6GB.
     export OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0
     for setting in OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0; do
       for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
@@ -232,7 +225,7 @@ else
       echo "       and reopen the app) so OLLAMA_MAX_LOADED_MODELS=1, OLLAMA_FLASH_ATTENTION=1"
       echo "       and OLLAMA_KV_CACHE_TYPE=q8_0 take effect."
     fi
-    for tag in "$OLLAMA_CHAT_MODEL" "$OLLAMA_MODEL"; do
+    for tag in "$OLLAMA_MODEL" "$OLLAMA_TRANSLATE_MODEL"; do
       echo "Pulling $tag (this is a large download, comparable to the vLLM weights)..."
       ollama pull "$tag" || {
         echo "[warn] 'ollama pull $tag' failed. Check the exact tag at"
@@ -249,8 +242,8 @@ else
   cat > .env.local <<EOF
 DOCSLIDES_LLM_BACKEND=ollama
 DOCSLIDES_LLM_BASE_URL=http://localhost:11434
-DOCSLIDES_LLM_MODEL=$OLLAMA_CHAT_MODEL
-DOCSLIDES_LLM_SUPPORTS_THINKING=$CHAT_SUPPORTS_THINKING
+DOCSLIDES_LLM_MODEL=$OLLAMA_MODEL
+DOCSLIDES_LLM_SUPPORTS_THINKING=$SUPPORTS_THINKING
 DOCSLIDES_LLM_MAX_MODEL_LEN=$CHAT_CONTEXT_LENGTH
 DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
@@ -259,14 +252,19 @@ DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OLLAMA_MODEL
 DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SUPPORTS_THINKING
 DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
 DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
+DOCSLIDES_TRANSLATOR_BACKEND=ollama
+DOCSLIDES_TRANSLATOR_BASE_URL=http://localhost:11434
+DOCSLIDES_TRANSLATOR_MODEL=$OLLAMA_TRANSLATE_MODEL
+DOCSLIDES_TRANSLATOR_MAX_MODEL_LEN=8192
+DOCSLIDES_TRANSLATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 EOF
-  echo "wrote $REPO_ROOT/.env.local (backend=ollama, chat model=$OLLAMA_CHAT_MODEL, chat context=$CHAT_CONTEXT_LENGTH, legal model=$OLLAMA_MODEL, legal context=$LEGAL_CONTEXT_LENGTH)"
+  echo "wrote $REPO_ROOT/.env.local (backend=ollama, chat + legal model=$OLLAMA_MODEL, translation model=$OLLAMA_TRANSLATE_MODEL, chat context=$CHAT_CONTEXT_LENGTH, legal context=$LEGAL_CONTEXT_LENGTH)"
 fi
 echo
 
 echo "== [6/7] Downloading language/OCR model weights =="
 if [ "$BACKEND" = "ollama" ]; then
-  SKIP_QWEN=1 bash scripts/download_models.sh "$MODELS_DIR"
+  SKIP_VLLM_WEIGHTS=1 bash scripts/download_models.sh "$MODELS_DIR"
 else
   bash scripts/download_models.sh "$MODELS_DIR"
 fi

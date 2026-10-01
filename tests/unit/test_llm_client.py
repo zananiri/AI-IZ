@@ -11,7 +11,7 @@ from docslides.llm.client import (
     ChatMessage,
     Completion,
     LLMCallSite,
-    QwenClient,
+    LLMClient,
     SamplingParams,
     SchemaValidationFailed,
 )
@@ -22,9 +22,10 @@ from docslides.llm.schemas import EntailmentVerdict, EvalJudgement, LegalDraft
 def ollama(monkeypatch, tmp_path):
     monkeypatch.setattr(get_config().logging, "llm_trace_dir", str(tmp_path))
     cfg = get_config().legal.orchestrator.model_copy(
-        update={"backend": "ollama", "base_url": "http://localhost:1", "model": "qwen3:8b", "max_model_len": 8192}
+        update={"backend": "ollama", "base_url": "http://localhost:1", "model": "gemma4:12b", "max_model_len": 8192,
+                "supports_thinking": True}
     )
-    return QwenClient(cfg)
+    return LLMClient(cfg)
 
 
 def _scripted(client, monkeypatch, replies):
@@ -51,7 +52,7 @@ def test_payload_carries_top_k_seed_thinking_and_context(ollama):
 def test_a_model_without_thinking_is_told_not_to_think(ollama):
     # Gemma 4 thinks by default when "think" is left out, spending max_tokens on reasoning and
     # returning empty content.
-    gemma = QwenClient(ollama._llm_cfg.model_copy(update={"model": "gemma4:31b", "supports_thinking": False}))
+    gemma = LLMClient(ollama._llm_cfg.model_copy(update={"model": "gemma4:31b", "supports_thinking": False}))
     for site in ("legal_analysis", "chat_general"):
         payload = gemma._build_payload([ChatMessage("user", "hi")], LLMCallSite(site), SamplingParams(), None, None,
                                        stream=True)
@@ -61,7 +62,7 @@ def test_a_model_without_thinking_is_told_not_to_think(ollama):
 def test_a_rejected_think_field_is_dropped_and_the_call_retried(ollama, monkeypatch):
     import httpx
 
-    gemma = QwenClient(ollama._llm_cfg.model_copy(update={"model": "gemma3:12b", "supports_thinking": False}))
+    gemma = LLMClient(ollama._llm_cfg.model_copy(update={"model": "gemma3:12b", "supports_thinking": False}))
     request = httpx.Request("POST", "http://localhost:1/api/chat")
     rejected = httpx.Response(400, text='{"error":"model does not support thinking"}', request=request)
     sent = []
@@ -86,7 +87,7 @@ def test_a_timeout_names_the_model_the_step_and_the_setting(ollama, monkeypatch)
         raise httpx.ReadTimeout("")
 
     monkeypatch.setattr(ollama, "_post_completion", slow)
-    with pytest.raises(LLMTimeoutError, match=r"qwen3:8b .*'legal_research_memo'.*REQUEST_TIMEOUT_S"):
+    with pytest.raises(LLMTimeoutError, match=r"gemma4:12b .*'legal_research_memo'.*REQUEST_TIMEOUT_S"):
         asyncio.run(ollama.complete_text([ChatMessage("user", "q")], LLMCallSite("legal_research_memo")))
 
 
@@ -152,9 +153,9 @@ def test_every_call_is_traced_with_its_reasoning(ollama, monkeypatch, tmp_path):
 
 
 def test_reasoning_inline_in_think_tags_is_split_from_the_answer():
-    assert QwenClient._split_thinking("<think>why</think>answer") == ("why", "answer")
-    assert QwenClient._split_thinking("<think>cut off mid-thought") == ("cut off mid-thought", "")
-    assert QwenClient._split_thinking("just an answer") == ("", "just an answer")
+    assert LLMClient._split_thinking("<think>why</think>answer") == ("why", "answer")
+    assert LLMClient._split_thinking("<think>cut off mid-thought") == ("cut off mid-thought", "")
+    assert LLMClient._split_thinking("just an answer") == ("", "just an answer")
 
 
 def test_the_judge_explains_before_its_verdict_and_the_verifier_after():

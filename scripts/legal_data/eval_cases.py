@@ -52,7 +52,7 @@ DEFAULT_DIR = Path("legal_txt/Evals/israeli_legal_eval")
 RUBRIC_SECTIONS = ["facts_summary", "chronology", "legal_issues", "deadlines", "red_flags",
                     "missing_info", "deliverable", "next_step"]
 
-# The 29 Sept review of the Qwen 14B / Gemma 12B work files: every case lost points for an invented
+# The 29 Sept review of the 14B / Gemma 12B work files: every case lost points for an invented
 # period or deadline, a law applied outside its scope, or a fact misread from the file; the
 # deliverable was often an outline or missing. The 29 Sept review of the Gemma 27B files: a bare
 # "state a period only when ... otherwise write 'יש לבדוק'" rule made the model hedge even on periods
@@ -181,14 +181,14 @@ def load_gold(path: Path) -> dict[str, dict]:
     return {c["case_id"]: c for c in data["cases"]}
 
 
-async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
+async def answer_one(llm, instructions: str, case_id: str, case_text: str,
                       categories: list[str], top_k: int, thinking: bool = True,
                       max_tokens: int = WORK_FILE_MAX_TOKENS) -> dict:
     repairs: list[str] = []
     with trace.collect(job_id=case_id):
         # Always with retrieval over the corpus (there is no model-alone mode), planned as for the
         # single questions: one search per issue the model sees, not one on the whole case text.
-        issues = await plan_issues(qwen, {"id": case_id, "question": case_text}, max_issues=CASE_MAX_ISSUES)
+        issues = await plan_issues(llm, {"id": case_id, "question": case_text}, max_issues=CASE_MAX_ISSUES)
         hits = retrieve_planned(case_text, issues, categories, top_k, per_issue_slot=True)
         reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>"
         case_hits = caselaw.search_caselaw(case_text, [i.issue for i in issues]) \
@@ -198,20 +198,20 @@ async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
         messages = [ChatMessage("system", CASE_SYSTEM),
                     ChatMessage("user", f"{instructions}\n\n---\n\n{case_text}{reference}")]
 
-        text = (await qwen.complete_text(
+        text = (await llm.complete_text(
             messages, LLMCallSite("legal_eval_baseline"), sampling=eval_sampling(max_tokens, thinking),
             enable_thinking=thinking,
         )).strip()
         sampling = eval_sampling(max_tokens, False)
         if not text and thinking:
             repairs.append("empty_answer_retry")
-            text = (await qwen.complete_text(messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
+            text = (await llm.complete_text(messages, LLMCallSite("legal_eval_baseline"), sampling=sampling,
                                              enable_thinking=False)).strip()
 
         missing = missing_sections(text) if text else []
         if missing:
             repairs.append("missing_sections")
-            addition = (await qwen.complete_text(
+            addition = (await llm.complete_text(
                 [*messages, ChatMessage("assistant", text),
                  ChatMessage("user", COMPLETE_PROMPT.format(sections=", ".join(missing)))],
                 LLMCallSite("legal_eval_repair"), sampling=sampling, enable_thinking=False,
@@ -221,7 +221,7 @@ async def answer_one(qwen, instructions: str, case_id: str, case_text: str,
 
         unsupported = unsupported_values(text, case_text) if text else []
         if unsupported:
-            revised = (await qwen.complete_text(
+            revised = (await llm.complete_text(
                 [ChatMessage("system", CASE_SYSTEM),
                  ChatMessage("user", FACTS_PROMPT.format(values=", ".join(unsupported), case_text=case_text,
                                                          work_file=text))],
@@ -252,7 +252,7 @@ async def cmd_answer(a) -> None:
     out = Path(a.out)
     done = _load_done(out)
     categories = a.categories.split(",")
-    qwen = get_legal_orchestrator_client()
+    llm = get_legal_orchestrator_client()
     started = time.monotonic()
     device = warm_up_retrieval()
     _log(f"retrieval ready on {device} ({round(time.monotonic() - started)}s)")
@@ -264,7 +264,7 @@ async def cmd_answer(a) -> None:
         case_text = (base / "cases" / entry["file"]).read_text(encoding="utf-8")
         started = time.monotonic()
         try:
-            row = await answer_one(qwen, instructions, case_id, case_text, categories, a.top_k, thinking=a.thinking,
+            row = await answer_one(llm, instructions, case_id, case_text, categories, a.top_k, thinking=a.thinking,
                                    max_tokens=a.max_tokens)
         except Exception as exc:  # noqa: BLE001 -- record and move on; --out is resumable
             row = {"case_id": case_id, "work_file": "", "error": f"{type(exc).__name__}: {exc}"}
@@ -299,12 +299,12 @@ def judge_prompt(case_text: str, work_file: str, gold_entry: dict) -> str:
     )
 
 
-async def judge_one(qwen, case_id: str, case_text: str, work_file: str, gold_entry: dict,
+async def judge_one(llm, case_id: str, case_text: str, work_file: str, gold_entry: dict,
                     thinking: bool = True, max_tokens: int = JUDGE_MAX_TOKENS) -> dict:
     prompt = judge_prompt(case_text, work_file, gold_entry)
     with trace.collect(job_id=case_id):
         try:
-            verdict = await qwen.complete_json(
+            verdict = await llm.complete_json(
                 [ChatMessage("user", prompt)], LLMCallSite("legal_eval_judge"),
                 schema=CaseJudgement,
                 sampling=eval_sampling(max_tokens, thinking),
@@ -322,7 +322,7 @@ async def cmd_judge(a) -> None:
     answers = {r["case_id"]: r for r in _load_jsonl(Path(a.answers))}
     out = Path(a.out)
     done = _load_done(out)
-    qwen = get_judge_client()
+    llm = get_judge_client()
     _log(f"{len(answers)} answers, {len(done)} already judged")
     for case_id, ans in answers.items():
         if case_id in done or not ans.get("work_file"):
@@ -330,7 +330,7 @@ async def cmd_judge(a) -> None:
         entry = gold[case_id]
         case_text = (base / "cases" / entry["file"]).read_text(encoding="utf-8")
         started = time.monotonic()
-        row = await judge_one(qwen, case_id, case_text, ans["work_file"], entry, thinking=a.thinking,
+        row = await judge_one(llm, case_id, case_text, ans["work_file"], entry, thinking=a.thinking,
                               max_tokens=a.max_tokens)
         _append(out, row)
         _log(f"{case_id}: total={row['total']} ({round(time.monotonic() - started)}s)")

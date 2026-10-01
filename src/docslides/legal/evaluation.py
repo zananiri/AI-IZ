@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from docslides.legal.chunking import normalize_hebrew_quotes
-from docslides.llm.client import ChatMessage, LLMCallSite, QwenClient, SamplingParams
+from docslides.llm.client import ChatMessage, LLMCallSite, LLMClient, SamplingParams
 from docslides.llm.schemas import EvalContradiction, EvalJudgement
 
 BASELINE_SYSTEM_PROMPT = "You are a legal assistant. Answer the user's question in the language it was asked in."
@@ -142,8 +142,8 @@ number for the same provision is NOT a contradiction. Omitting something is not 
 The texts may be in Hebrew."""
 
 
-async def contradiction(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalContradiction:
-    return await qwen.complete_json(
+async def contradiction(llm: LLMClient, q: EvalQuestion, answer: str) -> EvalContradiction:
+    return await llm.complete_json(
         [ChatMessage("system", CONTRADICTION_PROMPT), ChatMessage("user", _judge_input(q, answer))],
         LLMCallSite("legal_eval_judge"),
         schema=EvalContradiction,
@@ -151,7 +151,7 @@ async def contradiction(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalC
     )
 
 
-def get_judge_client() -> QwenClient:
+def get_judge_client() -> LLMClient:
     """The grading model, on the orchestrator's server: DOCSLIDES_LEGAL_JUDGE_MODEL when set, else
     legal.judge_model (gpt-oss:20b), else the orchestrator model itself."""
     import os
@@ -163,7 +163,7 @@ def get_judge_client() -> QwenClient:
     if not model:
         return get_legal_orchestrator_client()
     orchestrator = get_config().legal.orchestrator
-    return QwenClient(orchestrator.model_copy(update={"model": model}))
+    return LLMClient(orchestrator.model_copy(update={"model": model}))
 
 
 def needs_contradiction_check(q: EvalQuestion, verdict: str, facts: float | None, traps: list[str]) -> bool:
@@ -174,8 +174,8 @@ def needs_contradiction_check(q: EvalQuestion, verdict: str, facts: float | None
     return q.group != "C" and verdict in ("incorrect", "partially_correct") and facts == 1.0 and not traps
 
 
-async def judge(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalJudgement:
-    return await qwen.complete_json(
+async def judge(llm: LLMClient, q: EvalQuestion, answer: str) -> EvalJudgement:
+    return await llm.complete_json(
         [
             ChatMessage("system", JUDGE_PROMPT),
             ChatMessage("user", _judge_input(q, answer)),
@@ -186,8 +186,8 @@ async def judge(qwen: QwenClient, q: EvalQuestion, answer: str) -> EvalJudgement
     )
 
 
-async def ask_baseline(qwen: QwenClient, q: EvalQuestion) -> str:
-    return await qwen.complete_text(
+async def ask_baseline(llm: LLMClient, q: EvalQuestion) -> str:
+    return await llm.complete_text(
         [ChatMessage("system", BASELINE_SYSTEM_PROMPT), ChatMessage("user", q.question)],
         LLMCallSite("legal_eval_baseline"),
         sampling=SamplingParams(temperature=0.0, max_tokens=1024),

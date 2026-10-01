@@ -48,11 +48,11 @@ def _log(message: str) -> None:
     print(f"[{datetime.now():%H:%M:%S}] {message}", flush=True)
 
 
-async def _grade(qwen, q: ev.EvalQuestion, answer: str, cited: list[str] | None = None) -> dict:
+async def _grade(llm, q: ev.EvalQuestion, answer: str, cited: list[str] | None = None) -> dict:
     """The judge sees the answer with the provisions it cites; key facts and traps are matched on its text."""
     shown = ev.with_citations(answer, cited or [])
     try:
-        judgement = await ev.judge(qwen, q, shown)
+        judgement = await ev.judge(llm, q, shown)
         verdict, fabricated, explanation = judgement.verdict, judgement.fabricated_specifics, judgement.explanation
     except Exception as exc:  # noqa: BLE001 -- an ungradable answer is recorded, not fatal
         verdict, fabricated, explanation = "incorrect", False, f"judge failed: {exc}"
@@ -61,7 +61,7 @@ async def _grade(qwen, q: ev.EvalQuestion, answer: str, cited: list[str] | None 
               "fact_coverage": facts, "trap_hits": traps}
     if ev.needs_contradiction_check(q, verdict, facts, traps):
         try:
-            check = await ev.contradiction(qwen, q, shown)
+            check = await ev.contradiction(llm, q, shown)
         except Exception as exc:  # noqa: BLE001
             graded["contradiction_check"] = f"failed: {exc}"
             return graded
@@ -76,7 +76,7 @@ async def _grade(qwen, q: ev.EvalQuestion, answer: str, cited: list[str] | None 
 
 
 async def run_before(questions, out: Path) -> dict:
-    qwen = get_legal_orchestrator_client()
+    llm = get_legal_orchestrator_client()
     results = _load(out)
     for q in questions:
         if q.id in results:
@@ -84,7 +84,7 @@ async def run_before(questions, out: Path) -> dict:
         _log(f"BEFORE {q.id}: asking the model with no context")
         started = time.monotonic()
         try:
-            answer = await ev.ask_baseline(qwen, q)
+            answer = await ev.ask_baseline(llm, q)
         except Exception as exc:  # noqa: BLE001
             results[q.id] = {"answer_text": "", "error": str(exc), "classification": "error"}
             _save(out, results)
@@ -152,7 +152,7 @@ async def run_after(questions, out: Path) -> dict:
 
 async def rejudge(questions, run_dir: Path, after_only: bool = False) -> None:
     """Re-grades saved answers with the current judge (ev.get_judge_client); the pipeline is not re-run."""
-    qwen = ev.get_judge_client()
+    llm = ev.get_judge_client()
     before, after = _load(run_dir / "before.json"), _load(run_dir / "after.json")
     ev.backfill_answer_texts(before, after)
     for q in questions:
@@ -161,7 +161,7 @@ async def rejudge(questions, run_dir: Path, after_only: bool = False) -> None:
             if not record or record.get("error"):
                 continue
             old = record.get("classification") or record.get("verdict")
-            graded = await _grade(qwen, q, record.get("answer_text", ""), record.get("cited"))
+            graded = await _grade(llm, q, record.get("answer_text", ""), record.get("cited"))
             record.pop("needs_review", None)
             record.pop("judge_verdict", None)
             record.update(graded)

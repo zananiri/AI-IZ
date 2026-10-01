@@ -1,7 +1,7 @@
 """Deterministic checks in the Legal pipeline -- no model judgment involved:
 
   * `validate_memorandum`: the gate between Pass A and Pass B (spec section 5).
-    A memorandum that fails goes back to Qwen for revision, never forward to
+    A memorandum that fails goes back to the orchestrator for revision, never forward to
     drafting.
   * `check_draft_citations`: structural checks on every [[CITE]] token in a
     draft (known claim ID, retrieved source, unchanged source_type, a

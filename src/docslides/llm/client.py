@@ -3,7 +3,7 @@
 CUDA/ROCm/Metal -- the portable path). See `config.llm.backend`.
 
 Responsibilities:
-  * Toggle Qwen3's "thinking" mode per call site, however the active backend
+  * Toggle the model's "thinking" mode per call site, however the active backend
     exposes that knob (vLLM: chat_template_kwargs; Ollama: `think`).
   * Drive structured JSON decoding for every content-generation call --
     callers never regex-parse free text (vLLM: guided_json extra_body;
@@ -11,7 +11,7 @@ Responsibilities:
   * Validate JSON responses against a pydantic schema and retry with an
     error-correction prompt on failure. An output cut off at max_tokens --
     at temperature 0, almost always a loop repeating one sentence -- is
-    retried fresh with Qwen's recommended non-greedy sampling instead.
+    retried fresh with non-greedy sampling instead.
   * Keep every request inside the context window: max_tokens is capped so
     prompt + output fit max_model_len (Ollama otherwise shifts the context
     mid-answer, silently dropping the system prompt and evidence).
@@ -42,9 +42,9 @@ from docslides.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
-# Output-budget arithmetic (see QwenClient._fit_context). Deliberately pessimistic
-# about Hebrew/Arabic, which Qwen's tokenizer splits finely. Fitted on the 26 Sept bulk500
-# trace (931 calls, qwen3 tokenizer): 2.0/3.5 undercounted mixed Hebrew/English prompts by up
+# Output-budget arithmetic (see LLMClient._fit_context). Deliberately pessimistic
+# about Hebrew/Arabic, which subword tokenizers split finely. Fitted on the 26 Sept bulk500
+# trace (931 calls): 2.0/3.5 undercounted mixed Hebrew/English prompts by up
 # to 39%, 1.5/3.0 by at most 12% -- the margin covers the rest on a 4k-token prompt.
 _CHARS_PER_TOKEN_NON_LATIN = 1.5
 _CHARS_PER_TOKEN_LATIN = 3.0
@@ -168,7 +168,7 @@ def _with_note(messages: list[ChatMessage], note: str) -> list[ChatMessage]:
 
 
 def _loop_breaking(sampling: SamplingParams, attempt: int) -> SamplingParams:
-    """Qwen3's recommended non-thinking sampling (temperature 0.7, top_p 0.8,
+    """Non-greedy loop-breaking sampling (temperature 0.7, top_p 0.8,
     top_k 20), with a new seed each retry so the next one isn't a replay."""
     return dataclasses.replace(
         sampling, temperature=max(sampling.temperature, 0.7), top_p=0.8, top_k=20,
@@ -176,7 +176,7 @@ def _loop_breaking(sampling: SamplingParams, attempt: int) -> SamplingParams:
     )
 
 
-class QwenClient:
+class LLMClient:
     """Talks to either vLLM's OpenAI-compatible API or Ollama's native API,
     selected by `config.llm.backend`. vLLM is NVIDIA-GPU-only but fastest;
     Ollama runs on CPU or whatever acceleration the host exposes (CUDA/ROCm/
@@ -273,7 +273,7 @@ class QwenClient:
     @staticmethod
     def _split_thinking(text: str) -> tuple[str, str]:
         """Split a full (non-streamed) completion into (reasoning, content). Handles <think>...</think>
-        (Qwen3) and [THINK]...[/THINK] (Mistral-based reasoning models such as DictaLM 3.0 Thinking),
+        (Gemma 4 and other <think>-tag models) and [THINK]...[/THINK] (Mistral-based reasoning models such as DictaLM 3.0 Thinking),
         and a reply that has only the closing tag because the chat template already opened the block."""
         for open_tag, close_tag in (("<think>", "</think>"), ("[THINK]", "[/THINK]")):
             if close_tag in text:
@@ -465,9 +465,9 @@ class QwenClient:
                     error=str(exc),
                 )
                 if completion.truncated:
-                    # Cut off at max_tokens. Greedy decoding (temperature 0) loops -- Qwen's own
+                    # Cut off at max_tokens. Greedy decoding (temperature 0) loops -- the model vendors' own
                     # guidance warns of it -- and feeding the loop back would only prime it and eat
-                    # the context: start over, sampling as Qwen recommends for non-thinking mode.
+                    # the context: start over, sampling as recommended for non-thinking mode.
                     working_messages = _with_note(messages, _RUNAWAY_NOTE)
                     working_sampling = _loop_breaking(sampling or SamplingParams(), attempt)
                     continue
@@ -610,24 +610,38 @@ class QwenClient:
                 break
 
 
-_client_singleton: QwenClient | None = None
-_legal_orchestrator_singleton: QwenClient | None = None
+_client_singleton: LLMClient | None = None
+_legal_orchestrator_singleton: LLMClient | None = None
+_translator_singleton: LLMClient | None = None
 
 
-def get_client() -> QwenClient:
+def get_client() -> LLMClient:
     global _client_singleton
     if _client_singleton is None:
-        _client_singleton = QwenClient()
+        _client_singleton = LLMClient()
     return _client_singleton
 
 
-def get_legal_orchestrator_client() -> QwenClient:
-    """Qwen: the Legal tab's research, drafting and verification model. See
+def get_legal_orchestrator_client() -> LLMClient:
+    """Gemma 4: the Legal tab's research, drafting and verification model. See
     legal/pipeline.py."""
     global _legal_orchestrator_singleton
     if _legal_orchestrator_singleton is None:
-        _legal_orchestrator_singleton = QwenClient(get_config().legal.orchestrator)
+        _legal_orchestrator_singleton = LLMClient(get_config().legal.orchestrator)
     return _legal_orchestrator_singleton
+
+
+def get_translator_client() -> LLMClient | None:
+    """TranslateGemma, the dedicated translation model (config translation.translator), or None
+    when none is configured -- then the general model translates on its own. See
+    translation/translator.py."""
+    global _translator_singleton
+    translator_cfg = get_config().translation.translator
+    if translator_cfg is None:
+        return None
+    if _translator_singleton is None:
+        _translator_singleton = LLMClient(translator_cfg)
+    return _translator_singleton
 
 
 async def aclose_all_clients() -> None:
@@ -637,6 +651,7 @@ async def aclose_all_clients() -> None:
     for client in (
         _client_singleton,
         _legal_orchestrator_singleton,
+        _translator_singleton,
     ):
         if client is not None:
             await client.aclose()

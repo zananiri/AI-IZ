@@ -1,7 +1,7 @@
 [project]
 name = "docslides"
 version = "0.1.0"
-description = "Offline, multilingual document-to-PowerPoint generation system powered by a locally-hosted Qwen3-32B"
+description = "Offline, multilingual document-to-PowerPoint generation system powered by locally-hosted Gemma 4 and TranslateGemma"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { text = "Proprietary" }

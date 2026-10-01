@@ -86,7 +86,10 @@ both run on `google/gemma-4-31B-it`.
 **Translation** pairs two models (`src/docslides/translation/translator.py`): Gemma 4 reads
 the document once and builds a glossary of terms to render consistently, TranslateGemma
 translates each chunk with its own prompt, and any glossary term a chunk's translation missed
-goes back to Gemma 4 to fix. Under Ollama the setup scripts pull the TranslateGemma size that
+goes back to Gemma 4 to fix. Every chat request that wants text in another language goes through
+TranslateGemma: translating an attached document or pasted text, and any other reply asked for in
+another language (a summary, an answer), which Gemma 4 writes in the material's own language and
+TranslateGemma then translates (`src/docslides/api/routes_chat.py`). Under Ollama the setup scripts pull the TranslateGemma size that
 matches the Gemma above -- `translategemma:27b` with `gemma4:31b`, `:12b` with `gemma4:12b`,
 `:4b` with `gemma3:4b-it-qat` (`OLLAMA_TRANSLATE_MODEL` / `-OllamaTranslateModel` override) --
 and write it as `DOCSLIDES_TRANSLATOR_*` (config `translation.translator`). Under vLLM it is

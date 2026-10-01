@@ -69,22 +69,31 @@ class ChunkSummary(BaseModel):
 
 
 class ChatIntent(BaseModel):
-    """Classifies whether a chat turn with an attached document wants a full
-    slide deck generated -- the only request type that needs the dedicated
-    pipeline (translate -> outline -> fill -> PPTX assembly) rather than a
-    normal chat response with the document's text as context. See
-    api/routes_chat.py."""
+    """Classifies a chat turn: a slide deck (the dedicated pipeline), a
+    translation of the text itself (TranslateGemma), or a normal reply -- and
+    the language the reply should be in, which TranslateGemma renders when it
+    differs from the material's. See api/routes_chat.py."""
 
     wants_slides: bool = Field(
         description="True only if the user explicitly asked for a PowerPoint/slide deck/presentation"
     )
     wants_translation: bool = Field(
         default=False,
-        description="True only if the user asked for the document itself to be translated (not summarized)",
+        description=(
+            "True only if the user asked for the text itself (the attached document or the pasted "
+            "text) to be translated, not summarized or answered about"
+        ),
     )
     target_lang: str | None = Field(
         default=None,
         description="ISO 639-1 code for the language the user asked the output in, if any (e.g. 'fr', 'es')",
+    )
+    instruction: str = Field(
+        default="",
+        description=(
+            "When the message starts with an instruction followed by the text to translate, that "
+            "instruction copied verbatim (e.g. 'Translate this into German:'); otherwise empty"
+        ),
     )
 
 

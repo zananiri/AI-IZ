@@ -18,9 +18,10 @@
 #   OLLAMA_CHAT_MODEL    Ollama path model tag for the general chat (chat,
 #                        rewrite, translation, slides). default: qwen3:14b
 #                        (~9GB, thinking on; better than Gemma at rewriting
-#                        and translation). Under 12GB of RAM: qwen3:4b. A
-#                        qwen3 tag runs with thinking on, a gemma tag with
-#                        thinking off.
+#                        and translation). With 32GB of RAM or more and a
+#                        GPU: qwen3.6:27b (Qwen 3.6 27B dense, 4-bit, ~18GB).
+#                        Under 12GB of RAM: qwen3:4b. A qwen tag runs with
+#                        thinking on, a gemma tag with thinking off.
 #   OLLAMA_MODEL         Ollama path model tag for the Legal orchestrator.
 #                        default: gemma4:31b (Gemma 4 31B dense, 4-bit,
 #                        ~20GB; ~25GB resident with the 16k context). Under
@@ -144,14 +145,15 @@ else
   fi
   REQUEST_TIMEOUT_S=900
   [ "$CPU_ONLY" = true ] && REQUEST_TIMEOUT_S=3600
+  # Measured even when OLLAMA_MODEL is set: the chat model's default depends on it too.
+  TOTAL_RAM_GB=0
+  if [ "$OS_NAME" = "Darwin" ]; then
+    TOTAL_RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
+  elif command -v free >/dev/null 2>&1; then
+    TOTAL_RAM_GB=$(( $(free -b | awk '/^Mem:/{print $2}') / 1073741824 ))
+  fi
   if [ -z "${OLLAMA_MODEL:-}" ]; then
     OLLAMA_MODEL="gemma4:31b"
-    TOTAL_RAM_GB=0
-    if [ "$OS_NAME" = "Darwin" ]; then
-      TOTAL_RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
-    elif command -v free >/dev/null 2>&1; then
-      TOTAL_RAM_GB=$(( $(free -b | awk '/^Mem:/{print $2}') / 1073741824 ))
-    fi
     if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 12 ]; then
       OLLAMA_MODEL="gemma3:4b-it-qat"
     elif { [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 32 ]; } || [ "$CPU_ONLY" = true ]; then
@@ -167,12 +169,16 @@ else
     gemma*) SUPPORTS_THINKING=false ;;  # Gemma runs with thinking off (Gemma 3 has none)
     *) SUPPORTS_THINKING=true ;;
   esac
-  # General chat: Qwen3, which rewrites and translates better than Gemma, with thinking on
+  # General chat: Qwen, which rewrites and translates better than Gemma, with thinking on
   # (config.yaml llm.thinking_defaults picks it per call site: chat + rewrite on, translation off).
+  # qwen3.6:27b from 32GB of RAM up -- the Legal tab's 31B tier; Ollama swaps the two models in
+  # and out rather than holding both. Not on a CPU-only host, where a 27B dense model writes ~1 token/s.
   if [ -z "${OLLAMA_CHAT_MODEL:-}" ]; then
     OLLAMA_CHAT_MODEL="qwen3:14b"
-    if [ "${TOTAL_RAM_GB:-0}" -gt 0 ] && [ "${TOTAL_RAM_GB:-0}" -lt 12 ]; then
+    if [ "$TOTAL_RAM_GB" -gt 0 ] && [ "$TOTAL_RAM_GB" -lt 12 ]; then
       OLLAMA_CHAT_MODEL="qwen3:4b"
+    elif [ "$TOTAL_RAM_GB" -ge 32 ] && [ "$CPU_ONLY" != true ]; then
+      OLLAMA_CHAT_MODEL="qwen3.6:27b"
     fi
   fi
   case "$OLLAMA_CHAT_MODEL" in

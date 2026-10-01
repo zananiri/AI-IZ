@@ -28,8 +28,9 @@
 .PARAMETER OllamaChatModel
     Model tag for the general chat (chat, rewrite, translation, slides) when the
     Ollama backend is selected. Default: qwen3:14b (~9GB, thinking on; better
-    than Gemma at rewriting and translation). Under 12GB of RAM: qwen3:4b. A
-    qwen3 tag runs with thinking on, a gemma tag with thinking off.
+    than Gemma at rewriting and translation). With 32GB of RAM or more and a
+    GPU: qwen3.6:27b (Qwen 3.6 27B dense, 4-bit, ~18GB). Under 12GB of RAM:
+    qwen3:4b. A qwen tag runs with thinking on, a gemma tag with thinking off.
 
 .PARAMETER OllamaModel
     Model tag for the Legal tab orchestrator when the Ollama backend is
@@ -239,10 +240,16 @@ if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaModel"
 $RequestTimeoutS = if ($CpuOnly) { 3600 } else { 900 }
 # Gemma runs with thinking off (Gemma 3 has no thinking mode; Gemma 4 matches it).
 $SupportsThinking = if ($OllamaModel -like "gemma*") { "false" } else { "true" }
-# General chat: Qwen3, which rewrites and translates better than Gemma, with thinking on
+# General chat: Qwen, which rewrites and translates better than Gemma, with thinking on
 # (config.yaml llm.thinking_defaults picks it per call site: chat + rewrite on, translation off).
-if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaChatModel") -and $TotalRamGB -gt 0 -and $TotalRamGB -lt 12) {
-    $OllamaChatModel = "qwen3:4b"
+# qwen3.6:27b from 32GB of RAM up -- the Legal tab's 31B tier; Ollama swaps the two models in
+# and out rather than holding both. Not on a CPU-only host, where a 27B dense model writes ~1 token/s.
+if ($Backend -eq "ollama" -and -not $PSBoundParameters.ContainsKey("OllamaChatModel")) {
+    if ($TotalRamGB -gt 0 -and $TotalRamGB -lt 12) {
+        $OllamaChatModel = "qwen3:4b"
+    } elseif ($TotalRamGB -ge 32 -and -not $CpuOnly) {
+        $OllamaChatModel = "qwen3.6:27b"
+    }
 }
 $ChatSupportsThinking = if ($OllamaChatModel -like "gemma*") { "false" } else { "true" }
 Write-Host ""

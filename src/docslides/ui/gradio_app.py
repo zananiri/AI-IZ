@@ -170,6 +170,34 @@ def _upload_file(file_path: str) -> dict:
     return {"path": data["file_path"], "name": data["original_filename"]}
 
 
+_STREAM_LOST = (
+    "The connection to the backend was lost before the answer arrived -- the app server may have "
+    "stopped or crashed mid-turn. Check the app's log (the terminal or launcher running uvicorn)."
+)
+
+
+def _job_events(path: str):
+    """(kind, data) for each event of a job's SSE stream at `path`. A stream that drops or ends
+    without "done" or "error" -- the server stopped mid-turn -- ends with an "error" event of its
+    own, so the chat says so instead of leaving the last status line up as if still working."""
+    try:
+        with httpx.Client(timeout=None) as client:
+            with client.stream("GET", f"{API_BASE_URL}{path}") as resp:
+                resp.raise_for_status()
+                event_kind = None
+                for line in resp.iter_lines():
+                    if line.startswith("event:"):
+                        event_kind = line.split(":", 1)[1].strip()
+                    elif line.startswith("data:"):
+                        yield event_kind, json.loads(line.split(":", 1)[1].strip())
+                        if event_kind in ("done", "error"):
+                            return
+    except httpx.HTTPError as exc:
+        yield "error", {"message": f"{_STREAM_LOST} ({type(exc).__name__}: {exc})"}
+        return
+    yield "error", {"message": _STREAM_LOST}
+
+
 def _stream_job(job_id: str, history: list, rtl_hint: bool):
     """`history` must already include the user's turn as the last entry, in
     Gradio's "messages" format (`gr.Chatbot` in Gradio 6.x only accepts
@@ -192,51 +220,40 @@ def _stream_job(job_id: str, history: list, rtl_hint: bool):
     llm_status = f"🔌 {status_text}..."
     started_streaming = False
 
-    with httpx.Client(timeout=None) as client:
-        with client.stream("GET", f"{API_BASE_URL}/api/chat-events/{job_id}") as resp:
-            event_kind = None
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                if line.startswith("event:"):
-                    event_kind = line.split(":", 1)[1].strip()
-                elif line.startswith("data:"):
-                    data = json.loads(line.split(":", 1)[1].strip())
-                    if event_kind == "status":
-                        status_text = data["message"]
-                        llm_status = f"⏳ {status_text}..."
-                    elif event_kind == "reasoning_delta":
-                        started_streaming = True
-                        reasoning_text += data["text"]
-                        llm_status = "🧠 Thinking..."
-                    elif event_kind == "content_delta":
-                        started_streaming = True
-                        content_text += data["text"]
-                        detected = detect_language(content_text[:200])
-                        rtl_hint = _is_rtl_lang(detected)
-                        llm_status = "✍️ Writing response..."
-                    elif event_kind == "done":
-                        output_path = data.get("output_path")
-                        if output_path:
-                            download_url = f"{API_BASE_URL}/api/download/{job_id}"
-                            content_text = f"Your presentation is ready: [Download {Path(output_path).name}]({download_url})"
-                            started_streaming = True
-                        llm_status = "✅ Done"
-                    elif event_kind == "error":
-                        content_text += f"\n\n⚠️ {data.get('message')}"
-                        started_streaming = True
-                        llm_status = "❌ Error"
+    for event_kind, data in _job_events(f"/api/chat-events/{job_id}"):
+        if event_kind == "status":
+            status_text = data["message"]
+            llm_status = f"⏳ {status_text}..."
+        elif event_kind == "reasoning_delta":
+            started_streaming = True
+            reasoning_text += data["text"]
+            llm_status = "🧠 Thinking..."
+        elif event_kind == "content_delta":
+            started_streaming = True
+            content_text += data["text"]
+            detected = detect_language(content_text[:200])
+            rtl_hint = _is_rtl_lang(detected)
+            llm_status = "✍️ Writing response..."
+        elif event_kind == "done":
+            output_path = data.get("output_path")
+            if output_path:
+                download_url = f"{API_BASE_URL}/api/download/{job_id}"
+                content_text = f"Your presentation is ready: [Download {Path(output_path).name}]({download_url})"
+                started_streaming = True
+            llm_status = "✅ Done"
+        elif event_kind == "error":
+            content_text += f"\n\n⚠️ {data.get('message')}"
+            started_streaming = True
+            llm_status = "❌ Error"
 
-                    display_text = content_text if started_streaming else f"_{status_text}..._"
-                    new_history = history + [{"role": "assistant", "content": display_text}]
-                    yield (
-                        gr.update(value=new_history),
-                        gr.update(value=reasoning_text, visible=bool(reasoning_text), rtl=rtl_hint),
-                        gr.update(value=None),
-                        gr.update(value=llm_status),
-                    )
-                    if event_kind in ("done", "error"):
-                        break  # after the yield, so the final status or error still shows
+        display_text = content_text if started_streaming else f"_{status_text}..._"
+        new_history = history + [{"role": "assistant", "content": display_text}]
+        yield (
+            gr.update(value=new_history),
+            gr.update(value=reasoning_text, visible=bool(reasoning_text), rtl=rtl_hint),
+            gr.update(value=None),
+            gr.update(value=llm_status),
+        )
 
 
 def send_chat_message(message: dict, history: list):
@@ -438,53 +455,42 @@ def _stream_legal_job(job_id: str, history: list):
     report: dict | None = None
     memo = None
 
-    with httpx.Client(timeout=None) as client:
-        with client.stream("GET", f"{API_BASE_URL}/api/legal-events/{job_id}") as resp:
-            event_kind = None
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                if line.startswith("event:"):
-                    event_kind = line.split(":", 1)[1].strip()
-                elif line.startswith("data:"):
-                    data = json.loads(line.split(":", 1)[1].strip())
-                    if event_kind == "status":
-                        status_text = data["message"]
-                        llm_status = f"⏳ {status_text}..."
-                    elif event_kind == "reasoning_delta":
-                        reasoning_text += data["text"]
-                        llm_status = "🧠 Thinking..."
-                    elif event_kind == "content_delta":
-                        started_streaming = True
-                        content_text += data["text"]
-                        llm_status = "✍️ Writing response..."
-                    elif event_kind == "citations":
-                        citations_md = _format_legal_footnotes(data.get("citations", []))
-                    elif event_kind == "legal_report":
-                        report = data
-                        memo = data.get("research_memorandum")
-                    elif event_kind == "done":
-                        llm_status = "✅ Done"
-                    elif event_kind == "error":
-                        content_text += f"\n\n⚠️ {data.get('message')}"
-                        started_streaming = True
-                        llm_status = "❌ Error"
+    for event_kind, data in _job_events(f"/api/legal-events/{job_id}"):
+        if event_kind == "status":
+            status_text = data["message"]
+            llm_status = f"⏳ {status_text}..."
+        elif event_kind == "reasoning_delta":
+            reasoning_text += data["text"]
+            llm_status = "🧠 Thinking..."
+        elif event_kind == "content_delta":
+            started_streaming = True
+            content_text += data["text"]
+            llm_status = "✍️ Writing response..."
+        elif event_kind == "citations":
+            citations_md = _format_legal_footnotes(data.get("citations", []))
+        elif event_kind == "legal_report":
+            report = data
+            memo = data.get("research_memorandum")
+        elif event_kind == "done":
+            llm_status = "✅ Done"
+        elif event_kind == "error":
+            content_text += f"\n\n⚠️ {data.get('message')}"
+            started_streaming = True
+            llm_status = "❌ Error"
 
-                    lang = (report or {}).get("reply_language") or (
-                        detect_language(content_text[:200]) if started_streaming else None
-                    )
-                    display_text = _legal_bubble(content_text, report) if started_streaming else f"_{status_text}..._"
-                    new_history = history + [{"role": "assistant", "content": display_text}]
-                    yield (
-                        gr.update(value=new_history, rtl=_is_rtl_lang(lang)),
-                        gr.update(value=reasoning_text, visible=bool(reasoning_text)),
-                        gr.update(value=None),
-                        gr.update(value=citations_md),
-                        gr.update(value=llm_status),
-                        gr.update(value=memo),
-                    )
-                    if event_kind in ("done", "error"):
-                        break
+        lang = (report or {}).get("reply_language") or (
+            detect_language(content_text[:200]) if started_streaming else None
+        )
+        display_text = _legal_bubble(content_text, report) if started_streaming else f"_{status_text}..._"
+        new_history = history + [{"role": "assistant", "content": display_text}]
+        yield (
+            gr.update(value=new_history, rtl=_is_rtl_lang(lang)),
+            gr.update(value=reasoning_text, visible=bool(reasoning_text)),
+            gr.update(value=None),
+            gr.update(value=citations_md),
+            gr.update(value=llm_status),
+            gr.update(value=memo),
+        )
 
 
 LEGAL_MODE_QUESTION = "Question"

@@ -39,15 +39,30 @@ async def _run_engine(engine_name: str, png_bytes: bytes, lang: str) -> OCRResul
     return await asyncio.to_thread(engine.recognize, png_bytes, lang)
 
 
+async def _try_engine(
+    engine_name: str, png_bytes: bytes, lang: str, page_index: int | None, errors: list[str]
+) -> OCRResult:
+    """Run one engine; a crash (missing/incompatible package, model load failure) counts as an
+    empty zero-confidence result so the next engine in the chain still gets its turn."""
+    try:
+        return await _run_engine(engine_name, png_bytes, lang)
+    except Exception as exc:  # noqa: BLE001 -- any engine failure falls through to the next one
+        logger.warning("ocr_engine_failed", page=page_index, lang=lang, engine=engine_name, error=str(exc))
+        errors.append(f"{engine_name}: {exc}")
+        return OCRResult(text="", mean_confidence=0.0, engine=engine_name)
+
+
 async def recognize_page(
     png_bytes: bytes, lang: str, page_index: int | None = None
 ) -> RoutedOCRResult:
     cfg = get_config().ocr
     script_cfg = cfg.script_for_language(lang)
 
-    primary_result = await _run_engine(script_cfg.primary, png_bytes, lang)
+    errors: list[str] = []
+    primary_result = await _try_engine(script_cfg.primary, png_bytes, lang, page_index, errors)
     best = primary_result
     escalated = False
+    attempts = 1
 
     if primary_result.mean_confidence < cfg.confidence_threshold:
         logger.info(
@@ -57,7 +72,8 @@ async def recognize_page(
             primary=script_cfg.primary,
             confidence=primary_result.mean_confidence,
         )
-        cpu_fallback_result = await _run_engine(script_cfg.fallback_cpu, png_bytes, lang)
+        attempts += 1
+        cpu_fallback_result = await _try_engine(script_cfg.fallback_cpu, png_bytes, lang, page_index, errors)
         if cpu_fallback_result.mean_confidence > best.mean_confidence:
             best = cpu_fallback_result
 
@@ -69,10 +85,15 @@ async def recognize_page(
                 fallback_gpu=script_cfg.fallback_gpu,
                 confidence=best.mean_confidence,
             )
-            gpu_result = await _run_engine(script_cfg.fallback_gpu, png_bytes, lang)
+            attempts += 1
+            gpu_result = await _try_engine(script_cfg.fallback_gpu, png_bytes, lang, page_index, errors)
             escalated = True
             if gpu_result.mean_confidence > best.mean_confidence:
                 best = gpu_result
+
+    if len(errors) == attempts:
+        # Every engine in the chain crashed: surface why instead of returning a blank page.
+        raise RuntimeError(f"all OCR engines failed for '{lang}': " + "; ".join(errors))
 
     routed = RoutedOCRResult(
         text=best.text,

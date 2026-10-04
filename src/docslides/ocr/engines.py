@@ -151,35 +151,34 @@ class SuryaEngine:
 
     name = "surya"
     gpu_resident = True
-    _det_model = None
-    _rec_model = None
+    _det_predictor = None
+    _rec_predictor = None
 
-    def _get_models(self):
-        if self._rec_model is None:
-            from surya.model.detection import segformer  # deferred import
-            from surya.model.recognition.model import load_model as load_rec_model
-            from surya.model.recognition.processor import load_processor as load_rec_processor
+    def _get_predictors(self):
+        # surya-ocr >= 0.14 API (pyproject pins 0.16.7-0.19): one shared FoundationPredictor
+        # behind RecognitionPredictor, DetectionPredictor passed per call. The old
+        # surya.model.detection.segformer / batch_recognition functions are long gone.
+        if self._rec_predictor is None:
+            from surya.detection import DetectionPredictor  # deferred import: heavy, optional dep
+            from surya.foundation import FoundationPredictor
+            from surya.recognition import RecognitionPredictor
 
-            self._det_model = segformer.load_model()
-            self._rec_model = (load_rec_model(), load_rec_processor())
-        return self._det_model, self._rec_model
+            SuryaEngine._det_predictor = DetectionPredictor()
+            SuryaEngine._rec_predictor = RecognitionPredictor(FoundationPredictor())
+        return self._det_predictor, self._rec_predictor
 
     def recognize(self, png_bytes: bytes, lang: str) -> OCRResult:
         from PIL import Image
-        from surya.detection import batch_text_detection
-        from surya.recognition import batch_recognition
 
-        det_model, (rec_model, rec_processor) = self._get_models()
+        det_predictor, rec_predictor = self._get_predictors()
         image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
 
-        det_result = batch_text_detection([image], det_model)[0]
-        surya_lang = {"he": "he", "ar": "ar"}.get(lang, lang)
-        rec_result = batch_recognition(
-            [image], [[surya_lang]] * 1, rec_model, rec_processor, [det_result.bboxes]
-        )[0]
+        # The recognition model is multilingual: it no longer takes a language list, so `lang`
+        # only picks this engine upstream (router), it isn't passed to Surya.
+        rec_result = rec_predictor([image], det_predictor=det_predictor, sort_lines=True)[0]
 
         lines = [line.text for line in rec_result.text_lines]
-        confidences = [line.confidence for line in rec_result.text_lines]
+        confidences = [line.confidence or 0.0 for line in rec_result.text_lines]
         mean_conf = sum(confidences) / len(confidences) if confidences else 0.0
         return OCRResult(text="\n".join(lines), mean_confidence=mean_conf, engine=self.name)
 

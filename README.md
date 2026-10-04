@@ -446,15 +446,14 @@ from one window and shows live status.
 
 ### Hosting on Kaggle with a public link
 
-`notebooks/kaggle_host_app_cloudflare.ipynb` runs the whole app (all tabs) on a
-Kaggle GPU T4 x2 session under Ollama, and puts it online through a Cloudflare
-Tunnel. Without an account you get a quick tunnel (a random `trycloudflare.com`
-URL, replies arrive whole instead of streaming). With a `CLOUDFLARE_TUNNEL_TOKEN`
-secret and `PUBLIC_HOSTNAME` it uses your named tunnel instead (fixed hostname,
-full streaming). The statute corpus and case-law index are picked up from
-attached Kaggle inputs. The link has no login, so share it with care. Setup steps
-are at the top of the notebook. `notebooks/colab_host_app.ipynb` does the same on
-Colab with ngrok.
+`notebooks/kaggle_host_app_ngrok.ipynb` runs the whole app (all tabs) on a
+Kaggle GPU T4 x2 session under Ollama, and puts it online through an ngrok
+tunnel. The ngrok authtoken goes in the `NGROK_AUTHTOKEN` Kaggle secret. Without
+`NGROK_DOMAIN` the link is a random `ngrok-free.app` URL each run; set it to your
+free static ngrok domain for a fixed link. The statute corpus and case-law index
+are picked up from attached Kaggle inputs. The link has no login, so share it
+with care. Setup steps are at the top of the notebook.
+`notebooks/colab_host_app.ipynb` does the same on Colab.
 
 ## Tests
 

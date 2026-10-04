@@ -62,7 +62,7 @@ APP_CSS = """
 @media (prefers-reduced-motion: reduce) {
   .gradio-container:has(.ai-working) { animation: none; box-shadow: inset 0 0 80px 12px rgba(249, 115, 22, .3); }
 }
-/* The Legal tab's sources summary above the chat box: orange italics. */
+/* The Legal tab's sources summary above the chat history: orange italics. */
 .legal-sources, .legal-sources * { color: #f97316 !important; font-style: italic !important; }
 /* Both chat tabs' send arrow: orange, and two text rows taller (growing
    downward from the top of the box). A fixed size in every state -- idle,
@@ -551,7 +551,7 @@ def send_legal_message(message: dict, mode: str, history: list):
 
 
 def _legal_sources_summary() -> str:
-    """The one-line summary above the Legal tab's chat box: when the sources were last updated and
+    """The one-line summary above the Legal tab's chat history: when the sources were last updated and
     how many laws and judgments the answers can draw on."""
     corpus = corpus_stats()
     caselaw = caselaw_stats()
@@ -597,6 +597,7 @@ def build_legal_tab() -> None:
 
     with gr.Row():
         with gr.Column(scale=3):
+            gr.Markdown(_legal_sources_summary(), elem_classes=["legal-sources"])
             legal_chatbot = gr.Chatbot(label="Legal Assistant", elem_classes=["chat-log"])
             legal_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
             legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
@@ -608,7 +609,6 @@ def build_legal_tab() -> None:
                 "its documents -- you get a work file (facts, chronology, legal issues, deadlines, red flags, "
                 "missing information, a draft document and the recommended next step).",
             )
-            gr.Markdown(_legal_sources_summary(), elem_classes=["legal-sources"])
             legal_msg_box = gr.MultimodalTextbox(
                 label="Legal question",
                 placeholder="Ask a question about Israeli law in any language -- answered only from the "

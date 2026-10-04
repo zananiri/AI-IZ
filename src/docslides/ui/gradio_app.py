@@ -62,11 +62,8 @@ APP_CSS = """
 @media (prefers-reduced-motion: reduce) {
   .gradio-container:has(.ai-working) { animation: none; box-shadow: inset 0 0 80px 12px rgba(249, 115, 22, .3); }
 }
-/* The Legal tab's sources table, in orange. */
-.legal-sources table { border-collapse: collapse; width: 100%; }
-.legal-sources th { background: #f97316 !important; color: #fff !important; }
-.legal-sources td { background: rgba(249, 115, 22, .12) !important; }
-.legal-sources th, .legal-sources td { border: 1px solid #fdba74 !important; }
+/* The Legal tab's sources summary above the chat box: orange italics. */
+.legal-sources, .legal-sources * { color: #f97316 !important; font-style: italic !important; }
 /* Both chat tabs' send arrow: orange, and two text rows taller (growing
    downward from the top of the box). A fixed size in every state -- idle,
    disabled while a request runs, after the box is cleared -- so it never
@@ -553,8 +550,8 @@ def send_legal_message(message: dict, mode: str, history: list):
     yield from _stream_legal_job(job_id, history)
 
 
-def _legal_sources_table() -> str:
-    """The small summary above the Legal tab's citations: when the sources were last updated and
+def _legal_sources_summary() -> str:
+    """The one-line summary above the Legal tab's chat box: when the sources were last updated and
     how many laws and judgments the answers can draw on."""
     corpus = corpus_stats()
     caselaw = caselaw_stats()
@@ -568,12 +565,11 @@ def _legal_sources_table() -> str:
         return f"{value:,}" if value else "not installed"
 
     return (
-        "| Legal sources | |\n|---|---:|\n"
-        f"| Last update | {max(dates) if dates else 'unknown'} |\n"
-        f"| Laws | {count(records.get('laws'))} |\n"
-        f"| Procedural regulations | {count(records.get('procedural_rules'))} |\n"
-        f"| Case law (Supreme Court) | {count(judgments)} |\n"
-        f"| Corpus | {_corpus_summary(corpus)} |"
+        f"Legal sources -- last update: {max(dates) if dates else 'unknown'}"
+        f" · laws: {count(records.get('laws'))}"
+        f" · procedural regulations: {count(records.get('procedural_rules'))}"
+        f" · case law (Supreme Court): {count(judgments)}"
+        f" · corpus: {_corpus_summary(corpus)}"
     )
 
 
@@ -612,6 +608,7 @@ def build_legal_tab() -> None:
                 "its documents -- you get a work file (facts, chronology, legal issues, deadlines, red flags, "
                 "missing information, a draft document and the recommended next step).",
             )
+            gr.Markdown(_legal_sources_summary(), elem_classes=["legal-sources"])
             legal_msg_box = gr.MultimodalTextbox(
                 label="Legal question",
                 placeholder="Ask a question about Israeli law in any language -- answered only from the "
@@ -624,7 +621,6 @@ def build_legal_tab() -> None:
                 elem_classes=_IDLE_CLASSES,
             )
         with gr.Column(scale=1):
-            gr.Markdown(_legal_sources_table(), elem_classes=["legal-sources"])
             gr.Markdown("### Citations")
             citations_panel = gr.Markdown(value="_No citations yet._")
             with gr.Accordion("Research memorandum (Pass A)", open=False):

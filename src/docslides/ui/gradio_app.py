@@ -330,6 +330,8 @@ def build_chat_tab() -> None:
     chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log"])
     llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
     reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
+    # Gemma 4's training-data cutoff, so users know how current its knowledge is.
+    gr.Markdown("**LLM cutoff date:** January 2025")
 
     msg_box = gr.MultimodalTextbox(
         label="Message",

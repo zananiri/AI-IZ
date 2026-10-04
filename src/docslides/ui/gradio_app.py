@@ -476,9 +476,13 @@ def _stream_legal_job(job_id: str, history: list):
                     )
                     display_text = _legal_bubble(content_text, report) if started_streaming else f"_{status_text}..._"
                     new_history = history + [{"role": "assistant", "content": display_text}]
+                    # The notes are written in the question's language: a Hebrew one laid out left to
+                    # right puts every line's punctuation and numbering at the wrong end.
+                    reasoning_lang = lang or (detect_language(reasoning_text[:200]) if reasoning_text else None)
                     yield (
                         gr.update(value=new_history, rtl=_is_rtl_lang(lang)),
-                        gr.update(value=reasoning_text, visible=bool(reasoning_text)),
+                        gr.update(value=reasoning_text, visible=bool(reasoning_text),
+                                  rtl=_is_rtl_lang(reasoning_lang)),
                         gr.update(value=None),
                         gr.update(value=citations_md),
                         gr.update(value=llm_status),

@@ -390,7 +390,29 @@ async def analyze_question(llm: LLMClient, evidence_text: str, question: str) ->
     except Exception as exc:  # noqa: BLE001 -- the notes help; the turn doesn't depend on them
         logger.warning("legal_analysis_failed", error=str(exc))
         return ""
-    return _hebrew_safe(notes.strip())
+    return _hebrew_safe(_trim_analysis_notes(notes))
+
+
+# A heading on a line of its own that opens a final answer ("**תשובה:**", "## Final answer"). Item 3's
+# "Direct answer: ..." label carries its answer on the same line, so it never matches.
+_NOTES_ANSWER_HEADING_RE = re.compile(
+    r"^[ \t>#*_]*(?:תשובה(?: סופית)?|התשובה(?: הסופית)?|(?:final )?answer|الإجابة(?: النهائية)?|الجواب|ответ)"
+    r"[ \t]*:?[ \t*_]*:?[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_NOTES_TRAILING_RULE_RE = re.compile(r"(?:\s*^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$)+\s*\Z", re.MULTILINE)
+
+
+def _trim_analysis_notes(notes: str) -> str:
+    """The notes without what the prompt forbids but models still add: a final answer written after
+    them (under its own heading, often with a disclaimer of its own) -- shown in the Legal tab's
+    reasoning panel it reads as the real answer, and the memo and draft must start from the notes,
+    not from an answer already written -- and Markdown bold, which the panel shows as raw asterisks."""
+    heading = _NOTES_ANSWER_HEADING_RE.search(notes)
+    if heading and notes[: heading.start()].strip():
+        notes = notes[: heading.start()]
+    notes = _NOTES_TRAILING_RULE_RE.sub("", notes)
+    return notes.replace("**", "").replace("__", "").strip()
 
 
 # --- Pass A ----------------------------------------------------------------------------

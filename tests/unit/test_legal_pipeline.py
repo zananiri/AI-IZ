@@ -480,6 +480,28 @@ def test_analysis_notes_reach_the_memo_and_the_draft(wire):
     assert _audit(result)["analysis_notes"] == result.analysis_notes
 
 
+def test_analysis_notes_drop_a_final_answer_written_after_them():
+    # Pass 0 as gemma4:12b wrote it in the Legal tab: the notes, then an answer and a disclaimer of its own.
+    notes = (
+        "**ניתוח משפטי**\n\n"
+        "1. **שאלה:** מהו מועד קיום חיוב חוזי כאשר לא נקבע לו מועד?\n"
+        "3. **תשובה ישירה:** יש לקיים את החיוב בזמן סביר לאחר כריתת החוזה.\n"
+        "5. **מלכודות:** החוק אינו מגדיר מהו זמן סביר.\n\n"
+        "---\n\n"
+        "**תשובה:**\n\n"
+        "על פי סעיף 41 לחוק החוזים (חלק כללי), יש לקיים אותו בזמן סביר.\n\n"
+        "*המסמך המצורף אינו מהווה ייעוץ משפטי.*"
+    )
+
+    trimmed = pipeline._trim_analysis_notes(notes)
+
+    assert trimmed.startswith("ניתוח משפטי") and "**" not in trimmed
+    assert trimmed.endswith("5. מלכודות: החוק אינו מגדיר מהו זמן סביר.")
+    assert "3. תשובה ישירה: יש לקיים" in trimmed  # the direct-answer item is part of the notes
+    assert "ייעוץ משפטי" not in trimmed and "סעיף 41" not in trimmed
+    assert pipeline._trim_analysis_notes("Answer:\nyes") == "Answer:\nyes"  # nothing but an answer: kept
+
+
 def test_the_drafter_sees_the_memo_with_json_safe_quotes(wire):
     claim = 'במקום "7 ימים" יקראו "30 ימים".'
     quoted = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "text": claim}]}

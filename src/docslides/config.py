@@ -85,6 +85,10 @@ class LegalRetrievalConfig(BaseModel):
     # when one is visible), "cpu", or "cuda" (loaded in fp16). legal/corpus_retrieval.warm_up_retrieval
     # falls back to the CPU when the GPU hasn't room beside the LLM.
     device: str | None = None
+    # Where the reranker runs, when not on `device` (None = the same). warm_up_retrieval sets it: on
+    # "cuda" each model takes the GPU with the most room once the other is loaded, each with its own
+    # CPU fallback.
+    reranker_device: str | None = None
     # BM25 over the corpus's lexical copy (lexical_<category>.jsonl), fused with the dense search on
     # the corpus path: exact terms of art ("עושק", "פקודת הנזיקין") that embeddings rank loosely.
     corpus_lexical: bool = True
@@ -225,6 +229,10 @@ class LegalCorpusConfig(BaseModel):
     caselaw_top_k: int = 3               # excerpts, at most one per judgment
     caselaw_max_tokens: int = 1500       # their total length in the prompt
     caselaw_candidates: int = 30         # dense + BM25 candidates reranked per question
+    # Eval question categories that get case law (None = all). On 1 Oct the search took ~80 s per
+    # question on the CPU, and the 7 answers that cited a judgment were all interpretation,
+    # rule_conclusion or rule_application. The paralegal cases always get it.
+    caselaw_question_categories: list[str] | None = None
 
 
 class LegalConfig(BaseModel):

@@ -15,10 +15,11 @@ from functools import lru_cache
 def _get_embedder(model_name: str, device: str | None = None, full_precision: bool = False):
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(model_name, device=device)
     if device and device.startswith("cuda") and not full_precision:
-        model.half()  # bulk corpus indexing on GPU (scripts/legal_data/vectorize.py): fp16 halves time and memory
-    return model
+        # fp16 halves time and memory on a GPU. Cast on the CPU, then move: loading in fp32 on a GPU
+        # the LLM has nearly filled can fail before the cast frees anything (the 30 Sep reranker OOM).
+        return SentenceTransformer(model_name, device="cpu").half().to(device)
+    return SentenceTransformer(model_name, device=device)
 
 
 def get_embedder(model_name: str, device: str | None = None, full_precision: bool = False):

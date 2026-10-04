@@ -156,9 +156,9 @@ def search_caselaw(question: str, issues: list[str]) -> list[dict]:
     candidates.sort(key=lambda c: -c["fused"])
     candidates = candidates[:k]
 
-    from docslides.legal.retrieval import _reranker
+    from docslides.legal.retrieval import _reranker, reranker_device
 
-    reranker = _reranker(legal_cfg.retrieval.reranker_model, legal_cfg.retrieval.device) \
+    reranker = _reranker(legal_cfg.retrieval.reranker_model, reranker_device()) \
         if legal_cfg.retrieval.reranker_model else None
     if reranker is not None and candidates:
         rerank_query = question + ("\n" + "; ".join(issues) if issues else "")

@@ -123,6 +123,10 @@ WORK_FILE_MAX_TOKENS = 6144  # a work file has eight sections, plus the reasonin
 JUDGE_MAX_TOKENS = 4096
 # A case raises 6-8 issues (cases_gold.json); at 6 the plan dropped case_01's notice-period issue.
 CASE_MAX_ISSUES = 8
+# The longest work file on 1 Oct took 2,959 tokens. A prompt that leaves less room than this gets its
+# answer cut off: case_03's 16 statute chunks (23k characters) left 256 of 16,384 tokens, for the
+# answer and for its repair alike, and the work file stopped after 869 characters.
+CASE_MIN_OUTPUT_TOKENS = 3000
 
 _PROMPT_TAG_RE = re.compile(r"</?(?:work_file|case_file)>")
 
@@ -181,6 +185,40 @@ def load_gold(path: Path) -> dict[str, dict]:
     return {c["case_id"]: c for c in data["cases"]}
 
 
+def case_messages(instructions: str, case_text: str, hits: list[dict], case_hits: list[dict]) -> list[ChatMessage]:
+    reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>" if hits else ""
+    if case_hits:
+        reference += "\n\n" + caselaw.render_caselaw(case_hits)
+    return [ChatMessage("system", CASE_SYSTEM), ChatMessage("user", f"{instructions}\n\n---\n\n{case_text}{reference}")]
+
+
+def fit_case_prompt(llm, instructions: str, case_text: str, hits: list[dict], case_hits: list[dict],
+                    issue_count: int, max_tokens: int) -> tuple[list[ChatMessage], list[dict], list[dict]]:
+    """(messages, statute hits, case-law hits), the evidence trimmed until `max_tokens` of output fit
+    the context: the lowest-ranked statute hits go first, down to one per planned issue (the hits
+    come per-issue slots first, then by rerank score), then the case law, then the statute hits but
+    the best. Raises if that still leaves less than CASE_MIN_OUTPUT_TOKENS."""
+    hits, case_hits = list(hits), list(case_hits)
+    keep = max(1, min(issue_count, len(hits)))
+
+    def room() -> int:
+        return llm.output_room(case_messages(instructions, case_text, hits, case_hits))
+
+    while room() < max_tokens:
+        if len(hits) > keep:
+            hits.pop()
+        elif case_hits:
+            case_hits = []
+        elif len(hits) > 1:
+            hits.pop()
+        else:
+            break
+    if room() < min(max_tokens, CASE_MIN_OUTPUT_TOKENS):
+        raise ValueError(f"the case file and instructions leave only {room()} output tokens: "
+                         "raise the context length")
+    return case_messages(instructions, case_text, hits, case_hits), hits, case_hits
+
+
 async def answer_one(llm, instructions: str, case_id: str, case_text: str,
                       categories: list[str], top_k: int, thinking: bool = True,
                       max_tokens: int = WORK_FILE_MAX_TOKENS) -> dict:
@@ -189,14 +227,16 @@ async def answer_one(llm, instructions: str, case_id: str, case_text: str,
         # Always with retrieval over the corpus (there is no model-alone mode), planned as for the
         # single questions: one search per issue the model sees, not one on the whole case text.
         issues = await plan_issues(llm, {"id": case_id, "question": case_text}, max_issues=CASE_MAX_ISSUES)
-        hits = retrieve_planned(case_text, issues, categories, top_k, per_issue_slot=True)
-        reference = f"\n\n<reference_material>\n{render_context(hits)}\n</reference_material>"
-        case_hits = caselaw.search_caselaw(case_text, [i.issue for i in issues]) \
+        retrieved = retrieve_planned(case_text, issues, categories, top_k, per_issue_slot=True)
+        found_caselaw = caselaw.search_caselaw(case_text, [i.issue for i in issues]) \
             if get_config().legal.corpus.caselaw_dir else []
-        if case_hits:
-            reference += "\n\n" + caselaw.render_caselaw(case_hits)
-        messages = [ChatMessage("system", CASE_SYSTEM),
-                    ChatMessage("user", f"{instructions}\n\n---\n\n{case_text}{reference}")]
+        messages, hits, case_hits = fit_case_prompt(llm, instructions, case_text, retrieved, found_caselaw,
+                                                    len(issues), max_tokens)
+        trimmed = {"statute_hits_dropped": len(retrieved) - len(hits),
+                   "caselaw_hits_dropped": len(found_caselaw) - len(case_hits)}
+        if any(trimmed.values()):
+            repairs.append("context_trimmed")
+            _log(f"{case_id}: context trimmed to leave {max_tokens} output tokens: {trimmed}")
 
         text = (await llm.complete_text(
             messages, LLMCallSite("legal_eval_baseline"), sampling=eval_sampling(max_tokens, thinking),
@@ -211,9 +251,15 @@ async def answer_one(llm, instructions: str, case_id: str, case_text: str,
         missing = missing_sections(text) if text else []
         if missing:
             repairs.append("missing_sections")
+            follow_up = [ChatMessage("assistant", text),
+                         ChatMessage("user", COMPLETE_PROMPT.format(sections=", ".join(missing)))]
+            repair_messages = [*messages, *follow_up]
+            if llm.output_room(repair_messages) < CASE_MIN_OUTPUT_TOKENS:
+                # No room to write the missing sections beside the reference material and the partial
+                # file: the case file alone (case_03 on 1 Oct: this repair got 256 tokens too).
+                repair_messages = [*case_messages(instructions, case_text, [], []), *follow_up]
             addition = (await llm.complete_text(
-                [*messages, ChatMessage("assistant", text),
-                 ChatMessage("user", COMPLETE_PROMPT.format(sections=", ".join(missing)))],
+                repair_messages,
                 LLMCallSite("legal_eval_repair"), sampling=sampling, enable_thinking=False,
             )).strip()
             if addition:
@@ -240,6 +286,7 @@ async def answer_one(llm, instructions: str, case_id: str, case_text: str,
                            "title": h["meta"].get("title"), "section": h["meta"].get("section_number")}
                           for h in hits],
             "plan": [i.model_dump() for i in issues],
+            "context_trimmed": trimmed,
             "caselaw": caselaw.caselaw_record(case_hits),
             "unsupported_values": unsupported,
             "repairs": repairs}

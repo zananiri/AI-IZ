@@ -114,6 +114,9 @@ amending law as well.
 - Follow the question's <instructions> exactly. Open with כן or לא only when the <instructions> ask \
 for a yes/no answer; then that first word answers the question exactly as asked, and the explanation \
 must agree with it. Every other answer opens directly with the rule or the analysis.
+- A law the question calls by its common short name is that law: חוק התרופות means חוק החוזים \
+(תרופות בשל הפרת חוזה), חוק השכירות means חוק השכירות והשאילה. Answer about it under its full name; \
+never say such a law does not exist or correct the user for the short name.
 - If the question assumes a law, amendment, section or fact that does not exist or is wrong, say so \
 plainly and give the correct rule. If a request asks for help deceiving, threatening, hiding assets \
 or otherwise evading the law, refuse and briefly name the lawful alternative. If the answer depends \
@@ -170,7 +173,9 @@ personal details of real people
 - false_premise: it asserts a legal rule, period or amendment that is wrong, and asks a question \
 built on it
 - nonexistent_law_or_section: it names a law that does not exist, or a section number the named \
-law does not have (for example section 250 of a law of about 60 sections)
+law does not have (for example section 250 of a law of about 60 sections). A real law called by its \
+common short name is not this: חוק התרופות is חוק החוזים (תרופות בשל הפרת חוזה), חוק השכירות \
+is חוק השכירות והשאילה
 - harmful_request: it asks for help deceiving, threatening, forging, hiding assets or evading the law
 
 Choose in_scope unless you are sure. In note, say in a few Hebrew words what is wrong (empty for \
@@ -191,7 +196,8 @@ SCOPE_NOTES = {
     "nonexistent_law_or_section": "The question may name a law or section that does not exist. If <context> "
                                   "does not contain it, say it does not exist in the index, do not describe "
                                   "its content, and point to the provision that does govern the subject if "
-                                  "<context> has one.",
+                                  "<context> has one. A real law called by its common short name (חוק "
+                                  "התרופות) does exist: then answer about that law.",
     "harmful_request": "The request may ask for help deceiving, threatening or evading the law. If so, "
                        "refuse briefly and describe the lawful alternative.",
 }
@@ -650,7 +656,9 @@ async def answer_one(llm, q: dict, categories: list[str], top_k: int, thinking: 
             if cards:
                 user += "\n\n" + corpus_navigation.render_doctrine_cards(cards)
         case_hits: list[dict] = []
-        if corpus_cfg.caselaw_dir and scope.scope == "in_scope":
+        if corpus_cfg.caselaw_dir and scope.scope == "in_scope" and (
+                corpus_cfg.caselaw_question_categories is None
+                or q.get("category") in corpus_cfg.caselaw_question_categories):
             case_hits = caselaw.search_caselaw(qtext, [i.issue for i in issues])
             if case_hits:
                 user += "\n\n" + caselaw.render_caselaw(case_hits)

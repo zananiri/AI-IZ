@@ -182,3 +182,10 @@ def test_the_judge_defaults_to_a_family_not_under_test(monkeypatch):
     assert get_judge_client().model == get_config().legal.judge_model == "gpt-oss:20b"
     monkeypatch.setenv("DOCSLIDES_LEGAL_JUDGE_MODEL", "mistral-small3.2:24b")
     assert get_judge_client().model == "mistral-small3.2:24b"
+
+
+def test_output_room_is_what_the_cap_leaves(ollama):
+    long_prompt = [ChatMessage("user", "א" * 6000)]  # ~4000 of the fixture's 8192 tokens
+    room = ollama.output_room(long_prompt)
+    assert room == ollama._fit_context(long_prompt, SamplingParams(max_tokens=8000)).max_tokens
+    assert ollama.output_room([ChatMessage("user", "א" * 30000)]) < 0  # the cap still leaves 256

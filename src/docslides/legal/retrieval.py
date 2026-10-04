@@ -302,20 +302,44 @@ def named_sections(query: str) -> list[tuple[str, str | None]]:
 def _reranker(model_name: str, device: str | None = None):
     """The cross-encoder, or None if it can't be loaded (then retrieval ranks
     by embedding distance alone, as before the reranker existed). `device` None lets
-    sentence-transformers choose; on a GPU the model runs in fp16."""
+    sentence-transformers choose; on a GPU the model runs in fp16, cast on the CPU before it moves
+    (loaded in fp32 straight onto a GPU the LLM has nearly filled, the 30 Sep cast OOM'd)."""
     try:
         from sentence_transformers import CrossEncoder
 
-        model = CrossEncoder(model_name, max_length=get_config().legal.retrieval.rerank_max_length, device=device)
+        on_gpu = bool(device and device.startswith("cuda"))
+        model = CrossEncoder(model_name, max_length=get_config().legal.retrieval.rerank_max_length,
+                             device="cpu" if on_gpu else device)
     except Exception as exc:  # noqa: BLE001 -- a missing model must not block answering
         logger.warning("legal_reranker_unavailable", model=model_name, error=str(exc))
         return None
-    if str(getattr(model, "device", device or "")).startswith("cuda"):
+    if on_gpu:
         try:
             (model if hasattr(model, "half") else model.model).half()
         except Exception as exc:  # noqa: BLE001 -- fp32 still works, just slower
             logger.warning("legal_reranker_fp16_failed", error=str(exc))
+        try:
+            _move_cross_encoder(model, device)
+        except Exception as exc:  # noqa: BLE001 -- warm_up_retrieval moves it to the CPU
+            logger.warning("legal_reranker_gpu_failed", model=model_name, device=device, error=str(exc))
+            return None
     return model
+
+
+def _move_cross_encoder(model, device: str) -> None:
+    if hasattr(model, "to"):  # sentence-transformers >= 4: a torch module
+        model.to(device)
+        return
+    import torch
+
+    model.model.to(device)
+    model._target_device = torch.device(device)
+
+
+def reranker_device() -> str | None:
+    """The device the reranker runs on: legal.retrieval.reranker_device, else legal.retrieval.device."""
+    retrieval = get_config().legal.retrieval
+    return retrieval.reranker_device or retrieval.device
 
 
 def is_gpu_oom(exc: BaseException) -> bool:
@@ -323,14 +347,21 @@ def is_gpu_oom(exc: BaseException) -> bool:
     return type(exc).__name__ == "OutOfMemoryError" or "CUDA out of memory" in str(exc)
 
 
-def move_retrieval_to_cpu(reason: str) -> None:
-    """Sets legal.retrieval.device to "cpu" and drops the GPU copies of the embedder and the reranker,
-    so the next search loads them on the CPU and their GPU memory goes back to the LLM."""
+def move_retrieval_to_cpu(reason: str, embedder: bool = True, reranker: bool = True) -> None:
+    """Moves the embedder and/or the reranker to the CPU: sets legal.retrieval.device /
+    reranker_device to "cpu" and drops their GPU copies, so the next search loads them on the CPU
+    and their GPU memory goes back to the LLM."""
     retrieval = get_config().legal.retrieval
-    logger.warning("legal_retrieval_moved_to_cpu", device=retrieval.device, error=reason)
-    retrieval.device = "cpu"
-    _reranker.cache_clear()
-    rag_embedding._get_embedder.cache_clear()
+    logger.warning("legal_retrieval_moved_to_cpu", device=retrieval.device, reranker_device=reranker_device(),
+                   embedder=embedder, reranker=reranker, error=reason)
+    if embedder:
+        if not reranker and retrieval.reranker_device is None:
+            retrieval.reranker_device = retrieval.device  # it followed `device`: keep it where it is
+        retrieval.device = "cpu"
+        rag_embedding._get_embedder.cache_clear()
+    if reranker:
+        retrieval.reranker_device = "cpu"
+        _reranker.cache_clear()
     try:
         import torch
 
@@ -349,7 +380,8 @@ def cpu_on_gpu_oom(fn):
         try:
             return fn(*args, **kwargs)
         except Exception as exc:
-            if get_config().legal.retrieval.device == "cpu" or not is_gpu_oom(exc):
+            on_cpu = get_config().legal.retrieval.device == "cpu" and reranker_device() == "cpu"
+            if on_cpu or not is_gpu_oom(exc):
                 raise
             move_retrieval_to_cpu(f"{type(exc).__name__}: {exc}")
             return fn(*args, **kwargs)

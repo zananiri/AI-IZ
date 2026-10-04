@@ -297,17 +297,24 @@ class LLMClient:
             + _TOKENS_PER_MESSAGE * len(messages)
         )
 
+    def output_room(self, messages: list[ChatMessage]) -> int:
+        """The output tokens left after `messages` in max_model_len (can be negative): what
+        _fit_context caps max_tokens to. Callers that build long prompts trim their evidence by it."""
+        return self._llm_cfg.max_model_len - self._estimate_tokens(messages) - _CONTEXT_MARGIN
+
     def _fit_context(self, messages: list[ChatMessage], sampling: SamplingParams) -> SamplingParams:
         """`sampling` with max_tokens lowered, if need be, so prompt + output fit
         max_model_len. Ollama runs with --context-shift: a generation that
         reaches num_ctx discards the oldest tokens -- the system prompt and the
         evidence -- and carries on without them. vLLM rejects the request."""
-        budget = self._llm_cfg.max_model_len - self._estimate_tokens(messages) - _CONTEXT_MARGIN
+        budget = self.output_room(messages)
         if sampling.max_tokens <= budget:
             return sampling
         capped = max(budget, _MIN_OUTPUT_TOKENS)
-        logger.info("llm_max_tokens_capped", requested=sampling.max_tokens, capped=capped,
-                    max_model_len=self._llm_cfg.max_model_len)
+        # Under half the budget asked for, the answer is likely cut off (case_03 on 1 Oct: 5,120 -> 256).
+        log = logger.warning if capped < sampling.max_tokens // 2 else logger.info
+        log("llm_max_tokens_capped", requested=sampling.max_tokens, capped=capped,
+            max_model_len=self._llm_cfg.max_model_len)
         return dataclasses.replace(sampling, max_tokens=capped)
 
     async def _post_completion(self, payload: dict[str, Any]) -> Completion:

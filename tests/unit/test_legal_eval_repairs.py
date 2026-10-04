@@ -106,3 +106,71 @@ def test_a_failed_scope_check_never_turns_a_question_into_a_refusal():
     flagged = eval_run.ScopeVerdict(scope="foreign_law", note="דין קליפורניה")
     assert asyncio.run(eval_run.check_scope(_Scope(flagged), "ש")) is flagged
     assert set(eval_run.SCOPE_NOTES) == set(eval_run.ScopeVerdict.model_fields["scope"].annotation.__args__) - {"in_scope"}
+
+
+class _Room:
+    """output_room as LLMClient computes it, for a 16k context."""
+
+    def output_room(self, messages):
+        from docslides.llm.client import LLMClient
+        return 16384 - LLMClient._estimate_tokens(messages) - 512
+
+
+def _statute(i, chars):
+    return {"category": "laws", "distance": 0.1, "meta": {"title": f"חוק {i}", "section_number": str(i)},
+            "text": "א" * chars, "sources": {f"q{i}"}}
+
+
+_JUDGMENT = {"chunk_id": "c1", "case_citation": "ע\"א 1/90", "text": "ב" * 2000}
+
+
+def test_a_case_prompt_keeps_its_evidence_when_the_answer_fits():
+    hits = [_statute(i, 1000) for i in range(4)]
+    _, kept, judgments = eval_cases.fit_case_prompt(_Room(), "הוראות", "תיק", hits, [_JUDGMENT], 3, 5120)
+    assert kept == hits and judgments == [_JUDGMENT]
+
+
+def test_a_long_case_prompt_drops_the_lowest_statute_hits_then_the_case_law():
+    # case_03 on 1 Oct: 16 chunks, 23k characters of statute text, left 256 output tokens of 16,384.
+    hits = [_statute(i, 1500) for i in range(16)]
+    messages, kept, judgments = eval_cases.fit_case_prompt(_Room(), "הוראות", "תיק", hits, [_JUDGMENT], 5, 5120)
+    assert _Room().output_room(messages) >= 5120
+    assert kept == hits[: len(kept)] and 5 <= len(kept) < 16 and judgments == [_JUDGMENT]
+
+    huge = [_statute(i, 4000) for i in range(8)]  # one per issue is already too much: the case law goes next
+    _, kept, judgments = eval_cases.fit_case_prompt(_Room(), "הוראות", "תיק", huge, [_JUDGMENT], 8, 5120)
+    assert judgments == [] and kept == huge[: len(kept)] and len(kept) < 8
+
+
+def test_a_case_file_that_alone_leaves_no_room_is_an_error():
+    import pytest
+
+    with pytest.raises(ValueError, match="output tokens"):
+        eval_cases.fit_case_prompt(_Room(), "הוראות", "ג" * 20000, [_statute(1, 100)], [], 1, 5120)
+
+
+class _CaseLLM(_Room):
+    def __init__(self):
+        self.calls = []
+
+    async def complete_text(self, messages, site, **__):
+        self.calls.append(messages)
+        return "## 1. תקציר עובדתי\nעובדות." if len(self.calls) == 1 else "## 7. טיוטת מסמך\nטיוטה."
+
+
+def test_the_missing_sections_repair_drops_the_reference_material_when_it_would_not_fit(monkeypatch):
+    async def plan(*_, **__):
+        return []
+
+    monkeypatch.setattr(eval_cases, "plan_issues", plan)
+    # 7 hits of 3,300 characters just fit beside a 5,120-token answer; the partial file then doesn't.
+    monkeypatch.setattr(eval_cases, "retrieve_planned", lambda *_, **__: [_statute(i, 3300) for i in range(7)])
+    monkeypatch.setattr(eval_cases.get_config().legal.corpus, "caselaw_dir", None)
+    monkeypatch.setattr(eval_cases, "missing_sections", lambda text: [] if "טיוטה" in text else ["7. טיוטת מסמך"])
+    monkeypatch.setattr(eval_cases, "COMPLETE_PROMPT", "{sections}" + "ת" * 9000)  # ~6,000 tokens
+    llm = _CaseLLM()
+    row = asyncio.run(eval_cases.answer_one(llm, "הוראות", "case_x", "תיק", ["laws"], 16, thinking=False,
+                                            max_tokens=5120))
+    assert "<reference_material>" in llm.calls[0][1].content
+    assert "<reference_material>" not in llm.calls[1][1].content and llm.calls[1][-1].content.startswith("7.")
+    assert row["repairs"] == ["context_trimmed", "missing_sections"] and row["context_trimmed"]["statute_hits_dropped"] and "טיוטה" in row["work_file"]

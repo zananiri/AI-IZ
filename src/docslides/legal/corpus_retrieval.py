@@ -46,7 +46,8 @@ logger = get_logger(__name__)
 
 PLAN_PROMPT = """List the distinct legal issues this question about ISRAELI law raises (at most \
 {max_issues}) and, for each, the Israeli statute or regulation that governs it -- its full official \
-Hebrew name -- with the section numbers you believe apply. Write the name with no quotation marks; \
+Hebrew name, also when the question uses a short one (חוק התרופות: חוק החוזים (תרופות בשל הפרת \
+חוזה)) -- with the section numbers you believe apply. Write the name with no quotation marks; \
 add its year only if you are sure of it, as four digits after a comma, e.g. חוק המתנה, 1968 \
 (not תשכ"ח). Prefer the \
 primary statute (a חוק or פקודה) over regulations, unless the question is specifically about a \
@@ -242,7 +243,7 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
 
     Falls back to plain embedding order when the reranker can't be loaded."""
     from docslides.legal.corpus_lexical import lexical_index
-    from docslides.legal.retrieval import _reranker
+    from docslides.legal.retrieval import _reranker, reranker_device
     from docslides.legal_data.corpus_index import CorpusCollection
 
     legal_cfg = get_config().legal
@@ -302,7 +303,8 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
     lookup_hits = [h for h in candidates if any(s.startswith("l") for s in h["sources"])]
     head = candidates[:RERANK_POOL]
     head += [h for h in lookup_hits if h not in head]
-    reranker = _reranker(legal_cfg.retrieval.reranker_model, device) if legal_cfg.retrieval.reranker_model else None
+    reranker = _reranker(legal_cfg.retrieval.reranker_model, reranker_device()) \
+        if legal_cfg.retrieval.reranker_model else None
     if reranker is not None and head:
         # The question and the issues, not the plan's law names: those are guesses, and a wrong
         # one ("חוק המכר" for a double sale of land) lifted every excerpt that mentions it.
@@ -440,37 +442,51 @@ def _gpu_short_of_headroom(device: str | None) -> str | None:
 
 def warm_up_retrieval() -> str:
     """Loads the embedder, the reranker and the BM25 indexes before the first question, so it isn't
-    charged for them -- and moves retrieval to the CPU (legal.retrieval.device) when the GPU hasn't
-    room for it beside the LLM, or leaves too little over to search with (MIN_FREE_GPU_BYTES). Raises
-    if the reranker can't load even there: an eval must not run on embedding distance alone. Returns the device retrieval now runs on ("auto" = library default)."""
+    charged for them. On "cuda" the embedder takes the GPU with the most free memory, then the
+    reranker the one with the most left (with the LLM split over two T4s, often the other one). Each
+    moves to the CPU on its own when its GPU hasn't room for it beside the LLM, or leaves too little
+    over to search with (MIN_FREE_GPU_BYTES). Raises if the reranker can't load even there: an eval
+    must not run on embedding distance alone. Returns where they now run, e.g. "cuda:1 + cuda:0"
+    ("auto" = library default)."""
     from docslides.legal.corpus_lexical import lexical_index
     from docslides.legal.retrieval import _reranker
 
     legal_cfg = get_config().legal
     retrieval = legal_cfg.retrieval
+    wanted_reranker = retrieval.reranker_device or retrieval.device
     if retrieval.device == "cuda":
         retrieval.device = _roomiest_gpu()
 
-    def load(device: str | None) -> None:
-        embed_texts(retrieval.embedding_model, ["warm up"], device=device)
-        if retrieval.reranker_model and _reranker(retrieval.reranker_model, device) is None:
-            _reranker.cache_clear()  # don't keep the failed load
-            raise RuntimeError(f"reranker did not load on {device or 'the default device'}")
+    def load_embedder() -> None:
+        embed_texts(retrieval.embedding_model, ["warm up"], device=retrieval.device)
 
-    try:
-        load(retrieval.device)
-        short = _gpu_short_of_headroom(retrieval.device)
-        if short:
-            raise RuntimeError(short)
-    except Exception as exc:
-        if retrieval.device == "cpu":
-            raise
-        move_retrieval_to_cpu(f"{type(exc).__name__}: {exc}")
-        load("cpu")
+    def load_reranker() -> None:
+        if retrieval.reranker_model and _reranker(retrieval.reranker_model, retrieval.reranker_device) is None:
+            _reranker.cache_clear()  # don't keep the failed load
+            raise RuntimeError(f"reranker did not load on {retrieval.reranker_device or 'the default device'}")
+
+    def on_device_or_cpu(load, device: str | None, which: str) -> None:
+        try:
+            load()
+            short = _gpu_short_of_headroom(device)
+            if short:
+                raise RuntimeError(short)
+        except Exception as exc:
+            if device == "cpu":
+                raise
+            move_retrieval_to_cpu(f"{type(exc).__name__}: {exc}", embedder=which == "embedder",
+                                  reranker=which == "reranker")
+            load()
+
+    on_device_or_cpu(load_embedder, retrieval.device, "embedder")
+    # Placed after the embedder, so a GPU's room is measured with the embedder on it.
+    retrieval.reranker_device = _roomiest_gpu() if wanted_reranker == "cuda" else wanted_reranker
+    on_device_or_cpu(load_reranker, retrieval.reranker_device, "reranker")
     if retrieval.corpus_lexical:
         for category in legal_cfg.corpus.categories:
             lexical_index(legal_cfg.corpus.vectordb_dir, category)
-    return retrieval.device or "auto"
+    embedder_on, reranker_on = retrieval.device or "auto", retrieval.reranker_device or "auto"
+    return embedder_on if embedder_on == reranker_on else f"{embedder_on} + {reranker_on}"
 
 
 def retrieve_corpus(query: str, issues: list[EvalIssue]) -> RetrievalResult:

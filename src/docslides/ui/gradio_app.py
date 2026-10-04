@@ -51,6 +51,22 @@ APP_CSS = """
 }
 @keyframes ai-working-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { .ai-working::after { animation: none; } }
+/* While the LLM works, the whole page background glows softly orange. */
+.gradio-container:has(.ai-working) {
+  animation: ai-working-bg 2.4s ease-in-out infinite;
+}
+@keyframes ai-working-bg {
+  0%, 100% { box-shadow: inset 0 0 40px 4px rgba(249, 115, 22, .15); }
+  50% { box-shadow: inset 0 0 120px 24px rgba(249, 115, 22, .40); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gradio-container:has(.ai-working) { animation: none; box-shadow: inset 0 0 80px 12px rgba(249, 115, 22, .3); }
+}
+/* The Legal tab's sources table, in orange. */
+.legal-sources table { border-collapse: collapse; width: 100%; }
+.legal-sources th { background: #f97316 !important; color: #fff !important; }
+.legal-sources td { background: rgba(249, 115, 22, .12) !important; }
+.legal-sources th, .legal-sources td { border: 1px solid #fdba74 !important; }
 /* Both chat tabs' send arrow: orange, and two text rows taller (growing
    downward from the top of the box). A fixed size in every state -- idle,
    disabled while a request runs, after the box is cleared -- so it never
@@ -556,7 +572,18 @@ def _legal_sources_table() -> str:
         f"| Last update | {max(dates) if dates else 'unknown'} |\n"
         f"| Laws | {count(records.get('laws'))} |\n"
         f"| Procedural regulations | {count(records.get('procedural_rules'))} |\n"
-        f"| Case law (Supreme Court) | {count(judgments)} |"
+        f"| Case law (Supreme Court) | {count(judgments)} |\n"
+        f"| Corpus | {_corpus_summary(corpus)} |"
+    )
+
+
+def _corpus_summary(stats: dict | None) -> str:
+    if not stats:
+        return "not installed -- see scripts/legal_data/install_corpus.py"
+    per_category = " · ".join(f"{name} {count:,}" for name, count in stats["categories"].items())
+    return (
+        f"{stats['chunks']:,} chunks ({per_category}) from {stats['records']:,} source documents"
+        f" · last pulled {(stats['built_at'] or 'unknown')[:10]}"
     )
 
 
@@ -568,19 +595,9 @@ def build_legal_tab() -> None:
         else "signed index"
     )
     gr.Markdown(
-        f"_Research, drafting & verification: **{legal.orchestrator.model}** via **{legal.orchestrator.backend}**"
+        "_Research, drafting & verification: **LLM**"
         f" · sources: **{source}**_"
     )
-    if legal.retrieval.source == "corpus":
-        stats = corpus_stats()
-        if stats:
-            per_category = " · ".join(f"{name} {count:,}" for name, count in stats["categories"].items())
-            gr.Markdown(
-                f"_Corpus: **{stats['chunks']:,}** chunks ({per_category}) from **{stats['records']:,}** source "
-                f"documents · last pulled **{(stats['built_at'] or 'unknown')[:10]}**_"
-            )
-        else:
-            gr.Markdown("_Corpus: not installed -- see scripts/legal_data/install_corpus.py_")
 
     with gr.Row():
         with gr.Column(scale=3):
@@ -607,7 +624,7 @@ def build_legal_tab() -> None:
                 elem_classes=_IDLE_CLASSES,
             )
         with gr.Column(scale=1):
-            gr.Markdown(_legal_sources_table())
+            gr.Markdown(_legal_sources_table(), elem_classes=["legal-sources"])
             gr.Markdown("### Citations")
             citations_panel = gr.Markdown(value="_No citations yet._")
             with gr.Accordion("Research memorandum (Pass A)", open=False):

@@ -327,9 +327,6 @@ def send_tone_rewrite(message: dict, professionalism: int, creativity: int, hist
 
 
 def build_chat_tab() -> None:
-    cfg = get_config()
-    gr.Markdown(f"_Model: **{cfg.llm.model}** via **{cfg.llm.backend}**_")
-
     chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log"])
     llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
     reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)

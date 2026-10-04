@@ -99,6 +99,14 @@ def _classification_view(message: str) -> str:
     return f"{message[:_CLASSIFY_HEAD_CHARS]}\n[...]\n{message[-_CLASSIFY_TAIL_CHARS:]}"
 
 
+# The General GPT assistant's name; it never reveals the underlying model.
+_IDENTITY_PROMPT = (
+    'Your name is "Clara - Offline Large Language Model". If asked your name or who or what you '
+    'are, answer that you are Clara - Offline Large Language Model. Do not name the underlying '
+    "model, its maker, or the software that runs it."
+)
+
+
 async def _classify_intent(client, user_message: str, has_attachment: bool) -> ChatIntent:
     material = (
         "The user has attached a document to this chat and sent a request about it."
@@ -235,6 +243,7 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
                 ChatMessage(
                     role="system",
                     content=(
+                        f"{_IDENTITY_PROMPT}\n\n"
                         "The user has attached a document; its extracted text follows. Use it to "
                         "answer, rewrite, summarize, or otherwise fulfill their request "
                         "exactly as asked below.\n\n--- DOCUMENT START ---\n"
@@ -251,7 +260,10 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
                     return
 
             source_lang = detect_language(user_message)
-            messages = [ChatMessage(role=m["role"], content=m["content"]) for m in req.messages]
+            messages = [
+                ChatMessage(role="system", content=_IDENTITY_PROMPT),
+                *[ChatMessage(role=m["role"], content=m["content"]) for m in req.messages],
+            ]
             # A turn with no attachment can still carry a large block of pasted
             # text (paste-to-rewrite/summarize) as the latest user message --
             # cap it the same way an attachment's extracted text is capped,

@@ -444,6 +444,18 @@ docslides-api
 Or just use `gui/DocSlides.bat`/`.command`, which does both of the above
 from one window and shows live status.
 
+### Hosting on Kaggle with a public link
+
+`notebooks/kaggle_host_app_cloudflare.ipynb` runs the whole app (all tabs) on a
+Kaggle GPU T4 x2 session under Ollama, and puts it online through a Cloudflare
+Tunnel. Without an account you get a quick tunnel (a random `trycloudflare.com`
+URL, replies arrive whole instead of streaming). With a `CLOUDFLARE_TUNNEL_TOKEN`
+secret and `PUBLIC_HOSTNAME` it uses your named tunnel instead (fixed hostname,
+full streaming). The statute corpus and case-law index are picked up from
+attached Kaggle inputs. The link has no login, so share it with care. Setup steps
+are at the top of the notebook. `notebooks/colab_host_app.ipynb` does the same on
+Colab with ngrok.
+
 ## Tests
 
 ```bash

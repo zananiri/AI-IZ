@@ -1,0 +1,398 @@
+<title>Gemma 4 31B Legal Eval</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column; summary tiles, then paired bars (Gemma vs Qwen), then tables and notes. Same tokens as the 28 Sep Qwen vs Gemma report. */
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f2f1ed;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #7a7873;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --qwen: #2a78d6; --gemma: #eb6834;
+  --good-ink: #006300; --critical: #d03b3b; --critical-ink: #b12a2a; --warning-ink: #8a5a00; --warning-bg: #fdf3dc;
+  --focus: #2a78d6;
+  --sans: "IBM Plex Sans", "IBM Plex Sans Hebrew", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --hebrew: "IBM Plex Sans Hebrew", "IBM Plex Sans", system-ui, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --display: "Frank Ruhl Libre", "Times New Roman", Georgia, serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #9a988f;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --qwen: #3987e5; --gemma: #d95926;
+    --good-ink: #3fbf3f; --critical: #e66767; --critical-ink: #e66767; --warning-ink: #fab219; --warning-bg: #2a2310; --focus: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+  --ink: #ffffff; --ink-2: #c3c2b7; --muted: #9a988f;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --qwen: #3987e5; --gemma: #d95926;
+  --good-ink: #3fbf3f; --critical: #e66767; --critical-ink: #e66767; --warning-ink: #fab219; --warning-bg: #2a2310; --focus: #3987e5;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 960px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 52px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.08; letter-spacing: -0.01em; }
+h2 { font-size: 1.375rem; font-weight: 600; }
+h3 { font-size: 1rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+section { display: grid; gap: 18px; min-width: 0; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--ink-2); font-size: 1.05rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+header { display: grid; gap: 14px; }
+.he { font-family: var(--hebrew); direction: rtl; unicode-bidi: isolate; }
+.num { font-variant-numeric: tabular-nums; font-family: var(--mono); }
+
+/* summary tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; display: grid; gap: 6px; align-content: start; }
+.tile .k { font-size: 13px; color: var(--ink-2); }
+.tile .v { font-family: var(--display); font-size: 2.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.tile .v small { font-family: var(--sans); font-size: 0.95rem; font-weight: 500; color: var(--muted); }
+.tile .s { font-size: 13px; color: var(--muted); }
+.vs { color: var(--qwen); font-weight: 600; }
+
+/* legend + paired bars */
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.sw.g { background: var(--gemma); } .sw.q { background: var(--qwen); }
+.bars { display: grid; gap: 14px; }
+.row { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; gap: 6px 16px; align-items: center; }
+.row .lab { font-size: 14px; }
+.row .lab .n { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-left: 4px; }
+.pair { display: grid; gap: 4px; min-width: 0; }
+.track { position: relative; height: 14px; background: linear-gradient(to right, var(--grid) 1px, transparent 1px) 0 0 / 25% 100%, var(--surface-2); border-radius: 3px; }
+.fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.fill.g { background: var(--gemma); } .fill.q { background: var(--qwen); }
+.bl { display: grid; grid-template-columns: 1fr 52px; gap: 10px; align-items: center; }
+.bl .num { font-size: 12.5px; text-align: right; color: var(--ink-2); }
+.axis { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; gap: 16px; }
+.axis .ticks { display: grid; grid-template-columns: 1fr 52px; gap: 10px; }
+.axis .t { position: relative; height: 16px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.axis .t span { position: absolute; transform: translateX(-50%); }
+.axis .t span:first-child { transform: none; } .axis .t span:last-child { transform: translateX(-100%); }
+
+/* tables */
+.tbl { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--surface-2); white-space: nowrap; }
+td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); white-space: nowrap; }
+td .note { color: var(--muted); font-size: 13px; }
+tr.me td { background: color-mix(in srgb, var(--gemma) 7%, transparent); }
+.pill { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.warn { background: var(--warning-bg); color: var(--warning-ink); }
+.pill.ok { background: color-mix(in srgb, var(--good-ink) 12%, transparent); color: var(--good-ink); }
+.pill.bad { background: color-mix(in srgb, var(--critical) 12%, transparent); color: var(--critical-ink); }
+
+/* case mini bars inside table */
+.cb { display: grid; grid-template-columns: 1fr 34px; gap: 8px; align-items: center; min-width: 120px; }
+.cb .track { height: 10px; }
+
+/* callout */
+.bug { border: 1px solid color-mix(in srgb, var(--critical) 40%, transparent); background: color-mix(in srgb, var(--critical) 6%, var(--surface)); border-radius: 10px; padding: 20px; display: grid; gap: 12px; }
+.bug h2 { color: var(--critical-ink); }
+.bug ul, .list { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 72ch; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12.5px; }
+.flow b { background: var(--surface); border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; font-weight: 500; }
+.flow i { color: var(--muted); font-style: normal; }
+footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; }
+.part { border-top: 2px solid var(--ink); padding-top: 22px; display: grid; gap: 10px; }
+.part h2 { font-family: var(--display); font-size: clamp(1.6rem, 4vw, 2.1rem); font-weight: 700; }
+
+/* run timeline (UTC) */
+.tl { display: grid; gap: 8px; min-width: 0; }
+.tl-bar { position: relative; height: 34px; border-radius: 6px; overflow: hidden; background: var(--surface-2); }
+.tl-seg { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; padding-inline: 6px; font-size: 11.5px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; }
+.tl-seg.setup { background: var(--axis); color: var(--ink); }
+.tl-seg.q1 { background: var(--gemma); }
+.tl-seg.c1 { background: color-mix(in srgb, var(--gemma) 70%, var(--ink)); }
+.tl-seg.q2 { background: color-mix(in srgb, var(--gemma) 45%, var(--surface-2)); color: var(--ink); }
+.tl-stop { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--critical); }
+.tl-ticks { position: relative; height: 16px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.tl-ticks span { position: absolute; transform: translateX(-50%); }
+.tl-key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); }
+.tl-key i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+
+/* stacked time bars */
+.stack { display: flex; height: 16px; border-radius: 3px; overflow: hidden; background: var(--surface-2); }
+.stack > div { height: 100%; }
+.s-llm { background: var(--gemma); } .s-ret { background: var(--axis); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.fact { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--surface); display: grid; gap: 2px; }
+.fact b { font-family: var(--mono); font-size: 1.15rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.fact span { font-size: 13px; color: var(--ink-2); }
+ol.recs { margin: 0; padding-left: 1.4em; display: grid; gap: 10px; max-width: 74ch; }
+ol.recs b { font-weight: 600; }
+@media (max-width: 560px) {
+  .row, .axis { grid-template-columns: 1fr; gap: 4px; }
+  .axis > div:first-child { display: none; }
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Israeli legal eval · Kaggle run 1 Oct 2026 · graded 4 Oct</div>
+  <h1>Gemma 4 31B with case law scores 85.0 on the question set</h1>
+  <p class="lede">Part 1 grades the answers; part 2 analyses the run logs. The same 100-question sample that Qwen3 14B scored 68.5 on. Gemma 4 wins 30 questions, loses 2, and ties the rest. On the five practice cases it averages 50 against Qwen's 23.6, and one of its cases was cut short by a pipeline bug.</p>
+  <div class="meta">
+    <span>commit 42f5d22</span><span>gemma4:31b, thinking off</span><span>2× T4, retrieval on CPU</span><span>graded by Claude, Prompt A / Prompt B</span><span>unit tests 34 passed</span>
+  </div>
+</header>
+
+<section>
+  <div class="tiles">
+    <div class="tile"><div class="k">Questions (100 graded)</div><div class="v">85.0<small> %</small></div><div class="s">Qwen3 14B, same 100: <span class="vs">68.5</span></div></div>
+    <div class="tile"><div class="k">Cases (mean of 5)</div><div class="v">50.0<small> / 100</small></div><div class="s">Qwen3 14B: <span class="vs">23.6</span> · without case_03: 59.8 vs 17.3</div></div>
+    <div class="tile"><div class="k">Multiple choice</div><div class="v">16<small> / 16</small></div><div class="s">Qwen3 14B: <span class="vs">15 / 16</span></div></div>
+    <div class="tile"><div class="k">Misgrounded answers</div><div class="v">5<small> of 84</small></div><div class="s">Qwen3 14B: <span class="vs">20 of 84</span> · hallucination 2.4% for both</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Question set by category</div>
+  <h2>Ahead everywhere; reasoning tasks are still at half marks</h2>
+  <p>Recall and yes/no questions are near the ceiling. Rule application, issue spotting and the amendment questions sit at 50%: the core rule is usually right, but secondary issues are missed.</p>
+  <div class="legend"><span><i class="sw g"></i>Gemma 4 31B + case law</span><span><i class="sw q"></i>Qwen3 14B (28 Sep, Claude-graded)</span></div>
+  <div class="bars" id="catbars"></div>
+</section>
+
+<section>
+  <div class="eyebrow">Practice cases · Prompt B, 100 points each</div>
+  <h2>Cases: better on four of five</h2>
+  <p>Each case asks for a work file: facts, timeline, legal issues, deadlines, red flags, missing information, a draft document and a next step. Penalties apply for wrong citations or invented facts. Both models' cases were graded in the same session against the gold answers.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Case</th><th>Gemma 4 31B</th><th>Qwen3 14B</th><th>What decided it</th></tr></thead>
+      <tbody id="casebody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="bug">
+  <div class="eyebrow">Pipeline bug</div>
+  <h2>case_03 got 256 output tokens instead of 5,120</h2>
+  <p>The case_03 work file stops after 869 characters, halfway through the timeline. Gemma 4's 11 points there measure the pipeline, not the model.</p>
+  <div class="flow"><b>context 16,384</b><i>−</i><b>prompt 15,251</b><i>−</i><b>reserve</b><i>=</i><b>max_tokens 256</b><i>→</i><b>finish: length</b></div>
+  <ul>
+    <li>The case answer call in <code>legal_eval_baseline</code> stopped at <code>length</code>. The <code>missing_sections</code> repair call got the same 256-token limit, so it could not fix it.</li>
+    <li>The likely cause is a token-budget clamp: the retrieved laws and case law filled almost the whole context.</li>
+    <li>Fix options: cap the case prompt (lower <code>CASE_TOP_K</code>, limit case law to about 1,500 tokens) so at least <code>CASE_MAX_TOKENS</code> stays free, or raise <code>CONTEXT_LENGTH</code>. Also log a warning whenever the clamp cuts the answer budget.</li>
+    <li>Trace: <code>gemma4_31b/caselaw/llm_trace/2026-10-01.jsonl</code>, job <code>case_03</code>.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">All runs on this eval</div>
+  <h2>Only Qwen3 14B is a like-for-like comparison</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Run</th><th class="r">Questions</th><th class="r">MCQ</th><th class="r">Cases</th><th>Comparable?</th></tr></thead>
+      <tbody>
+        <tr class="me"><td><b>Gemma 4 31B + case law</b><div class="note">1 Oct, Claude-graded, same 100 questions</div></td><td class="r">85.0</td><td class="r">16/16</td><td class="r">50.0</td><td><span class="pill ok">this run</span></td></tr>
+        <tr><td>Qwen3 14B<div class="note">28 Sep, Claude-graded, same 100 questions</div></td><td class="r">68.5</td><td class="r">15/16</td><td class="r">23.6</td><td><span class="pill ok">yes</span></td></tr>
+        <tr><td>Gemma 3 27B + fixes<div class="note">29 Sep, Claude-graded</div></td><td class="r">75.8</td><td class="r">14/16</td><td class="r">≈37</td><td><span class="pill warn">same grader</span></td></tr>
+        <tr><td>Qwen3 32B<div class="note">27 Sep, graded by gemma3:27b, code before PR #2</div></td><td class="r">41.0<div class="note">≈58.5 adjusted</div></td><td class="r">14/16</td><td class="r">–</td><td><span class="pill bad">no</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Qwen3 32B's answers are not in the repo, only its report, so it can't be re-graded with Claude. Its score also comes from older code and a weaker grader. Treat it as a rough reference.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Case law on vs off</div>
+  <h2>Case law helped one answer and hurt none</h2>
+  <p>77 of 100 questions received court judgments (2.57 each on average), and 7 answers cite one. The run without case law stopped after 43 questions and no cases, probably on the time guard, so the two arms can only be compared on those 43.</p>
+  <div class="bars" id="armbars"></div>
+  <p>The whole gap is one question: on IL-274 the case-law answer added the rule that the worker must first warn the employer (2 points vs 1). Every other shared answer got the same grade.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Where Gemma 4 lost points</div>
+  <h2>Recurring weaknesses</h2>
+  <ul class="list">
+    <li>Says <span class="he">חוק התרופות</span> does not exist (IL-061, IL-108). This looks like a prompt or pipeline artifact, since the law is in the corpus.</li>
+    <li>Says the material lacks the answer when retrieval missed it (IL-198, IL-223, IL-327). IL-347 denies the question's premise.</li>
+    <li>IL-306: wrong label. It applied the Youth Law consultation rule instead of the age-12 threshold.</li>
+    <li>Cases: correct urgent steps but thin doctrine. case_04 never reaches the Land Law s.9 competing-sales rule; case_05 misses Succession Law s.35. Both lost points for wrong citations.</li>
+  </ul>
+</section>
+
+<div class="part">
+  <div class="eyebrow">Part 2 · from run.log, llm_trace, ollama.log and summary.json</div>
+  <h2>What the logs show</h2>
+  <p class="lede">The model and server ran cleanly: no errors, no hidden thinking, every layer on the GPUs. The problem was time. Retrieval ran on the CPU and took almost half the run, so the second arm ran out of session.</p>
+</div>
+
+<section>
+  <div class="eyebrow">Run timeline · 1 Oct 2026, UTC</div>
+  <h2>The case-law arm took 8.6 hours; the 11-hour guard stopped the second arm</h2>
+  <div class="tl" role="img" aria-label="Timeline: setup 05:12 to 05:25, case-law questions to 12:54, case-law cases to 14:02, no-case-law questions to 16:08, time guard at 16:11">
+    <div class="tl-bar">
+      <div class="tl-seg setup" style="left:0%;width:1.97%"></div>
+      <div class="tl-seg q1" style="left:1.97%;width:68.1%">case law · 100 questions · 7 h 29 m</div>
+      <div class="tl-seg c1" style="left:70.07%;width:10.3%">5 cases</div>
+      <div class="tl-seg q2" style="left:80.4%;width:19.1%">no case law · 43 q</div>
+      <div class="tl-stop" style="left:99.5%"></div>
+    </div>
+    <div class="tl-ticks"><span style="left:0%;transform:none">05:12</span><span style="left:27.3%">08:12</span><span style="left:54.6%">11:12</span><span style="left:81.9%">14:12</span><span style="left:100%;transform:translateX(-100%)">16:11</span></div>
+    <div class="tl-key"><span><i style="background:var(--axis)"></i>Ollama start, model load, warm-up (13 min)</span><span><i style="background:var(--critical)"></i>time guard: no new work 11 h after start</span></div>
+  </div>
+  <p>The notebook estimated 4–5 hours per arm. The case-law arm alone took 8 h 37 m (questions 7 h 29 m, cases 68 min). The no-case-law arm started at 14:02, answered 43 questions by 16:08, began loading for the cases at 16:10, and the guard stopped it. That arm was cut off by time, not by a crash.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Where the time went</div>
+  <h2>Half of every question was CPU retrieval</h2>
+  <p>The run log gives each question's wall time and the trace gives the time spent inside model calls. The difference is retrieval, reranking and case-law search on the CPU, plus overhead.</p>
+  <div class="legend"><span><i class="sw" style="background:var(--gemma)"></i>model calls</span><span><i class="sw" style="background:var(--axis)"></i>retrieval and the rest</span></div>
+  <div class="bars">
+    <div class="row"><div class="lab">Case law, 100 questions<span class="n">7.48 h</span></div><div class="pair"><div class="bl"><div class="stack"><div class="s-llm" style="width:52.7%"></div><div class="s-ret" style="width:47.3%"></div></div><span class="num">47%</span></div></div></div>
+    <div class="row"><div class="lab">Case law, 5 cases<span class="n">1.13 h</span></div><div class="pair"><div class="bl"><div class="stack"><div class="s-llm" style="width:52.2%"></div><div class="s-ret" style="width:47.8%"></div></div><span class="num">48%</span></div></div></div>
+    <div class="row"><div class="lab">No case law, 43 questions<span class="n">2.10 h</span></div><div class="pair"><div class="bl"><div class="stack"><div class="s-llm" style="width:64.8%"></div><div class="s-ret" style="width:35.2%"></div></div><span class="num">35%</span></div></div></div>
+  </div>
+  <p>On the 43 questions both arms answered, model time was almost the same (83 vs 81 min), but the non-model time doubled (91 vs 44 min). Searching the 1.32 million case-law chunks on the CPU adds about 80 seconds per question (median 144 s vs 62 s). The case-law prompts were also longer (median answer prompt 7,065 vs 5,530 tokens).</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Model call (case-law arm)</th><th class="r">Calls</th><th class="r">Total</th><th class="r">Median</th><th class="r">Median prompt</th><th class="r">Median output</th></tr></thead>
+      <tbody>
+        <tr><td>Answer (<code>baseline</code>)</td><td class="r">105</td><td class="r">2.06 h</td><td class="r">61 s</td><td class="r">8,153</td><td class="r">223</td></tr>
+        <tr><td>Extract quotes first (<code>extract</code>)</td><td class="r">77</td><td class="r">1.21 h</td><td class="r">59 s</td><td class="r">5,889</td><td class="r">365</td></tr>
+        <tr><td>Table-of-contents navigation (<code>toc</code>)</td><td class="r">77</td><td class="r">0.35 h</td><td class="r">15 s</td><td class="r">2,551</td><td class="r">27</td></tr>
+        <tr><td>Plan issues (<code>plan</code>)</td><td class="r">105</td><td class="r">0.31 h</td><td class="r">8 s</td><td class="r">231</td><td class="r">75</td></tr>
+        <tr><td>Completeness check (<code>completeness</code>)</td><td class="r">64</td><td class="r">0.27 h</td><td class="r">8 s</td><td class="r">635</td><td class="r">30</td></tr>
+        <tr><td>Case repairs (<code>repair</code>)</td><td class="r">4</td><td class="r">0.18 h</td><td class="r">210 s</td><td class="r">4,501</td><td class="r">2,783</td></tr>
+        <tr><td>Scope check (<code>scope</code>)</td><td class="r">100</td><td class="r">0.13 h</td><td class="r">5 s</td><td class="r">284</td><td class="r">22</td></tr>
+        <tr><td><b>All model calls</b></td><td class="r"><b>532</b></td><td class="r"><b>4.53 h</b></td><td class="r"></td><td class="r"></td><td class="r"></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The statute text is read twice: once by the extract step and again by the answer step. On a T4 that costs about 30–40 s per question at 210 tokens/s. The slowest categories were rule application (median 385 s) and issue spotting (351 s); abstention questions were fastest (111 s).</p>
+</section>
+
+<section>
+  <div class="eyebrow">Model and server health</div>
+  <h2>Clean on every check</h2>
+  <div class="facts">
+    <div class="fact"><b>0 / 743</b><span>model calls with errors or retries, both arms</span></div>
+    <div class="fact"><b>0 / 743</b><span>calls that returned hidden reasoning; thinking was off on every call (the Gemma 4 silent-thinking issue is fixed)</span></div>
+    <div class="fact"><b>61 / 61</b><span>layers on GPU: 8.6 GB on GPU 0, 9.2 GB on GPU 1, KV cache q8_0, flash attention on</span></div>
+    <div class="fact"><b>2</b><span>calls stopped at length, both from case_03 (the answer and its repair)</span></div>
+    <div class="fact"><b>~210 tok/s</b><span>prompt reading on long prompts; 2.9 h of the run went to reading 2.16 M prompt tokens</span></div>
+    <div class="fact"><b>13.8 tok/s</b><span>generation (median; 11.3–15.4), with the MTP draft model accepting 77% of its tokens</span></div>
+    <div class="fact"><b>3.4–4.2 GB</b><span>left free per T4 after the model and its draft model loaded: room for the embedder in fp16, which now runs on the CPU</span></div>
+    <div class="fact"><b>34 / 34</b><span>unit tests passed before the run</span></div>
+  </div>
+  <p>The logs have 37 <code>llm_max_tokens_capped</code> lines. 35 left 1,804–4,981 output tokens, more than any answer used (max 2,959), so they were harmless. The two caps at 256 were case_03.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Pipeline activity</div>
+  <h2>Retrieval found the right section 89% of the time</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Measure</th><th class="r">Case law</th><th class="r">No case law</th></tr></thead>
+      <tbody>
+        <tr><td>Governing section retrieved</td><td class="r">88.8%</td><td class="r">87.8%</td></tr>
+        <tr><td>Questions given case law / judgments each</td><td class="r">77 / 2.57</td><td class="r">–</td></tr>
+        <tr><td>Answers citing a retrieved judgment</td><td class="r">7</td><td class="r">–</td></tr>
+        <tr><td>Cases given case law / work files citing one</td><td class="r">5 / 1</td><td class="r">–</td></tr>
+        <tr><td>Completeness revisions</td><td class="r">17</td><td class="r">6</td></tr>
+        <tr><td>Conclusion-first rewrites (yes/no questions)</td><td class="r">18</td><td class="r">0*</td></tr>
+        <tr><td>Case work files repaired (<code>facts_revised</code>)</td><td class="r">4</td><td class="r">–</td></tr>
+        <tr><td>Multiple choice / yes-no label (judge-free)</td><td class="r">16/16 · 17/18</td><td class="r">15/15 · –</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>* The no-case-law arm stopped before the yes/no questions. Case law reached 77 prompts but shaped only 7 answers: it adds cost more often than it adds content.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Root causes, traced</div>
+  <h2>Why the weak answers went wrong</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Item</th><th>What the trace shows</th><th>Cause</th></tr></thead>
+      <tbody>
+        <tr><td><b>IL-061, IL-108</b></td><td>Retrieval returned the right law (Contracts (Remedies) Law ss.1–16). The answer gives the right sections (s.2, s.14) but opens with "there is no law called <span class="he">חוק התרופות</span>". IL-108's plan even named the wrong law.</td><td><span class="pill warn">prompt</span> The premise check rejects a common short name.</td></tr>
+        <tr><td><b>IL-198</b></td><td>Retrieved the right chapter (ss.32ב onward) but no amendment date, so it said the material doesn't have it.</td><td><span class="pill warn">corpus</span> No amendment history in the index.</td></tr>
+        <tr><td><b>case_03</b></td><td><code>max_tokens</code> capped from 5,120 to 256 on the answer and on the repair; prompt 15,251 tokens.</td><td><span class="pill bad">pipeline</span> No room left in the 16k context.</td></tr>
+        <tr><td><b>no_caselaw arm</b></td><td>Stopped at 16:10 while loading the cases, 11 h after start.</td><td><span class="pill bad">time</span> CPU retrieval; underestimated run time.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Next run</div>
+  <h2>Recommendations</h2>
+  <ol class="recs">
+    <li><b>Fix the case budget.</b> Trim the case prompt (lower <code>CASE_TOP_K</code> from 16, or drop the case law to 1,000 tokens for cases) until at least 3,000 output tokens stay free. Log a warning or fail the case when the cap drops below that. Then re-run case_03.</li>
+    <li><b>Split the arms.</b> Run <code>no_caselaw</code> in its own Kaggle session with <code>RESUME_FROM</code> to finish the other 57 questions and 5 cases. At the measured pace that takes about 4 hours.</li>
+    <li><b>Put the embedder back on a GPU.</b> About 3.4–4.2 GB stays free per T4. Cast bge-m3 to fp16 on the CPU before moving it to GPU 0, keep the 1.5 GB headroom check and the CPU fallback. That should cut most of the 47% retrieval time.</li>
+    <li><b>Make case-law search cheaper.</b> It adds about 80 s per question but changed only 7 answers. Search it only for application, issue-spotting and case questions, or search the BM25 shards in parallel.</li>
+    <li><b>Accept common short names.</b> Tell the answer prompt to treat "<span class="he">חוק התרופות</span>" and similar short names as the full law and answer, not correct the user.</li>
+    <li><b>Update the run-time estimate</b> in the notebook: about 4.5 min per question with case law and 3 min without, plus about 13 min per case.</li>
+  </ol>
+</section>
+
+<footer>
+  <div>Files: <code>evals/gemma4_31b_caselaw_judged/</code>. Question reports from the eval's unmodified <code>score.py</code>; case grades in <code>judged_cases.jsonl</code>.</div>
+  <div>Qwen3 14B's cases 01–03 were re-graded in the earlier session (within 1–2 points of the first grades); cases 04–05 in this one (3 vs 0 and 22 vs 24 earlier).</div>
+</footer>
+
+</div>
+
+<script>
+const cats = [
+  ["Multiple choice (bar exam)", 16, 100.0, 93.8],
+  ["Rule recall", 22, 95.5, 79.5],
+  ["Yes/no conclusion", 18, 94.4, 75.0],
+  ["Citation grounding", 7, 92.9, 71.4],
+  ["Interpretation", 8, 87.5, 62.5],
+  ["Abstention", 6, 100.0, 83.3],
+  ["Rule application", 12, 50.0, 37.5],
+  ["Issue spotting", 7, 50.0, 21.4],
+  ["Amendments over time", 4, 50.0, 37.5],
+];
+const cases = [
+  ["case_01", "Pregnancy dismissal", 49, 22, "Gemma found the core protections; lost 10 for a misread Wage Protection s.12 and an invented 3-year limitation."],
+  ["case_02", "Tenancy deposit", 72, 22, "Gemma's most complete file, no penalties. Missed the deposit cap (s.25י)."],
+  ["case_03", "Online consumer purchase", 11, 49, "<span class='pill bad'>truncated</span> Gemma's file was cut at 869 characters by the token bug."],
+  ["case_04", "Double sale of a flat", 52, 3, "Gemma: don't pay on 1.10, interim injunction, police, prior lawyer's delay; no s.9 analysis, two wrong citations. Qwen got the dates backwards and told the clients to finish the mortgage by 1.10."],
+  ["case_05", "Contested will", 66, 22, "Gemma: full timeline, objection skeleton, deadline from 15.9, Rachel answered right; missed s.35. Qwen said the 2026 will left the flat to the widow."],
+];
+
+function bar(cls, v) {
+  return `<div class="bl"><div class="track"><div class="fill ${cls}" style="width:${v}%"></div></div><span class="num">${v.toFixed(1)}</span></div>`;
+}
+function axis() {
+  return `<div class="axis"><div></div><div class="ticks"><div class="t"><span>0</span><span style="left:25%">25</span><span style="left:50%">50</span><span style="left:75%">75</span><span style="left:100%">100</span></div><div></div></div></div>`;
+}
+document.getElementById("catbars").innerHTML = cats.map(([l, n, g, q]) =>
+  `<div class="row"><div class="lab">${l}<span class="n">n=${n}</span></div><div class="pair" role="img" aria-label="${l}: Gemma ${g}, Qwen ${q}">${bar("g", g)}${bar("q", q)}</div></div>`
+).join("") + axis();
+
+document.getElementById("armbars").innerHTML =
+  `<div class="row"><div class="lab">With case law<span class="n">n=43</span></div><div class="pair">${bar("g", 88.4)}</div></div>` +
+  `<div class="row"><div class="lab">Without case law<span class="n">n=43</span></div><div class="pair"><div class="bl"><div class="track"><div class="fill g" style="width:87.2%;opacity:.55"></div></div><span class="num">87.2</span></div></div></div>` + axis();
+
+function cb(cls, v) {
+  return `<div class="cb"><div class="track"><div class="fill ${cls}" style="width:${v}%"></div></div><span class="num">${v}</span></div>`;
+}
+document.getElementById("casebody").innerHTML = cases.map(([id, name, g, q, why]) =>
+  `<tr><td><b>${id}</b><div class="note">${name}</div></td><td>${cb("g", g)}</td><td>${cb("q", q)}</td><td><span class="note" style="color:var(--ink-2)">${why}</span></td></tr>`
+).join("") +
+  `<tr><td><b>Mean</b></td><td>${cb("g", 50)}</td><td>${cb("q", 23.6)}</td><td><span class="note">Without case_03: 59.8 vs 17.3</span></td></tr>`;
+</script>

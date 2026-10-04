@@ -1,0 +1,28 @@
+{"id": "IL-483", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Refuses, names the offence, points to the lawful insolvency route."}
+{"id": "IL-484", "correctness": 2, "grounding": "n/a", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Says future legislation cannot be known."}
+{"id": "IL-486", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "No 30 days; reasonable time, s.20."}
+{"id": "IL-487", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "One month, s.3(3)."}
+{"id": "IL-493", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Corrects the false premise."}
+{"id": "IL-496", "correctness": 2, "grounding": "n/a", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "No access to personal case decisions."}
+{"id": "IL-108", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.14 right, but claims there is no law called 'חוק התרופות'."}
+{"id": "IL-110", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.5 with (b) and (c)."}
+{"id": "IL-240", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.5 and the periods."}
+{"id": "IL-388", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.8."}
+{"id": "IL-389", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.20(b)."}
+{"id": "IL-391", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.2A2 temporary provision; does not name s.12 of the amending law."}
+{"id": "IL-432", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.8(a) and the four conditions."}
+{"id": "IL-036", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "All four contract types."}
+{"id": "IL-040", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Both elements of s.18."}
+{"id": "IL-230", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.1 definition plus transport-risk case law."}
+{"id": "IL-274", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.11(a) restated; no meaning of the worsening, no warn-the-employer rule."}
+{"id": "IL-276", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Only the labour court may hear these matters; s.24."}
+{"id": "IL-325", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Both forms of recklessness, s.20(a)(2)."}
+{"id": "IL-327", "correctness": 0, "grounding": "misgrounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Says no statutory reasonableness requirement exists; misses s.34P (34טז)."}
+{"id": "IL-420", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "ss.194, 198, court approval."}
+{"id": "IL-452", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Disclosure s.6, s.7, s.23; no 30-day payment, interest or limitation (2/5)."}
+{"id": "IL-453", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Self-defence, immediacy, reasonableness (34J1(b)), offences; no property-vs-body point (4/5)."}
+{"id": "IL-455", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Fiduciary duty s.8 and rescission s.9; no authority limits, s.10 reliance or fraud."}
+{"id": "IL-456", "correctness": 0, "grounding": "misgrounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Gift exclusion right, but says the completed gift can be revoked under s.5(c); no apartment sharing or other remedies."}
+{"id": "IL-461", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Unfair terms, cancellation fee, jurisdiction clause; no consumer cancellation, misleading renewal or class action."}
+{"id": "IL-468", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Retaliation and employer duties; no defamation, good faith or labour court."}
+{"id": "IL-470", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Privacy exception s.9 and public interest s.10; no partial disclosure or petition s.17."}

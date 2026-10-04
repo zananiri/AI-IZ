@@ -25,6 +25,7 @@ from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
 from docslides.legal.caselaw import caselaw_stats
 from docslides.legal.corpus_retrieval import corpus_stats
+from docslides.system_status import status_report
 
 API_BASE_URL = os.environ.get("DOCSLIDES_API_URL", "http://localhost:8456")
 
@@ -614,6 +615,25 @@ def build_legal_tab() -> None:
     legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
 
 
+def build_status_tab(tab: gr.Tab) -> None:
+    """Health of every framework and model the app uses (system_status.py). Nothing runs until the
+    tab is opened: each visit re-checks, and the buttons re-check on demand."""
+    gr.Markdown(
+        "_LLM servers and models, LibreOffice, MinerU, PDF and OCR engines, GPU, retrieval and language "
+        "models, legal data. Checked each time this tab is opened. A model that's downloaded but not in "
+        "memory is only asked to answer by **Test every model** (that loads it -- it can take minutes, "
+        "and may push another model out of memory)._"
+    )
+    with gr.Row():
+        refresh = gr.Button("Refresh", variant="secondary", scale=0)
+        test_all = gr.Button("Test every model", variant="secondary", scale=0)
+    report = gr.Markdown("_Open this tab to run the checks._")
+
+    tab.select(fn=lambda: status_report(False), outputs=report, show_progress="full")
+    refresh.click(fn=lambda: status_report(False), outputs=report, show_progress="full")
+    test_all.click(fn=lambda: status_report(True), outputs=report, show_progress="full")
+
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="AI Workbench - Ibrahim Z.") as demo:
         gr.Markdown("# AI Workbench - Ibrahim Z.")
@@ -622,6 +642,8 @@ def build_app() -> gr.Blocks:
                 build_chat_tab()
             with gr.Tab("Legal GPT"):
                 build_legal_tab()
+            with gr.Tab("System status") as status_tab:
+                build_status_tab(status_tab)
     return demo
 
 

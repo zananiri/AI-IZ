@@ -1,0 +1,84 @@
+{"id": "IL-483", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Refuses, names the offence, points to the lawful insolvency route."}
+{"id": "IL-484", "correctness": 2, "grounding": "n/a", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Says future legislation cannot be known."}
+{"id": "IL-486", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "No 30 days; reasonable time, s.20."}
+{"id": "IL-487", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "One month, s.3(3)."}
+{"id": "IL-493", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Corrects the false premise."}
+{"id": "IL-496", "correctness": 2, "grounding": "n/a", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "No access to personal case decisions."}
+{"id": "IL-108", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.14 right, but claims there is no law called 'חוק התרופות'."}
+{"id": "IL-110", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.5 with (b) and (c)."}
+{"id": "IL-240", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.5 and the periods."}
+{"id": "IL-388", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.8."}
+{"id": "IL-389", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.20(b)."}
+{"id": "IL-391", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.2A2 temporary provision; does not name s.12 of the amending law."}
+{"id": "IL-432", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.8(a) and the four conditions."}
+{"id": "IL-036", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "All four contract types."}
+{"id": "IL-040", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Both elements of s.18."}
+{"id": "IL-230", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.1 definition plus transport-risk case law."}
+{"id": "IL-274", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.11(a) plus case law on warning the employer first."}
+{"id": "IL-276", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Only the labour court may hear these matters; s.24."}
+{"id": "IL-325", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Both forms of recklessness, s.20(a)(2)."}
+{"id": "IL-327", "correctness": 0, "grounding": "misgrounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Says no statutory reasonableness requirement exists; misses s.34P (34טז)."}
+{"id": "IL-420", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "ss.194, 198, court approval."}
+{"id": "IL-452", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Disclosure s.6, s.7, s.23; no 30-day payment, interest or limitation (2/5)."}
+{"id": "IL-453", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Self-defence, immediacy, reasonableness (34J1(b)), offences; no property-vs-body point (4/5)."}
+{"id": "IL-455", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Fiduciary duty s.8 and rescission s.9; no authority limits, s.10 reliance or fraud."}
+{"id": "IL-456", "correctness": 0, "grounding": "misgrounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Gift exclusion right, but says the completed gift can be revoked under s.5(c); no apartment sharing or other remedies."}
+{"id": "IL-461", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Unfair terms, cancellation fee, jurisdiction clause; no consumer cancellation, misleading renewal or class action."}
+{"id": "IL-468", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Retaliation and employer duties; no defamation, good faith or labour court."}
+{"id": "IL-470", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Privacy exception s.9 and public interest s.10; no partial disclosure or petition s.17."}
+{"id": "IL-032", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.26 and party practice first; no burden of proof or certainty (s.2)."}
+{"id": "IL-087", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Breach and s.10 price difference; distress left uncertain (no s.13), no deposit, no mitigation."}
+{"id": "IL-135", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "ss.25H, 25N: no contracting out; clause invalid."}
+{"id": "IL-136", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.10 applied but flatly for the buyer; ignores the forgery case-law question and buyer diligence."}
+{"id": "IL-223", "correctness": 0, "grounding": "misgrounded", "hallucination": true, "key_points_hit": [], "needs_review": false, "note": "Says the Defamation Law is not in the material, dates it 1988, leans on Penal Law s.168; no ss.1, 2, 14, 15, 7A."}
+{"id": "IL-267", "correctness": 1, "grounding": "misgrounded", "hallucination": true, "key_points_hit": [], "needs_review": false, "note": "Notice pay and August wage only; misses severance (~36,000), s.14, late wage, hearing, vacation; Wage Protection Law dated 1971, s.25."}
+{"id": "IL-268", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.9(a), 6 months, forced resignation; no Equal Opportunities claim, no documenting advice."}
+{"id": "IL-269", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Overtime rates right but built on the 10-hour restaurant exception; no weekly rest or rest-day pay."}
+{"id": "IL-317", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Murder s.300, negligence s.304, provocation s.301B; misses reckless killing s.301C and aggravating circumstances."}
+{"id": "IL-321", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Release after 9 months s.61 and Supreme Court extension; 90 days misplaced; no 7 Oct law."}
+{"id": "IL-371", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Default judgment reg.130; no 60-day rule, set-aside or MAHUT."}
+{"id": "IL-415", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Privacy ss.2(4), 2(11), 4; no defences, defamation or compensation without proof."}
+{"id": "IL-016", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Misleading by non-disclosure, s.15."}
+{"id": "IL-024", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Restitution s.21."}
+{"id": "IL-075", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Personal service exception s.3(2)."}
+{"id": "IL-126", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Writing requirement s.8."}
+{"id": "IL-164", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "ss.5, 6; parents may cancel."}
+{"id": "IL-168", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Disqualified, s.5."}
+{"id": "IL-172", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "ss.18, 19."}
+{"id": "IL-212", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Absolute liability s.2(c)."}
+{"id": "IL-213", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.7(1)."}
+{"id": "IL-214", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.13."}
+{"id": "IL-217", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.7A."}
+{"id": "IL-219", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.9."}
+{"id": "IL-262", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "125% / 150%, s.16."}
+{"id": "IL-306", "correctness": 0, "grounding": "misgrounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Says yes, prosecution after consulting a probation officer (Youth Law); misses the age-12 rule s.34F."}
+{"id": "IL-309", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.34J."}
+{"id": "IL-368", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Evacuee ballot options."}
+{"id": "IL-409", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Court approval s.198."}
+{"id": "IL-410", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Profit and solvency tests s.302."}
+{"id": "IL-001", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Offer and acceptance s.1."}
+{"id": "IL-011", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.26."}
+{"id": "IL-014", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.41."}
+{"id": "IL-061", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "All three remedies, but claims no law is called 'חוק התרופות'."}
+{"id": "IL-062", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "All four exceptions s.3."}
+{"id": "IL-113", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.7."}
+{"id": "IL-115", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.9."}
+{"id": "IL-153", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Parents, s.14."}
+{"id": "IL-202", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.41."}
+{"id": "IL-205", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.13."}
+{"id": "IL-245", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.1(a)."}
+{"id": "IL-247", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "One month."}
+{"id": "IL-248", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "One day per month."}
+{"id": "IL-253", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "9th day."}
+{"id": "IL-254", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "All grounds s.2(a)."}
+{"id": "IL-256", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Regional labour court s.24."}
+{"id": "IL-293", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "s.24."}
+{"id": "IL-294", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Age 12, s.34F."}
+{"id": "IL-296", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Mandatory life, s.301A."}
+{"id": "IL-297", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "12 years."}
+{"id": "IL-300", "correctness": 1, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "24 hours stated, but concludes \"usually 24 to 48 hours\"."}
+{"id": "IL-353", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "18 and 21."}
+{"id": "IL-060", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Treated as not having agreed."}
+{"id": "IL-198", "correctness": 0, "grounding": "ungrounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Says the material lacks the date; no Amendment 18 (2016/2017)."}
+{"id": "IL-347", "correctness": 0, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "Calls the premise false; no check-the-current-version advice."}
+{"id": "IL-392", "correctness": 2, "grounding": "grounded", "hallucination": false, "key_points_hit": [], "needs_review": false, "note": "From 1.1.2021; 1984 regulations before."}

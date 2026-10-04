@@ -42,25 +42,20 @@ def _is_rtl_lang(lang: str | None) -> bool:
 # from Send until the answer is done. Passed as `css=` wherever the app is
 # served (run() below, and api/main.py's mount).
 APP_CSS = """
-.ai-working { position: relative; }
-.ai-working::after {
+/* While a tab's request runs, only the LLM status box above its input glows
+   (General: above the message box; Legal: above the Mode box). */
+.llm-status-general, .llm-status-legal { position: relative; }
+.gradio-container:has(#general-msg.ai-working) .llm-status-general::after,
+.gradio-container:has(#legal-msg.ai-working) .llm-status-legal::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   border: 2px solid var(--color-accent); border-radius: inherit;
+  box-shadow: 0 0 12px 2px rgba(249, 115, 22, .5);
   z-index: var(--layer-1, 1);
   animation: ai-working-pulse 2s cubic-bezier(.4, 0, .6, 1) infinite;
 }
 @keyframes ai-working-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-@media (prefers-reduced-motion: reduce) { .ai-working::after { animation: none; } }
-/* While the LLM works, the whole page background glows softly orange. */
-.gradio-container:has(.ai-working) {
-  animation: ai-working-bg 2.4s ease-in-out infinite;
-}
-@keyframes ai-working-bg {
-  0%, 100% { box-shadow: inset 0 0 40px 4px rgba(249, 115, 22, .15); }
-  50% { box-shadow: inset 0 0 120px 24px rgba(249, 115, 22, .40); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .gradio-container:has(.ai-working) { animation: none; box-shadow: inset 0 0 80px 12px rgba(249, 115, 22, .3); }
+  .llm-status-general::after, .llm-status-legal::after { animation: none !important; }
 }
 /* The Legal tab's sources summary above the chat history: orange italics. */
 .legal-sources, .legal-sources * { color: #f97316 !important; font-style: italic !important; }
@@ -328,7 +323,9 @@ def send_tone_rewrite(message: dict, professionalism: int, creativity: int, hist
 
 def build_chat_tab() -> None:
     chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log"])
-    llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
+    llm_status = gr.Markdown(
+        value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-general"]
+    )
     reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
     # Gemma 4's training-data cutoff, so users know how current its knowledge is.
     gr.Markdown("**LLM cutoff date:** January 2025")
@@ -348,6 +345,7 @@ def build_chat_tab() -> None:
         file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
         file_count="single",
         sources=["upload"],
+        elem_id="general-msg",
         elem_classes=_IDLE_CLASSES,
     )
 
@@ -598,7 +596,9 @@ def build_legal_tab() -> None:
         with gr.Column(scale=3):
             gr.Markdown(_legal_sources_summary(), elem_classes=["legal-sources"])
             legal_chatbot = gr.Chatbot(label="Legal Assistant", elem_classes=["chat-log"])
-            legal_llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
+            legal_llm_status = gr.Markdown(
+        value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-general"]
+    )
             legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
             legal_mode = gr.Radio(
                 [LEGAL_MODE_QUESTION, LEGAL_MODE_CASE],
@@ -617,6 +617,7 @@ def build_legal_tab() -> None:
                 file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
                 file_count="single",
                 sources=["upload"],
+                elem_id="legal-msg",
                 elem_classes=_IDLE_CLASSES,
             )
         with gr.Column(scale=1):

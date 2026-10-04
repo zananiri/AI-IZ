@@ -464,12 +464,15 @@ except Exception as exc:
         # surya-ocr's API was rewritten around its "Predictor" classes
         # (surya.detection.DetectionPredictor / surya.recognition.
         # RecognitionPredictor); the old surya.model.* module path is gone.
+        # Since 0.16 RecognitionPredictor wraps a shared FoundationPredictor
+        # (same construction as src/docslides/ocr/engines.py's SuryaEngine).
         # Predictor.__init__ loads (and thus downloads) weights eagerly.
         $suryaScript = @"
 from surya.detection import DetectionPredictor
+from surya.foundation import FoundationPredictor
 from surya.recognition import RecognitionPredictor
 DetectionPredictor()
-RecognitionPredictor()
+RecognitionPredictor(FoundationPredictor())
 "@
         $suryaScript | & $VenvPy -
         if ($LASTEXITCODE -ne 0) { $Skipped.Add("surya weights") }

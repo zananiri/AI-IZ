@@ -119,6 +119,10 @@ low-confidence VLM-OCR fallback (PaddleOCR-VL / Surya) touches the GPU, and
 only opportunistically between vLLM generations -- see
 `src/docslides/ocr/gpu_arbiter.py`. That arbitration is vLLM-specific (it
 polls vLLM's Prometheus metrics) and is a no-op under the Ollama backend.
+If an OCR engine fails to load or crashes (e.g. surya-ocr missing or an incompatible
+version), the router logs `ocr_engine_failed` and moves on to the next engine for that
+language (Hebrew: Surya -> Tesseract `heb` -> PaddleOCR-VL); a page only fails when every
+engine in its chain does.
 
 ## Setup
 
@@ -182,12 +186,18 @@ missing the packages the layout/table/formula models actually need at
 runtime) and pins `stringzilla`/`pycocotools` to versions with prebuilt
 Windows wheels (see the comments in `pyproject.toml` for why). After
 installing it, run `python scripts/patch_mineru.py` once (also wired into
-`scripts/setup.*` automatically) -- it fixes two real upstream bugs found
+`scripts/setup.*` automatically) -- it fixes real upstream bugs found
 getting this working: magic-pdf 1.3.12's bundled OCR config still points at
 PP-OCRv3 weight filenames the current `PDF-Extract-Kit-1.0` Hugging Face
-repo no longer hosts, and `fasttext-wheel` 0.9.2 (a transitive dependency)
-uses a NumPy API that NumPy 2.x made stricter. Both are documented in detail
-in that script's docstring.
+repo no longer hosts; `fasttext-wheel` 0.9.2 (a transitive dependency)
+uses a NumPy API that NumPy 2.x made stricter; and magic-pdf's vendored
+UnimerNet formula model uses `transformers` APIs newer releases removed
+(`cache_position`, `find_pruneable_heads_and_indices`, `get_head_mask`).
+Each is documented in detail in that script's docstring. The patches edit
+files inside the installed packages, so **re-run it after any reinstall or
+upgrade** of magic-pdf or `transformers`. If the log shows
+`mineru_parse_failed_falling_back` with an `ImportError`/`TypeError` from
+`transformers`, the patch hasn't been applied to that venv.
 
 **Known conflict:** `magic-pdf` (any recent release) pins
 `huggingface-hub<1.0`, while `gradio>=6` requires `huggingface-hub>=1.16`.

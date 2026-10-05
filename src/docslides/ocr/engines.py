@@ -134,15 +134,28 @@ class PaddleOCRVLEngine:
         return self._instance
 
     def recognize(self, png_bytes: bytes, lang: str) -> OCRResult:
+        import numpy as np
         from PIL import Image
 
         engine = self._get_instance()
-        image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-        result = engine.predict(image)
+        image = np.array(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
+        # paddleocr 3.x: .predict() returns a list of per-page result objects;
+        # recognised text lives in parsing_res_list (PaddleOCRVLBlock objects
+        # with .label/.content, in reading order). The VLM emits no per-text
+        # confidence, so the layout detector's per-block scores stand in for it.
+        results = engine.predict(image)
 
-        lines = [r["text"] for r in result.get("blocks", [])]
-        confidences = [r.get("confidence", 0.0) for r in result.get("blocks", [])]
-        mean_conf = sum(confidences) / len(confidences) if confidences else 0.0
+        lines: list[str] = []
+        confidences: list[float] = []
+        for page_result in results or []:
+            for block in page_result.get("parsing_res_list", []) or []:
+                content = (getattr(block, "content", "") or "").strip()
+                if content:
+                    lines.append(content)
+            layout = page_result.get("layout_det_res") or {}
+            confidences.extend(float(b["score"]) for b in layout.get("boxes", []) if "score" in b)
+
+        mean_conf = sum(confidences) / len(confidences) if confidences and lines else 0.0
         return OCRResult(text="\n".join(lines), mean_confidence=mean_conf, engine=self.name)
 
 

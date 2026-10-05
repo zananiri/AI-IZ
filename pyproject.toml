@@ -33,7 +33,9 @@ dependencies = [
 # stays importable (e.g. for unit tests) on machines without a GPU or without
 # every OCR/NLP model installed. See README.md for the install matrix.
 ocr = [
-    "paddleocr>=2.9",
+    # [doc-parser] pulls in paddlex[ocr] (einops, sentencepiece, tiktoken, ...);
+    # without it PaddleOCRVL() fails with a generic "dependency error".
+    "paddleocr[doc-parser]>=3.0",
     "paddlepaddle>=2.6",
     "pytesseract>=0.3.10",
     # Capped at <0.20 (0.16.7/0.17.0/0.17.1 -- next release is 0.20.0):

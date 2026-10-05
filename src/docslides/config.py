@@ -36,6 +36,8 @@ class ThinkingDefaults(BaseModel):
     legal_case_analysis: bool = True
     # Case mode: one factual digest per case-folder document, when the folder exceeds the case budget.
     legal_case_document: bool = False
+    # Chat over the attorney's own case files (legal/case_files.py): a grounded answer from excerpts.
+    legal_case_files_chat: bool = False
     legal_research_memo: bool = False
     legal_draft: bool = False
     legal_citation_verification: bool = False
@@ -239,6 +241,36 @@ class LegalCorpusConfig(BaseModel):
     caselaw_question_categories: list[str] | None = None
 
 
+class LegalCaseFilesConfig(BaseModel):
+    """The attorney's own case files (legal_data/ at the project root): chunked, embedded and
+    searched by legal/case_files.py, so the user can chat with them (scripts/ingest_case_files.py).
+    Its own Chroma store, separate from the law corpus and the signed index. Same embedding and
+    reranker models as legal.retrieval."""
+
+    folder: str = "./legal_data"
+    vectordb_dir: str = "./data/legal_case_files_vectordb"
+    collection: str = "case_files"
+    # Chunk body budget, before the context header every chunk carries. Structural units (a
+    # numbered paragraph, a contract clause, a Q&A pair, one e-mail) are never split unless one
+    # alone exceeds it; then it is split by sentence.
+    chunk_max_tokens: int = 450
+    chunk_overlap_tokens: int = 60
+    embed_batch_size: int = 16
+    # Scanned pages (no text layer) and images are OCRed (ocr/router.py) when an OCR engine is
+    # installed; False = skip them, listed in the run's report.
+    ocr_scanned_pages: bool = True
+    ocr_default_language: str = "he"   # when a scanned document has no native text to detect it from
+    # Retrieval: dense (bge-m3) and BM25 candidates fused, reranked, then the neighbours of the best
+    # hits added (the paragraphs just before and after), within max_evidence_tokens.
+    fetch_k: int = 30
+    rerank_candidates: int = 20
+    top_k: int = 8
+    neighbor_hits: int = 3
+    max_evidence_tokens: int = 5000
+    answer_max_tokens: int = 1500
+    history_turns: int = 3             # earlier question/answer pairs the chat keeps
+
+
 class LegalConfig(BaseModel):
     """Legal tab: grounded RAG over Israeli law (see src/docslides/legal/).
     `orchestrator` (Gemma 4) does research, drafting and every verification
@@ -250,6 +282,7 @@ class LegalConfig(BaseModel):
     ingestion: LegalIngestionConfig = Field(default_factory=LegalIngestionConfig)
     pipeline: LegalPipelineConfig = Field(default_factory=LegalPipelineConfig)
     corpus: LegalCorpusConfig = Field(default_factory=LegalCorpusConfig)
+    case_files: LegalCaseFilesConfig = Field(default_factory=LegalCaseFilesConfig)
     audit_dir: str = "./data/legal/audit"
     # Evals only (legal/evaluation.get_judge_client): the grading model, served by the same Ollama
     # as the orchestrator. A family other than the model under test (gemma), so it is not graded

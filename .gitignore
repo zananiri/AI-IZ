@@ -30,3 +30,8 @@ legal_txt/chroma_bkp/
 # The bulk corpus archives (1.3 GB) live in the Kaggle dataset, not in git
 legal_txt/Legal_Corpus/
 *.log
+
+# The attorney's case files (scripts/ingest_case_files.py): privileged client material, never
+# committed. Only the folder's README is tracked. Their index lives under data/ (ignored above).
+legal_data/*
+!legal_data/README.md

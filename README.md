@@ -363,6 +363,41 @@ reloaded page then starts fresh. Each request carries the page's session id (the
 (`src/docslides/api/routes_session.py`), which cancels those jobs and with them their in-flight
 calls to the model server.
 
+### Chatting with the attorney's case files (`legal_data/`)
+
+The attorney's own files -- pleadings, judgments, affidavits, contracts, hearing protocols,
+e-mails, letters, exhibits -- go in `legal_data/` at the project root, one subfolder per matter.
+They are chunked and indexed into their own store (`data/legal_case_files_vectordb`), separate from
+the law corpus, and then the user can chat with them:
+
+```bash
+pip install -e ".[legal]"
+python scripts/ingest_case_files.py                    # index new/changed files (re-run after adding files)
+python scripts/ingest_case_files.py index --dry-run    # classify + chunk only, write nothing
+python scripts/ingest_case_files.py show "legal_data/Cohen v. Levi/claim.pdf"   # inspect one file's chunks
+python scripts/ingest_case_files.py chat --matter "Cohen v. Levi"
+python scripts/ingest_case_files.py ask "When was the termination notice sent?"
+```
+
+Answers come from the Legal tab's model (`legal.orchestrator`), only from the retrieved excerpts,
+with every statement cited to file, page and paragraph; parties' allegations are attributed to the
+party, not stated as fact. Settings: `legal.case_files` in `config/config.yaml`. Everything in
+`legal_data/` except its README is git-ignored -- case files are privileged and must not be pushed.
+
+**Chunking strategy** (`src/docslides/legal/case_files.py`):
+
+| Principle | What it does |
+|---|---|
+| Structure before size | The unit is the numbered paragraph / clause / speaker turn / e-mail -- what a lawyer cites ("para. 14 of the claim", "clause 7.2"). Units are never split unless one alone exceeds the budget (then by sentence); chunks are packed from whole units up to ~450 tokens |
+| Per document type | Each file is classified (pleading, judgment/decision, affidavit, contract, transcript, e-mail, letter, exhibit, memo, other) from its name and opening, Hebrew and English. Pleadings/judgments/affidavits split on numbered paragraphs and headings (a heading starts a new chunk); contracts on clauses and sub-clauses; transcripts on speaker turns with each question kept with its answer (ש:/ת:, Q/A); e-mail threads one message at a time, each chunk repeating its sender, recipients, date and subject; everything else by paragraph |
+| Context header on every chunk | Matter, file, document type, document date, page range, section heading and paragraph numbers, embedded with the text -- the claim and the defence describe the same events in similar words, and the header is what tells them apart and what the answer cites |
+| Pages kept | PDF pages (OCRed scans too) per chunk, for "p. 4" citations. Word's auto-numbered paragraphs get their numbers back |
+| Small overlap | ~60 tokens of whole units between consecutive chunks of the same document (never across e-mails or sections) |
+| Hybrid retrieval, small-to-big | bge-m3 dense search + BM25 (names, case numbers, amounts, dates), fused and reranked (bge-reranker-v2-m3); then the chunks right before and after the best hits are added, within a 5k-token evidence budget |
+
+Re-runs skip unchanged files (content hash); changing the chunk settings re-chunks everything;
+`index --prune` removes files deleted from the folder.
+
 ### Legal tab: Supreme Court case law
 
 Alongside whichever source answers the question (bulk corpus or signed index), the Legal tab can

@@ -143,6 +143,7 @@ class LLMCallSite:
         "legal_analysis",
         "legal_case_analysis",
         "legal_case_document",
+        "legal_case_files_chat",
         "legal_research_memo",
         "legal_draft",
         "legal_citation_verification",

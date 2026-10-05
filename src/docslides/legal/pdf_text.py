@@ -256,13 +256,8 @@ def _page_text(page, body_size: float, repeated: set[str]) -> tuple[str, list[st
     return "\n".join(out), [n for n in notes if n and n not in repeated]
 
 
-def extract_pdf_text(path) -> tuple[str, list[int]]:
-    """Returns (text, 1-based numbers of pages that look scanned).
-
-    Footnotes are gathered into a block at the START of the text, so they
-    land in the preamble chunk instead of being glued onto whichever section
-    ends a page. They're worth keeping: the "*" note on a law's title carries
-    the date the Knesset passed it."""
+def _extract(path) -> tuple[list[tuple[str, list[str]]], list[int]]:
+    """Each page's (text, footnotes), and the 1-based numbers of pages that look scanned."""
     import pymupdf
 
     with pymupdf.open(path) as doc:
@@ -282,7 +277,24 @@ def extract_pdf_text(path) -> tuple[str, list[int]]:
         repeated = {line for line, n in counts.items() if len(pages) >= 4 and n >= max(3, len(pages) // 2)}
         if repeated:
             pages = [_page_text(page, body_size, repeated) for page in doc]
+    return pages, scanned
 
+
+def extract_pdf_text(path) -> tuple[str, list[int]]:
+    """Returns (text, 1-based numbers of pages that look scanned).
+
+    Footnotes are gathered into a block at the START of the text, so they
+    land in the preamble chunk instead of being glued onto whichever section
+    ends a page. They're worth keeping: the "*" note on a law's title carries
+    the date the Knesset passed it."""
+    pages, scanned = _extract(path)
     footnotes = [note for _, notes in pages for note in notes]
     parts = (["הערות שוליים:", *footnotes] if footnotes else []) + [text for text, _ in pages if text.strip()]
     return "\n".join(parts), scanned
+
+
+def extract_pdf_pages(path) -> tuple[list[str], list[int]]:
+    """extract_pdf_text page by page, for callers that cite page numbers (legal/case_files.py): each
+    page's text with its own footnotes after it, and the 1-based numbers of pages that look scanned."""
+    pages, scanned = _extract(path)
+    return ["\n".join([text, *notes]) if notes else text for text, notes in pages], scanned

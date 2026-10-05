@@ -153,6 +153,18 @@ legal:
     # "Legal tab: Supreme Court case law".
     caselaw_dir: 'C:\Users\iB\Projects\CaseDatabase\israeli_caselaw'   # single quotes: backslashes are literal
 
+  # The attorney's own case files: drop them into legal_data/ at the project root (one subfolder
+  # per matter), index with `python scripts/ingest_case_files.py`, then chat with
+  # `python scripts/ingest_case_files.py chat`. Chunking strategy: src/docslides/legal/case_files.py.
+  case_files:
+    folder: "./legal_data"
+    vectordb_dir: "./data/legal_case_files_vectordb"
+    chunk_max_tokens: 450
+    chunk_overlap_tokens: 60
+    ocr_scanned_pages: true
+    top_k: 8
+    max_evidence_tokens: 5000
+
 # Corpus acquisition: scripts/legal_data/fetch_*.py (see scripts/legal_data/README.md). Only the
 # hosts below are contacted, robots.txt is honoured, at most one request per second per host.
 legal_data:

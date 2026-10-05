@@ -192,7 +192,7 @@ def _cutoff_markdown(size: str | None) -> str:
 
 
 def build_model_size_selector() -> gr.Radio:
-    """The 12B/27B choice at the top of the page, shared by the General and Legal tabs: every
+    """The 12B/31B choice at the top of the page, shared by the General and Legal tabs: every
     request either tab sends runs on the picked size's models (config.model_sizes)."""
     cfg = get_config()
     sizes = list(cfg.model_sizes)
@@ -202,8 +202,8 @@ def build_model_size_selector() -> gr.Radio:
         sizes,
         value=default,
         label="Model size (parameters)",
-        info="Used by General GPT and Legal GPT. 12B answers faster and needs less memory; 27B is the "
-        "larger model." if selectable else f"Fixed: the vLLM server serves one model ({cfg.llm.model}).",
+        info="Used by General GPT and Legal GPT. 12B answers faster and needs less memory; 31B is the "
+        "larger, more capable model." if selectable else f"Fixed: the vLLM server serves one model ({cfg.llm.model}).",
         interactive=selectable,
         elem_id="model-size",
     )

@@ -192,7 +192,7 @@ def test_output_room_is_what_the_cap_leaves(ollama):
 
 
 def test_the_picked_model_size_switches_every_ollama_deployment(monkeypatch):
-    """The UI's 12B/27B selector (config.model_sizes): within model_size(...), and in tasks started
+    """The UI's 12B/31B selector (config.model_sizes): within model_size(...), and in tasks started
     inside it, the general, Legal and translator clients talk to that size's tags."""
     from docslides.config import LLMConfig
     from docslides.llm import client as llm_client
@@ -223,8 +223,8 @@ def test_the_picked_model_size_switches_every_ollama_deployment(monkeypatch):
         task = loop.run_until_complete(start())
     assert loop.run_until_complete(task) == ("gemma4:12b", "gemma4:12b", "translategemma:12b")
     loop.close()
-    with llm_client.model_size("27B"):
-        assert models() == ("gemma3:27b", "gemma3:27b", "translategemma:27b")
+    with llm_client.model_size("31B"):
+        assert models() == ("gemma4:31b", "gemma4:31b", "translategemma:27b")
     with llm_client.model_size("70B"):  # not a configured size
         assert models()[0] == "gemma4:31b"
     assert llm_client.get_client() is llm_client.get_client()  # one client per tag, reused
@@ -235,5 +235,5 @@ def test_a_vllm_server_keeps_its_one_model_whatever_size_is_picked(monkeypatch):
 
     monkeypatch.setattr(get_config().llm, "backend", "vllm")
     monkeypatch.setattr(llm_client, "_clients", {})
-    with llm_client.model_size("27B"):
+    with llm_client.model_size("31B"):
         assert llm_client.get_client()._llm_cfg.model == get_config().llm.model

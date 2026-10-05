@@ -436,7 +436,7 @@ class ModelSize(BaseModel):
 def _default_model_sizes() -> dict[str, ModelSize]:
     return {
         "12B": ModelSize(model="gemma4:12b", translator_model="translategemma:12b", knowledge_cutoff="January 2025"),
-        "27B": ModelSize(model="gemma3:27b", translator_model="translategemma:27b", knowledge_cutoff="August 2024"),
+        "31B": ModelSize(model="gemma4:31b", translator_model="translategemma:27b", knowledge_cutoff="January 2025"),
     }
 
 

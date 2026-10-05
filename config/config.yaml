@@ -45,10 +45,10 @@ model_sizes:
     model: "gemma4:12b"
     translator_model: "translategemma:12b"
     knowledge_cutoff: "January 2025"
-  "27B":
-    model: "gemma3:27b"
+  "31B":
+    model: "gemma4:31b"
     translator_model: "translategemma:27b"
-    knowledge_cutoff: "August 2024"
+    knowledge_cutoff: "January 2025"
 default_model_size: "12B"
 
 legal:

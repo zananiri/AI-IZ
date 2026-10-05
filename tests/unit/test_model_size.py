@@ -1,4 +1,4 @@
-"""The model-size selector (12B/27B, config.model_sizes): the size a request names reaches the job
+"""The model-size selector (12B/31B, config.model_sizes): the size a request names reaches the job
 it starts, and the selector sits at the top of the page for both chat tabs."""
 
 import time
@@ -21,14 +21,14 @@ def test_the_requested_size_reaches_the_legal_job(monkeypatch):
     app = FastAPI()
     app.include_router(routes_legal.router)
     with TestClient(app) as client:
-        for size in ("27B", None):
+        for size in ("31B", None):
             client.post("/api/legal-chat", json={"messages": [{"role": "user", "content": "q"}], "model_size": size})
         for _ in range(50):
             if len(seen) == 2:
                 break
             time.sleep(0.05)
 
-    assert seen == ["27B", None]
+    assert seen == ["31B", None]
 
 
 def test_the_selector_is_on_top_of_both_tabs_and_defaults_to_12b(monkeypatch):
@@ -38,11 +38,11 @@ def test_the_selector_is_on_top_of_both_tabs_and_defaults_to_12b(monkeypatch):
     monkeypatch.setattr(get_config().llm, "backend", "ollama")
     demo = gradio_app.build_app()
     selector = next(b for b in demo.blocks.values() if getattr(b, "elem_id", None) == "model-size")
-    assert (selector.choices, selector.value, selector.interactive) == ([("12B", "12B"), ("27B", "27B")], "12B", True)
+    assert (selector.choices, selector.value, selector.interactive) == ([("12B", "12B"), ("31B", "31B")], "12B", True)
     # An input to every send: the General chat, the rewrite, the Legal question and the case folder.
     sends = [dep for dep in demo.fns.values() if selector._id in [i._id for i in dep.inputs] and len(dep.inputs) > 1]
     assert len(sends) == 4
-    assert gradio_app._cutoff_markdown("27B") == "**LLM cutoff date:** August 2024"
+    assert gradio_app._cutoff_markdown("31B") == "**LLM cutoff date:** January 2025"
 
     monkeypatch.setattr(get_config().llm, "backend", "vllm")
     selector = next(b for b in gradio_app.build_app().blocks.values() if getattr(b, "elem_id", None) == "model-size")

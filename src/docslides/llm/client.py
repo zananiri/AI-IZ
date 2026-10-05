@@ -621,7 +621,7 @@ class LLMClient:
                 break
 
 
-# The model size the current request asked for (the UI's 12B/27B selector, config.model_sizes), or
+# The model size the current request asked for (the UI's 12B/31B selector, config.model_sizes), or
 # None for the configured models. Set by the API routes around the job they start: asyncio tasks
 # copy the context they're created in, so everything the job does sees it.
 _model_size: ContextVar[str | None] = ContextVar("model_size", default=None)

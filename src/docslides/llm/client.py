@@ -140,6 +140,7 @@ class LLMCallSite:
         "legal_language_id",
         "legal_analysis",
         "legal_case_analysis",
+        "legal_case_document",
         "legal_research_memo",
         "legal_draft",
         "legal_citation_verification",

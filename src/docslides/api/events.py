@@ -15,12 +15,20 @@
 
 Each job/chat-turn gets its own asyncio.Queue so multiple concurrent
 requests don't cross-talk.
+
+Jobs started with `EventBus.start` are also tracked by the browser session
+that asked for them (the UI's `X-Client-Session` header): when that page is
+refreshed or closed, the UI calls POST /api/sessions/{session}/cancel
+(api/routes_session.py) and every job the page left running is cancelled, so
+the reloaded page starts fresh instead of queueing behind its own old work.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+from collections import OrderedDict
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Literal
 
@@ -46,14 +54,64 @@ class Event:
         return {"event": self.kind, "data": orjson.dumps(self.data).decode("utf-8")}
 
 
+SESSION_HEADER = "X-Client-Session"
+CANCELLED_MESSAGE = "Stopped: the page was refreshed or closed."
+# Closed sessions remembered, so a job a closing page was still starting is refused rather than run.
+# Session ids are per page load, never reused, so the oldest are safe to forget.
+_MAX_CLOSED_SESSIONS = 1000
+
+
 class EventBus:
-    """Registry of per-job event queues."""
+    """Registry of per-job event queues, and of the running jobs per browser session."""
 
     def __init__(self) -> None:
         self._queues: dict[str, asyncio.Queue[Event]] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
+        self._session_jobs: dict[str, set[str]] = {}
+        self._closed_sessions: OrderedDict[str, None] = OrderedDict()
 
     def create(self, job_id: str) -> None:
         self._queues[job_id] = asyncio.Queue()
+
+    def start(self, job_id: str, work: Coroutine, session: str | None = None) -> None:
+        """Creates `job_id`'s queue and runs `work` as its task, owned by `session` (the page that
+        asked for it) so `cancel_session` can stop it."""
+        self.create(job_id)
+        if session and session in self._closed_sessions:
+            work.close()
+            self._queues[job_id].put_nowait(Event(kind="error", data={"message": CANCELLED_MESSAGE}))
+            return
+        task = asyncio.create_task(work)
+        self._tasks[job_id] = task
+        if session:
+            self._session_jobs.setdefault(session, set()).add(job_id)
+
+        def finished(_: asyncio.Task) -> None:
+            self._tasks.pop(job_id, None)
+            if session and session in self._session_jobs:
+                self._session_jobs[session].discard(job_id)
+                if not self._session_jobs[session]:
+                    del self._session_jobs[session]
+
+        task.add_done_callback(finished)
+
+    def cancel_session(self, session: str) -> int:
+        """Cancels every job `session` still has running, and refuses any it starts from now on.
+        Anyone still listening to one of those jobs gets an "error" event, so its stream ends.
+        Returns how many jobs were cancelled."""
+        self._closed_sessions[session] = None
+        while len(self._closed_sessions) > _MAX_CLOSED_SESSIONS:
+            self._closed_sessions.popitem(last=False)
+        cancelled = 0
+        for job_id in self._session_jobs.pop(session, set()):
+            task = self._tasks.pop(job_id, None)
+            if task is None or task.done():
+                continue
+            task.cancel()
+            cancelled += 1
+            if job_id in self._queues:
+                self._queues[job_id].put_nowait(Event(kind="error", data={"message": CANCELLED_MESSAGE}))
+        return cancelled
 
     def get(self, job_id: str) -> asyncio.Queue[Event]:
         if job_id not in self._queues:

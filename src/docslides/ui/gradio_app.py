@@ -21,6 +21,7 @@ from pathlib import Path
 import gradio as gr
 import httpx
 
+from docslides.api.events import SESSION_HEADER
 from docslides.config import get_config
 from docslides.ingestion.language_detect import detect_language
 from docslides.legal.caselaw import caselaw_stats
@@ -156,6 +157,27 @@ def _glow_while_running(handler, outputs: list, box):
     return run
 
 
+def _session_headers(request: gr.Request | None) -> dict:
+    """Tags a job request with the page's session, so refreshing or closing the page cancels it
+    (_reset_session below, api/routes_session.py)."""
+    session = getattr(request, "session_hash", None)
+    return {SESSION_HEADER: session} if session else {}
+
+
+def _reset_session(request: gr.Request) -> None:
+    """The page was refreshed or closed (Gradio's unload event): cancel every job it left running
+    on the server, so the reloaded page starts fresh. Best effort -- a backend that's down has
+    nothing running anyway."""
+    session = getattr(request, "session_hash", None)
+    if not session:
+        return
+    try:
+        with httpx.Client(timeout=10) as client:
+            client.post(f"{API_BASE_URL}/api/sessions/{session}/cancel")
+    except httpx.HTTPError:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Chat tab (documents, translation, rewriting, and slide generation all go
 # through here -- see module docstring)
@@ -252,7 +274,7 @@ def _stream_job(job_id: str, history: list, rtl_hint: bool):
                         break  # after the yield, so the final status or error still shows
 
 
-def send_chat_message(message: dict, history: list):
+def send_chat_message(message: dict, history: list, request: gr.Request = None):
     """`message` is a `gr.MultimodalTextbox` payload: `{"text": str, "files":
     [local_path, ...]}`. Attachments are picked via that box's own attach
     button rather than a separate upload widget, and are per-message (no
@@ -283,14 +305,16 @@ def send_chat_message(message: dict, history: list):
         payload["attachment_path"] = attachment["path"]
 
     with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/chat", json=payload)
+        resp = client.post(f"{API_BASE_URL}/api/chat", json=payload, headers=_session_headers(request))
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
 
     yield from _stream_job(job_id, history, rtl_hint=False)
 
 
-def send_tone_rewrite(message: dict, professionalism: int, creativity: int, history: list):
+def send_tone_rewrite(
+    message: dict, professionalism: int, creativity: int, history: list, request: gr.Request = None
+):
     """Rewrites whatever is in the same message box used for regular chat --
     typed/pasted text, or a file attached via its 📎 button (extracted
     server-side, same as a chat attachment). No separate input for the
@@ -318,7 +342,7 @@ def send_tone_rewrite(message: dict, professionalism: int, creativity: int, hist
         payload["attachment_path"] = attachment["path"]
 
     with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/tone-rewrite", json=payload)
+        resp = client.post(f"{API_BASE_URL}/api/tone-rewrite", json=payload, headers=_session_headers(request))
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
 
@@ -511,7 +535,7 @@ LEGAL_MODE_QUESTION = "Question"
 LEGAL_MODE_CASE = "Case analysis"
 
 
-def send_legal_message(message: dict, mode: str, history: list):
+def send_legal_message(message: dict, mode: str, history: list, request: gr.Request = None):
     """`message` is a `gr.MultimodalTextbox` payload: `{"text": str, "files":
     [local_path, ...]}` -- an attached document (contract, filing, any file
     the chat tab accepts) is uploaded the same way as there. In question mode
@@ -545,7 +569,62 @@ def send_legal_message(message: dict, mode: str, history: list):
 
     endpoint = "legal-case" if case_mode else "legal-chat"
     with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/{endpoint}", json=payload)
+        resp = client.post(f"{API_BASE_URL}/api/{endpoint}", json=payload, headers=_session_headers(request))
+        resp.raise_for_status()
+        job_id = resp.json()["job_id"]
+
+    yield from _stream_legal_job(job_id, history)
+
+
+# The file types a case folder's documents can be -- the same ones the 📎 button accepts (api/routes_upload.py).
+_CASE_FILE_TYPES = (".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt")
+# Each document gets a share of the case file's token budget (legal/pipeline._case_documents_material):
+# past this many, the shares get too small to say anything.
+_CASE_FOLDER_MAX_DOCUMENTS = 25
+
+
+def _case_folder_documents(files: list) -> tuple[list[str], list[str]]:
+    """The case documents among a picked folder's files, sorted by name, and the names of the files
+    skipped (unsupported types; hidden and system files like .DS_Store aren't even mentioned)."""
+    paths = sorted((str(getattr(f, "name", f)) for f in files or []), key=lambda p: Path(p).name.lower())
+    visible = [p for p in paths if not Path(p).name.startswith((".", "~$")) and Path(p).name != "Thumbs.db"]
+    documents = [p for p in visible if Path(p).suffix.lower() in _CASE_FILE_TYPES]
+    skipped = [Path(p).name for p in visible if Path(p).suffix.lower() not in _CASE_FILE_TYPES]
+    return documents, skipped
+
+
+def send_case_folder(files: list, message: dict | None, history: list, request: gr.Request = None):
+    """A case folder picked with the 📂 button next to the Mode selector (case mode only): every
+    supported document in it is uploaded and the case is analyzed at once -- the backend reads each
+    document, digests them one by one when they don't fit the case file together, and writes the
+    work file from them. Whatever is typed in the message box goes along as the case description."""
+    documents, skipped = _case_folder_documents(files)
+    if not documents:
+        raise gr.Error("That folder has no case documents (PDF, DOCX, PPTX, XLSX, image or .txt files).")
+    if len(documents) > _CASE_FOLDER_MAX_DOCUMENTS:
+        gr.Warning(
+            f"The folder has {len(documents)} documents; only the first {_CASE_FOLDER_MAX_DOCUMENTS} "
+            "(by name) are analyzed."
+        )
+        skipped += [Path(p).name for p in documents[_CASE_FOLDER_MAX_DOCUMENTS:]]
+        documents = documents[:_CASE_FOLDER_MAX_DOCUMENTS]
+
+    text = ((message or {}).get("text") or "").strip()
+    listing = "\n".join(f"- {Path(p).name}" for p in documents)
+    display_message = f"🗂️ **{LEGAL_MODE_CASE}** -- 📂 case folder, {len(documents)} document(s):\n{listing}"
+    if skipped:
+        display_message += f"\n\n_Not analyzed: {', '.join(skipped)}_"
+    if text:
+        display_message += f"\n\n{text}"
+    history = history + [{"role": "user", "content": display_message}]
+
+    uploaded = [_upload_file(p) for p in documents]
+    payload = {
+        "messages": [{"role": "user", "content": text}],
+        "documents": [{"path": u["path"], "name": u["name"] or Path(p).name} for u, p in zip(uploaded, documents)],
+    }
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(f"{API_BASE_URL}/api/legal-case", json=payload, headers=_session_headers(request))
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
 
@@ -605,14 +684,27 @@ def build_legal_tab() -> None:
                 value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-legal"]
             )
             legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
-            legal_mode = gr.Radio(
-                [LEGAL_MODE_QUESTION, LEGAL_MODE_CASE],
-                value=LEGAL_MODE_QUESTION,
-                label="Mode",
-                info="Question: a grounded answer with citations. Case analysis: describe the case and/or attach "
-                "its documents -- you get a work file (facts, chronology, legal issues, deadlines, red flags, "
-                "missing information, a draft document and the recommended next step).",
-            )
+            with gr.Row(equal_height=True):
+                legal_mode = gr.Radio(
+                    [LEGAL_MODE_QUESTION, LEGAL_MODE_CASE],
+                    value=LEGAL_MODE_QUESTION,
+                    label="Mode",
+                    info="Question: a grounded answer with citations. Case analysis: describe the case and/or "
+                    "pick its folder with 📂 (or attach a document) -- you get a work file (facts, chronology, "
+                    "legal issues, deadlines, red flags, missing information, a draft document and the "
+                    "recommended next step).",
+                    scale=4,
+                )
+                # Case mode only: picks the folder holding the case's files; the analysis starts as soon
+                # as it's picked.
+                case_folder_button = gr.UploadButton(
+                    "📂 Browse case folder",
+                    file_count="directory",
+                    visible=False,
+                    scale=1,
+                    min_width=160,
+                    elem_id="case-folder",
+                )
             legal_msg_box = gr.MultimodalTextbox(
                 label="Legal question",
                 placeholder="Ask a question about Israeli law in any language -- answered only from the "
@@ -635,6 +727,14 @@ def build_legal_tab() -> None:
     send_outputs = [legal_chatbot, legal_reasoning_panel, legal_msg_box, citations_panel, legal_llm_status, memo_view]
     send = _glow_while_running(send_legal_message, send_outputs, legal_msg_box)
     legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
+    legal_mode.change(
+        fn=lambda mode: gr.update(visible=mode == LEGAL_MODE_CASE), inputs=legal_mode, outputs=case_folder_button
+    )
+    case_folder_button.upload(
+        fn=_glow_while_running(send_case_folder, send_outputs, legal_msg_box),
+        inputs=[case_folder_button, legal_msg_box, legal_chatbot],
+        outputs=send_outputs,
+    )
 
 
 def build_status_tab(tab: gr.Tab) -> None:
@@ -666,6 +766,8 @@ def build_app() -> gr.Blocks:
                 build_legal_tab()
             with gr.Tab("System status") as status_tab:
                 build_status_tab(status_tab)
+        # Refreshing or closing the page stops whatever it left running on the server.
+        demo.unload(_reset_session)
     return demo
 
 

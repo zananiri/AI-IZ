@@ -22,15 +22,14 @@ UI only needs one event handler -- see ui/gradio_app.py's `_stream_job`.
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from docslides.api.events import Event, event_bus, job_outputs
+from docslides.api.events import SESSION_HEADER, Event, event_bus, job_outputs
 from docslides.cleaning.chunking import chunk_document
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
@@ -410,20 +409,18 @@ async def _run_tone_rewrite(job_id: str, req: ToneRewriteRequest) -> None:
 
 
 @router.post("/chat")
-async def chat(req: ChatRequest) -> dict:
+async def chat(req: ChatRequest, session: str | None = Header(default=None, alias=SESSION_HEADER)) -> dict:
     job_id = uuid.uuid4().hex[:12]
-    event_bus.create(job_id)
-
-    asyncio.create_task(_run_chat_turn(job_id, req))
+    event_bus.start(job_id, _run_chat_turn(job_id, req), session)
     return {"job_id": job_id}
 
 
 @router.post("/tone-rewrite")
-async def tone_rewrite(req: ToneRewriteRequest) -> dict:
+async def tone_rewrite(
+    req: ToneRewriteRequest, session: str | None = Header(default=None, alias=SESSION_HEADER)
+) -> dict:
     job_id = uuid.uuid4().hex[:12]
-    event_bus.create(job_id)
-
-    asyncio.create_task(_run_tone_rewrite(job_id, req))
+    event_bus.start(job_id, _run_tone_rewrite(job_id, req), session)
     return {"job_id": job_id}
 
 

@@ -13,28 +13,36 @@
   * POST /api/legal-case: the same, for a case instead of a question
     (legal/pipeline.run_case_turn) -- the answer is a paralegal work file
     ending in a recommended next step, streamed over the same events, so
-    GET /api/legal-events/{job_id} serves both.
+    GET /api/legal-events/{job_id} serves both. A case can come with a whole
+    case folder (`documents`, each uploaded through /api/upload first): every
+    document is read, and analyzed one by one when they don't fit the case
+    file together, before the work file is written from them.
 """
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from docslides.api.events import Event, event_bus
+from docslides.api.events import SESSION_HEADER, Event, event_bus
 from docslides.legal.pipeline import LegalTurnResult, run_case_turn, run_legal_turn
 
 router = APIRouter(prefix="/api", tags=["legal"])
 
 
+class CaseDocument(BaseModel):
+    path: str  # server-side path from a prior /api/upload call
+    name: str  # the file's original name, as the case folder had it
+
+
 class LegalChatRequest(BaseModel):
     messages: list[dict]  # [{"role": "user"|"assistant"|"system", "content": str}]
     attachment_path: str | None = None  # server-side path from a prior /api/upload call
+    documents: list[CaseDocument] | None = None  # a case folder's files (/api/legal-case only)
 
 
 TurnFn = Callable[..., Awaitable[LegalTurnResult]]
@@ -47,7 +55,10 @@ async def _run_turn(job_id: str, req: LegalChatRequest, turn: TurnFn) -> None:
         async def status(message: str) -> None:
             await event_bus.publish_status(job_id, message)
 
-        result = await turn(text, job_id, status, attachment_path=req.attachment_path)
+        kwargs: dict = {"attachment_path": req.attachment_path}
+        if req.documents:
+            kwargs["documents"] = [(d.path, d.name) for d in req.documents]
+        result = await turn(text, job_id, status, **kwargs)
 
         if result.analysis_notes:
             await event_bus.publish(job_id, Event(kind="reasoning_delta", data={"text": result.analysis_notes}))
@@ -71,21 +82,20 @@ async def _run_turn(job_id: str, req: LegalChatRequest, turn: TurnFn) -> None:
         await event_bus.publish_error(job_id, str(exc))
 
 
-def _start(req: LegalChatRequest, turn: TurnFn) -> dict:
+def _start(req: LegalChatRequest, turn: TurnFn, session: str | None) -> dict:
     job_id = uuid.uuid4().hex[:12]
-    event_bus.create(job_id)
-    asyncio.create_task(_run_turn(job_id, req, turn))
+    event_bus.start(job_id, _run_turn(job_id, req, turn), session)
     return {"job_id": job_id}
 
 
 @router.post("/legal-chat")
-async def legal_chat(req: LegalChatRequest) -> dict:
-    return _start(req, run_legal_turn)
+async def legal_chat(req: LegalChatRequest, session: str | None = Header(default=None, alias=SESSION_HEADER)) -> dict:
+    return _start(req, run_legal_turn, session)
 
 
 @router.post("/legal-case")
-async def legal_case(req: LegalChatRequest) -> dict:
-    return _start(req, run_case_turn)
+async def legal_case(req: LegalChatRequest, session: str | None = Header(default=None, alias=SESSION_HEADER)) -> dict:
+    return _start(req, run_case_turn, session)
 
 
 @router.get("/legal-events/{job_id}")

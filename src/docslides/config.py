@@ -34,6 +34,8 @@ class ThinkingDefaults(BaseModel):
     legal_analysis: bool = True
     # Case mode's single call: the work file is free text too, so it can think the same way.
     legal_case_analysis: bool = True
+    # Case mode: one factual digest per case-folder document, when the folder exceeds the case budget.
+    legal_case_document: bool = False
     legal_research_memo: bool = False
     legal_draft: bool = False
     legal_citation_verification: bool = False

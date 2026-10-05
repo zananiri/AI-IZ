@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from docslides.api.routes_chat import router as chat_router
 from docslides.api.routes_legal import router as legal_router
 from docslides.api.routes_pptx import router as pptx_router
+from docslides.api.routes_session import router as session_router
 from docslides.api.routes_upload import router as upload_router
 from docslides.config import get_config
 from docslides.llm.client import aclose_all_clients
@@ -60,6 +61,7 @@ app.include_router(upload_router)
 app.include_router(pptx_router)
 app.include_router(chat_router)
 app.include_router(legal_router)
+app.include_router(session_router)
 
 
 @app.get("/health")

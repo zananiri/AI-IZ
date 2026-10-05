@@ -321,6 +321,29 @@ laws and sections), then searched and reranked the same way as the bulk eval
 (`scripts/legal_data/eval_run.py`). The law PDFs in `legal_txt/` are not used.
 Set `source: "signed_index"` to answer from the signed index below instead.
 
+### Legal tab: analyzing a case folder
+
+Pick **Case analysis** as the Mode and a **📂 Browse case folder** button appears next to it.
+Choose the folder that holds the case's files (subfolders included) and the analysis starts right
+away; anything typed in the message box goes along as the case description. Every PDF, DOCX,
+PPTX, XLSX, image and .txt file in the folder is uploaded (other files are listed as not
+analyzed; at most 25 documents, by name). Each one is then read on the server: parsed, OCR'd and
+cleaned. If they all fit the case file's budget (`legal.pipeline.case_material_max_tokens`) they
+go to the model whole. If not, the model first writes a factual digest of each document (parties,
+key facts, dates, deadlines, amounts) and the work file is written from the digests, so no
+document is dropped (`src/docslides/legal/pipeline.py`, `_case_documents_material`). A file that
+can't be read is named in the work file's notes, and the audit log lists every document and
+digest.
+
+### Refreshing the page stops its running requests
+
+Refreshing or closing the page cancels everything that page still had running on the server:
+chat turns, rewrites, slide and document generation, Legal questions and case analyses. The
+reloaded page then starts fresh. Each request carries the page's session id (the
+`X-Client-Session` header). Gradio's unload event then calls `POST /api/sessions/{session}/cancel`
+(`src/docslides/api/routes_session.py`), which cancels those jobs and with them their in-flight
+calls to the model server.
+
 ### Legal tab: Supreme Court case law
 
 Alongside whichever source answers the question (bulk corpus or signed index), the Legal tab can

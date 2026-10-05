@@ -32,3 +32,13 @@ def test_message_box_stops_glowing_when_the_handler_fails():
         for values in _glow_while_running(handler, [status, box], box)("question"):
             seen.append(values[1]["elem_classes"])
     assert seen == [["chat-input", "ai-working"], ["chat-input", "ai-working"], ["chat-input"]]
+
+
+def test_case_folder_keeps_supported_documents_sorted_and_reports_the_rest(tmp_path):
+    from docslides.ui.gradio_app import _case_folder_documents
+
+    names = ["b.docx", "A.pdf", "notes.md", ".DS_Store", "~$draft.docx", "scan.JPG"]
+    documents, skipped = _case_folder_documents([str(tmp_path / n) for n in names])
+
+    assert [p.rsplit("/", 1)[-1] for p in documents] == ["A.pdf", "b.docx", "scan.JPG"]
+    assert skipped == ["notes.md"]

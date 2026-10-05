@@ -5,12 +5,12 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from docslides.api.events import event_bus, job_outputs
+from docslides.api.events import SESSION_HEADER, event_bus, job_outputs
 from docslides.pipeline.orchestrator import run_pipeline
 
 router = APIRouter(prefix="/api", tags=["pptx"])
@@ -30,15 +30,17 @@ class GenerateRequest(BaseModel):
 
 
 @router.post("/generate")
-async def generate(req: GenerateRequest, background_tasks: BackgroundTasks) -> dict:
+async def generate(req: GenerateRequest, session: str | None = Header(default=None, alias=SESSION_HEADER)) -> dict:
     job_id = uuid.uuid4().hex[:12]
-    event_bus.create(job_id)
 
     async def _run() -> None:
-        output_path = await run_pipeline(job_id, req.file_path, req.target_lang)
+        try:
+            output_path = await run_pipeline(job_id, req.file_path, req.target_lang)
+        except Exception:  # noqa: BLE001 -- run_pipeline already published its own error event
+            return
         job_outputs[job_id] = str(output_path)
 
-    background_tasks.add_task(_run)
+    event_bus.start(job_id, _run(), session)
     return {"job_id": job_id}
 
 

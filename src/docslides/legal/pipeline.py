@@ -1185,13 +1185,80 @@ _ESCALATE_RE = re.compile(r"^[ \t>*_-]*ESCALATE:[ \t]*(.+?)[ \t*_]*$", re.MULTIL
 _ENUMERATOR_RE = re.compile(r"^([ \t]*(?:#+[ \t]*)?(?:[-*][ \t]+)?)\d{1,2}[.)][ \t]+", re.MULTILINE)
 
 
+# One case-folder document's text per digest call: the 16k context also holds the digest itself.
+_CASE_DOCUMENT_INPUT_TOKENS = 6000
+_CASE_DIGEST_MAX_TOKENS = 800  # one document's digest, at most; less when the folder is large
+
+
 async def run_case_turn(
-    case_text: str, job_id: str, status: StatusFn, attachment_path: str | None = None
+    case_text: str,
+    job_id: str,
+    status: StatusFn,
+    attachment_path: str | None = None,
+    documents: list[tuple[str, str]] | None = None,
 ) -> LegalTurnResult:
+    """`documents` are a case folder's files as (server-side path, original name) pairs, read and
+    analyzed alongside `attachment_path` (a single attached document)."""
     with trace.collect(job_id) as calls:
-        result = await _case_turn(case_text, job_id, status, attachment_path)
+        result = await _case_turn(case_text, job_id, status, attachment_path, documents)
     result.llm_calls = calls
     return result
+
+
+async def _case_documents_material(
+    llm: LLMClient, job_id: str, documents: list[tuple[str, str]], status: StatusFn, budget: int, entry: dict
+) -> tuple[str, list[str]]:
+    """The case file's documents as one labelled text, within `budget` tokens, and notes on any that
+    couldn't be read. Each document is extracted (parsing, OCR, cleaning); when they don't fit the
+    budget together, the model first writes a factual digest of each, and the work file is written
+    from the digests instead of a truncated copy that would drop the later documents entirely."""
+    total = len(documents)
+    texts: list[tuple[str, str]] = []
+    notes: list[str] = []
+    log: list[dict] = []
+    for i, (path, name) in enumerate(documents, 1):
+        await status(f"Reading case document {i}/{total}: {name}")
+        try:
+            text, _lang = await extract_document_text(job_id, path)
+        except Exception as exc:  # noqa: BLE001 -- one unreadable file mustn't sink the whole case
+            logger.warning("legal_case_document_unreadable", name=name, error=str(exc))
+            notes.append(f"Case document {name} could not be read: {exc}")
+            log.append({"name": name, "path": path, "error": str(exc)})
+            continue
+        text = text.strip()
+        if not text:
+            notes.append(f"Case document {name} has no readable text")
+            log.append({"name": name, "path": path, "error": "no readable text"})
+            continue
+        texts.append((name, text))
+        log.append({"name": name, "path": path, "tokens": count_tokens(text)})
+    entry["case_documents"] = log
+
+    def labelled(parts: list[tuple[str, str]]) -> str:
+        return "\n\n".join(f"--- Document {n}: {name} ---\n{text}" for n, (name, text) in enumerate(parts, 1))
+
+    whole = labelled(texts)
+    if not texts or count_tokens(whole) <= budget:
+        return whole, notes
+
+    per_document = max(80, min(_CASE_DIGEST_MAX_TOKENS, budget // len(texts)))
+    digests = []
+    for i, (name, text) in enumerate(texts, 1):
+        await status(f"Analyzing case document {i}/{len(texts)}: {name}")
+        attr = name.replace('"', "'")
+        digest = await llm.complete_text(
+            [
+                ChatMessage("system", prompts.case_document_prompt(max_words=int(per_document * 0.6))),
+                ChatMessage("user", f"<document name=\"{attr}\">\n"
+                                    f"{_fit_to_token_budget(text, _CASE_DOCUMENT_INPUT_TOKENS)}\n</document>"),
+            ],
+            LLMCallSite("legal_case_document"),
+            sampling=SamplingParams(temperature=0.2, top_p=0.9, max_tokens=per_document, seed=0),
+            enable_thinking=False,
+        )
+        digests.append((name, digest.strip() or "(no digest could be written for this document)"))
+    entry["case_document_digests"] = [{"name": name, "digest": digest} for name, digest in digests]
+    return labelled(digests), notes
 
 
 async def _verify_case_citations(llm: LLMClient, text: str, retrieval: RetrievalResult) -> list[CitationCheck]:
@@ -1216,18 +1283,33 @@ async def _verify_case_citations(llm: LLMClient, text: str, retrieval: Retrieval
     return checks
 
 
-async def _case_turn(case_text: str, job_id: str, status: StatusFn, attachment_path: str | None) -> LegalTurnResult:
+async def _case_turn(
+    case_text: str,
+    job_id: str,
+    status: StatusFn,
+    attachment_path: str | None,
+    documents: list[tuple[str, str]] | None = None,
+) -> LegalTurnResult:
     cfg = get_config().legal.pipeline
     llm = get_legal_orchestrator_client()
     entry: dict = {"job_id": job_id, "mode": "case", "query": case_text, "orchestrator_model": llm.model,
                    "attachment_path": attachment_path}
 
     material = case_text.strip()
-    if attachment_path:
+    document_notes: list[str] = []
+    if attachment_path and not documents:
         await status("Reading the case documents")
         document_text, _doc_lang = await extract_document_text(job_id, attachment_path)
         material = "\n\n".join(part for part in (material, document_text.strip()) if part)
+    elif documents:
+        if attachment_path:
+            documents = [(attachment_path, Path(attachment_path).name), *documents]
+        budget = max(cfg.case_material_max_tokens // 2, cfg.case_material_max_tokens - count_tokens(material))
+        document_text, document_notes = await _case_documents_material(llm, job_id, documents, status, budget, entry)
+        material = "\n\n".join(part for part in (material, document_text) if part)
     if not material:
+        if document_notes:
+            raise ValueError("None of the case documents could be read: " + "; ".join(document_notes))
         raise ValueError("The case file is empty: describe the case, or attach its documents.")
     material = _fit_to_token_budget(material, cfg.case_material_max_tokens)
     entry["case_material"] = material
@@ -1272,7 +1354,7 @@ async def _case_turn(case_text: str, job_id: str, status: StatusFn, attachment_p
                            "Try again, or shorten the case file.")
 
     reasons: list[str] = []
-    notes: list[str] = []
+    notes: list[str] = list(document_notes)
     if call.get("done_reason") == "length":
         reasons.append("The work file was cut off at the output limit: its last sections may be missing")
     escalations = [m.group(1).strip() for m in _ESCALATE_RE.finditer(work_file)]

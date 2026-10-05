@@ -777,3 +777,82 @@ def test_a_case_escalation_line_becomes_a_reason_and_an_empty_case_is_refused(wi
     assert result.output["escalation_flag"] and "ESCALATE" not in result.output["answer_draft"]
     with pytest.raises(ValueError, match="case file is empty"):
         _run_case("   ", "case2")
+
+
+# --- case folder: every document read, digested one by one when they don't fit together ----------------
+
+CASE_WORK_FILE = (
+    "## 3. השאלות המשפטיות\nמי שהתקשר בחוזה עקב טעות רשאי לבטל את החוזה. "
+    f"[[CITE: source_id={SOURCE} | relation=supports]]\n\nESCALATE: none"
+)
+
+
+def _case_folder(monkeypatch, texts):
+    """Case documents whose extracted text is `texts[name]` (an exception is raised for that file)."""
+
+    async def fake_extract(job_id, path):
+        text = texts[Path(path).name]
+        if isinstance(text, Exception):
+            raise text
+        return text, "he"
+
+    monkeypatch.setattr(pipeline, "extract_document_text", fake_extract)
+    return [(f"/uploads/{name}", name) for name in texts]
+
+
+def _case_llm(digests=()):
+    return FakeClient(
+        "gemma4",
+        json_responses={"legal_citation_verification": [{"verdict": "entailed", "explanation": "14(א)"}]},
+        text_responses={"legal_case_analysis": [CASE_WORK_FILE], "legal_case_document": list(digests)},
+    )
+
+
+def test_a_case_folder_that_fits_goes_to_the_work_file_whole(wire, monkeypatch):
+    documents = _case_folder(monkeypatch, {
+        "contract.pdf": "חוזה מכר מיום 1.8.2026.",
+        "letter.docx": "מכתב התראה מיום 1.9.2026.",
+        "scan.png": RuntimeError("OCR failed"),
+    })
+    llm = _case_llm()
+    wire(llm)
+
+    result = asyncio.run(pipeline.run_case_turn(CASE_TEXT, "folder1", _noop_status, documents=documents))
+
+    assert "legal_case_document" not in llm.names()  # small enough: no digests
+    _, user = next(messages for n, messages in llm.calls if n == "legal_case_analysis")
+    assert (f"<case_file>\n{CASE_TEXT}\n\n--- Document 1: contract.pdf ---\nחוזה מכר מיום 1.8.2026.\n\n"
+            "--- Document 2: letter.docx ---\nמכתב התראה מיום 1.9.2026.\n</case_file>") in user.content
+    assert result.notes[0] == "Case document scan.png could not be read: OCR failed"
+    assert [d["name"] for d in _audit(result)["case_documents"]] == ["contract.pdf", "letter.docx", "scan.png"]
+
+
+def test_a_large_case_folder_is_digested_document_by_document(wire, monkeypatch):
+    monkeypatch.setattr(get_config().legal.pipeline, "case_material_max_tokens", 400)
+    documents = _case_folder(monkeypatch, {"a.pdf": "סעיף ארוך. " * 400, "b.pdf": "מכתב ארוך. " * 400})
+    statuses = []
+
+    async def status(message):
+        statuses.append(message)
+
+    llm = _case_llm(digests=["חוזה מכר בין א' לב'.", "מכתב התראה מיום 1.9.2026."])
+    wire(llm)
+
+    result = asyncio.run(pipeline.run_case_turn("", "folder2", status, documents=documents))
+
+    assert llm.names()[:3] == ["legal_case_document", "legal_case_document", "legal_case_analysis"]
+    first = next(messages for n, messages in llm.calls if n == "legal_case_document")
+    assert first[1].content.startswith('<document name="a.pdf">\nסעיף ארוך.')
+    _, user = next(messages for n, messages in llm.calls if n == "legal_case_analysis")
+    assert ("<case_file>\n--- Document 1: a.pdf ---\nחוזה מכר בין א' לב'.\n\n"
+            "--- Document 2: b.pdf ---\nמכתב התראה מיום 1.9.2026.\n</case_file>") in user.content
+    assert "Analyzing case document 2/2: b.pdf" in statuses
+    assert len(_audit(result)["case_document_digests"]) == 2
+
+
+def test_a_case_folder_with_nothing_readable_says_why(wire, monkeypatch):
+    documents = _case_folder(monkeypatch, {"blank.pdf": "   "})
+    wire(_case_llm())
+
+    with pytest.raises(ValueError, match="None of the case documents could be read: Case document blank.pdf"):
+        asyncio.run(pipeline.run_case_turn("", "folder3", _noop_status, documents=documents))

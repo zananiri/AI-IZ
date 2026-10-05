@@ -44,9 +44,9 @@ def _is_rtl_lang(lang: str | None) -> bool:
 APP_CSS = """
 /* While a tab's request runs, only the LLM status box above its input glows
    (General: above the message box; Legal: above the Mode box). */
-.llm-status-general, .llm-status-legal { position: relative; }
-.gradio-container:has(#general-msg.ai-working) .llm-status-general::after,
-.gradio-container:has(#legal-msg.ai-working) .llm-status-legal::after {
+.block.llm-status-general, .block.llm-status-legal { position: relative; }
+.gradio-container:has(#general-msg.ai-working) .block.llm-status-general::after,
+.gradio-container:has(#legal-msg.ai-working) .block.llm-status-legal::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   border: 2px solid var(--color-accent); border-radius: inherit;
   box-shadow: 0 0 12px 2px rgba(249, 115, 22, .5);
@@ -55,7 +55,7 @@ APP_CSS = """
 }
 @keyframes ai-working-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) {
-  .llm-status-general::after, .llm-status-legal::after { animation: none !important; }
+  .block.llm-status-general::after, .block.llm-status-legal::after { animation: none !important; }
 }
 /* The Legal tab's sources summary above the chat history: orange italics. */
 .legal-sources, .legal-sources * { color: #f97316 !important; font-style: italic !important; }
@@ -602,8 +602,8 @@ def build_legal_tab() -> None:
             gr.Markdown(_legal_sources_summary(), elem_classes=["legal-sources"])
             legal_chatbot = gr.Chatbot(label="Legal Assistant", elem_classes=["chat-log"])
             legal_llm_status = gr.Markdown(
-        value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-general"]
-    )
+                value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-legal"]
+            )
             legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
             legal_mode = gr.Radio(
                 [LEGAL_MODE_QUESTION, LEGAL_MODE_CASE],

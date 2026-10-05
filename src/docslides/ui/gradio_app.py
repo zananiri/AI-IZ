@@ -16,6 +16,9 @@ from __future__ import annotations
 import functools
 import json
 import os
+import re
+import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import gradio as gr
@@ -618,6 +621,67 @@ def send_legal_message(
     yield from _stream_legal_job(job_id, history)
 
 
+def _message_text(content) -> str:
+    """A chat message's text, whether Gradio holds it as a string or a list of parts."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        return str(content.get("text") or "")
+    if isinstance(content, (list, tuple)):
+        return "\n".join(_message_text(part) for part in content)
+    return ""
+
+
+def _add_markdown_runs(paragraph, text: str) -> None:
+    """Adds `text` to `paragraph`, turning Markdown **bold** into bold runs."""
+    for i, part in enumerate(re.split(r"\*\*(.+?)\*\*", text)):
+        if part:
+            paragraph.add_run(part).bold = i % 2 == 1
+
+
+def save_case_analysis_docx(history: list):
+    """Saves the latest assistant reply in the Legal tab (the case analysis work file) as a Word
+    document and returns it for download. Markdown headings, bullet/numbered lists and bold are
+    kept; a right-to-left reply (Hebrew, Arabic) is laid out right-to-left."""
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+
+    reply = next(
+        (_message_text(m.get("content")) for m in reversed(history or []) if m.get("role") == "assistant"), ""
+    ).strip()
+    if not reply:
+        raise gr.Error("There is no analysis to save yet.")
+
+    rtl = _is_rtl_lang(detect_language(reply[:500]))
+    doc = Document()
+    for line in reply.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if heading := re.match(r"^(#{1,6})\s+(.*)$", stripped):
+            paragraph = doc.add_heading(level=min(len(heading.group(1)), 4))
+            _add_markdown_runs(paragraph, heading.group(2).strip())
+        elif bullet := re.match(r"^[-*•]\s+(.*)$", stripped):
+            paragraph = doc.add_paragraph(style="List Bullet")
+            _add_markdown_runs(paragraph, bullet.group(1))
+        elif numbered := re.match(r"^\d+[.)]\s+(.*)$", stripped):
+            paragraph = doc.add_paragraph(style="List Number")
+            _add_markdown_runs(paragraph, numbered.group(1))
+        else:
+            paragraph = doc.add_paragraph()
+            _add_markdown_runs(paragraph, stripped)
+        if rtl:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            paragraph._p.get_or_add_pPr().append(paragraph._p.makeelement(qn("w:bidi"), {}))
+            for run in paragraph.runs:
+                run._r.get_or_add_rPr().append(run._r.makeelement(qn("w:rtl"), {}))
+
+    path = Path(tempfile.mkdtemp()) / f"case_analysis_{datetime.now():%Y%m%d_%H%M%S}.docx"
+    doc.save(path)
+    return gr.update(value=str(path), visible=True)
+
+
 # The file types a case folder's documents can be -- the same ones the 📎 button accepts (api/routes_upload.py).
 _CASE_FILE_TYPES = (".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt")
 # Each document gets a share of the case file's token budget (legal/pipeline._case_documents_material):
@@ -762,6 +826,9 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
                 elem_id="legal-msg",
                 elem_classes=_IDLE_CLASSES,
             )
+            with gr.Row():
+                save_docx_button = gr.Button("💾 Save analysis as Word", variant="secondary", scale=0)
+                docx_file = gr.File(label="Word document", visible=False, interactive=False)
         with gr.Column(scale=1):
             gr.Markdown("### Citations")
             citations_panel = gr.Markdown(value="_No citations yet._")
@@ -780,6 +847,7 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
         inputs=[case_folder_button, legal_msg_box, legal_chatbot, model_size_selector],
         outputs=send_outputs,
     )
+    save_docx_button.click(fn=save_case_analysis_docx, inputs=legal_chatbot, outputs=docx_file)
 
 
 def build_status_tab(tab: gr.Tab) -> None:

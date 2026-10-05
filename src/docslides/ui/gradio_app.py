@@ -192,18 +192,19 @@ def _cutoff_markdown(size: str | None) -> str:
 
 
 def build_model_size_selector() -> gr.Radio:
-    """The 12B/31B choice at the top of the page, shared by the General and Legal tabs: every
-    request either tab sends runs on the picked size's models (config.model_sizes)."""
+    """The LLM 12 Billion / LLM 31 Billion choice at the top of the page, shared by the General and
+    Legal tabs: every request either tab sends runs on the picked size's models (config.model_sizes).
+    Shows each size's label, never a model name; the value sent with requests is its key ("12B")."""
     cfg = get_config()
     sizes = list(cfg.model_sizes)
     default = cfg.default_model_size if cfg.default_model_size in sizes else (sizes[0] if sizes else None)
     selectable = _sizes_selectable()
     return gr.Radio(
-        sizes,
+        [(choice.label or key, key) for key, choice in cfg.model_sizes.items()],
         value=default,
-        label="Model size (parameters)",
-        info="Used by General GPT and Legal GPT. 12B answers faster and needs less memory; 31B is the "
-        "larger, more capable model." if selectable else f"Fixed: the vLLM server serves one model ({cfg.llm.model}).",
+        label="Model size",
+        info="Used by General GPT and Legal GPT. The smaller model answers faster and needs less memory; "
+        "the larger one is more capable." if selectable else "Fixed: the server runs a single model.",
         interactive=selectable,
         elem_id="model-size",
     )

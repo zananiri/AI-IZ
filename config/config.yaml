@@ -42,10 +42,12 @@ llm:
 # Ollama's "model not found -- try pulling it first".
 model_sizes:
   "12B":
+    label: "LLM 12 Billion"   # what the selector shows -- no model names
     model: "gemma4:12b"
     translator_model: "translategemma:12b"
     knowledge_cutoff: "January 2025"
   "31B":
+    label: "LLM 31 Billion"
     model: "gemma4:31b"
     translator_model: "translategemma:27b"
     knowledge_cutoff: "January 2025"

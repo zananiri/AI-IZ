@@ -425,6 +425,8 @@ class ModelSize(BaseModel):
     picks it (llm/client.py's model_size context). Only applies under the Ollama backend -- vLLM
     serves a single model."""
 
+    # What the selector shows for it -- no model names; None shows the key ("12B").
+    label: str | None = None
     # The general chat and the Legal tab (llm: and legal.orchestrator).
     model: str
     # TranslateGemma for the same requests, when a translator is configured (translation.translator).
@@ -435,8 +437,10 @@ class ModelSize(BaseModel):
 
 def _default_model_sizes() -> dict[str, ModelSize]:
     return {
-        "12B": ModelSize(model="gemma4:12b", translator_model="translategemma:12b", knowledge_cutoff="January 2025"),
-        "31B": ModelSize(model="gemma4:31b", translator_model="translategemma:27b", knowledge_cutoff="January 2025"),
+        "12B": ModelSize(label="LLM 12 Billion", model="gemma4:12b", translator_model="translategemma:12b",
+                         knowledge_cutoff="January 2025"),
+        "31B": ModelSize(label="LLM 31 Billion", model="gemma4:31b", translator_model="translategemma:27b",
+                         knowledge_cutoff="January 2025"),
     }
 
 

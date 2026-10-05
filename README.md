@@ -338,13 +338,14 @@ digest.
 ### Choosing the model size (12B / 31B)
 
 A **Model size** selector at the top of the page, shared by General GPT and Legal GPT, picks the
-model every request from either tab runs on. **12B** is the default. Each size is an entry under
-`model_sizes` in `config/config.yaml`:
+model every request from either tab runs on: **LLM 12 Billion** (the default) or **LLM 31 Billion**.
+The page shows only those labels, never model names. Each size is an entry under `model_sizes` in
+`config/config.yaml` (its key, `12B` / `31B`, is what requests carry):
 
-| Size | Chat and Legal model | Translation model | Knowledge cutoff |
-|---|---|---|---|
-| 12B | `gemma4:12b` | `translategemma:12b` | January 2025 |
-| 31B | `gemma4:31b` | `translategemma:27b` | January 2025 |
+| Size | Shown as | Chat and Legal model | Translation model | Knowledge cutoff |
+|---|---|---|---|---|
+| 12B | LLM 12 Billion | `gemma4:12b` | `translategemma:12b` | January 2025 |
+| 31B | LLM 31 Billion | `gemma4:31b` | `translategemma:27b` | January 2025 |
 
 The choice travels with each request (`model_size`) and is applied per job by
 `src/docslides/llm/client.py` (`model_size()`), so two users can run different sizes at the same

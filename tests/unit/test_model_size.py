@@ -38,7 +38,7 @@ def test_the_selector_is_on_top_of_both_tabs_and_defaults_to_12b(monkeypatch):
     monkeypatch.setattr(get_config().llm, "backend", "ollama")
     demo = gradio_app.build_app()
     selector = next(b for b in demo.blocks.values() if getattr(b, "elem_id", None) == "model-size")
-    assert (selector.choices, selector.value, selector.interactive) == ([("12B", "12B"), ("31B", "31B")], "12B", True)
+    assert (selector.choices, selector.value, selector.interactive) == ([("LLM 12 Billion", "12B"), ("LLM 31 Billion", "31B")], "12B", True)
     # An input to every send: the General chat, the rewrite, the Legal question and the case folder.
     sends = [dep for dep in demo.fns.values() if selector._id in [i._id for i in dep.inputs] and len(dep.inputs) > 1]
     assert len(sends) == 4

@@ -46,8 +46,7 @@ def _is_rtl_lang(lang: str | None) -> bool:
 # from Send until the answer is done. Passed as `css=` wherever the app is
 # served (run() below, and api/main.py's mount).
 APP_CSS = """
-/* While a tab's request runs, only the LLM status box above its input glows
-   (General: above the message box; Legal: above the Mode box). */
+/* While a tab's request runs, its chat box glows (the status shows in the chat itself). */
 .block.llm-status-general, .block.llm-status-legal { position: relative; }
 .gradio-container:has(#general-msg.ai-working) .block.llm-status-general::after,
 .gradio-container:has(#legal-msg.ai-working) .block.llm-status-legal::after {
@@ -397,9 +396,9 @@ def build_chat_tab(model_size_selector: gr.Radio) -> None:
     # Gemma 4's training-data cutoff, so users know how current its knowledge is.
     cutoff = gr.Markdown(_cutoff_markdown(model_size_selector.value), elem_classes=["llm-cutoff"])
     model_size_selector.change(fn=_cutoff_markdown, inputs=model_size_selector, outputs=cutoff)
-    chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log"])
+    chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log", "llm-status-general"])
     llm_status = gr.Markdown(
-        value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-general"]
+        value="_Idle_", label="LLM status", show_label=True, container=True, visible=False
     )
     reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
 
@@ -790,9 +789,9 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
     with gr.Row():
         with gr.Column(scale=3):
             gr.Markdown(_legal_sources_summary(), elem_classes=["legal-sources"])
-            legal_chatbot = gr.Chatbot(label="Legal Assistant", elem_classes=["chat-log"])
+            legal_chatbot = gr.Chatbot(label="Legal Assistant", elem_classes=["chat-log", "llm-status-legal"])
             legal_llm_status = gr.Markdown(
-                value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-legal"]
+                value="_Idle_", label="LLM status", show_label=True, container=True, visible=False
             )
             legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
             with gr.Row(equal_height=True):

@@ -48,6 +48,7 @@ Module layout (`src/docslides/`):
 | `translation/` | Per-chunk translation via TranslateGemma, with a Gemma 4-built glossary |
 | `llm/` | Dual-backend chat client (vLLM OpenAI-compatible API or Ollama's native API), guided-JSON schemas, prompts |
 | `slides/` | Two-stage outline/fill generation, PPTX building, explicit RTL OOXML handling |
+| `documents/` | Excel / PowerPoint / PDF generation from a chat request: Gemma 4 writes a guided-JSON spec, openpyxl / python-pptx / PyMuPDF render it |
 | `tone/` | Reusable tone-control component (professionalism + creativity sliders) for any rewrite request |
 | `pipeline/` | End-to-end orchestration with SSE status events |
 | `api/` | FastAPI backend: upload, generation job kickoff, SSE streaming, chat, tone-rewrite |
@@ -123,6 +124,38 @@ If an OCR engine fails to load or crashes (e.g. surya-ocr missing or an incompat
 version), the router logs `ocr_engine_failed` and moves on to the next engine for that
 language (Hebrew: Surya -> Tesseract `heb` -> PaddleOCR-VL); a page only fails when every
 engine in its chain does.
+
+## Generating Excel, PowerPoint and PDF files
+
+Ask the General tab's chat (Clara) for a file and it comes back as a download link:
+"create an Excel budget for a 3-day trip to Rome", "make a presentation about solar energy",
+"write a PDF report summarizing this" (with a 📎 attachment, the file is built from the
+document). The chat's intent classifier (`ChatIntent.document_format`) decides which file was
+asked for; `src/docslides/documents/generator.py` does the rest:
+
+1. **Gemma 4 writes the content as structured JSON** -- `SpreadsheetSpec` (sheets, header row,
+   numeric cells, `=SUM(...)`-style formulas), `PresentationSpec` (titled slides with bullets,
+   speaker notes and layouts) or `PdfSpec` (sections with paragraphs, bullets and tables) in
+   `src/docslides/llm/schemas.py`. The schema is enforced by guided decoding -- xgrammar under
+   vLLM serving the Hugging Face checkpoint `google/gemma-4-31B-it`, a JSON Schema `format`
+   under Ollama -- with the client's validate-and-retry on top.
+2. **A deterministic builder renders it**: openpyxl (`documents/xlsx_builder.py`: bold frozen
+   header, auto-filter, numbers stored as numbers, column widths, right-to-left sheets for
+   Hebrew/Arabic), python-pptx through the slide pipeline's own `slides/pptx_builder.py` (so the
+   configured `.potx` template and RTL handling apply, plus a title slide), and PyMuPDF's HTML
+   Story engine (`documents/pdf_builder.py`: multi-page A4 layout with tables, shaping and
+   right-to-left text from MuPDF's bundled Noto fonts).
+
+The model never emits file bytes or code, so every file opens cleanly and nothing it generates is
+executed -- and all of it runs offline on libraries already in the core dependencies
+(`openpyxl`, `python-pptx`, `PyMuPDF`); there is nothing extra to install. Hugging Face's
+`transformers.pipeline` has no task that writes Office or PDF files: the model's job is the
+content, served from the same Hugging Face Gemma 4 checkpoint the rest of the app uses. Files go
+to `paths.output_dir` and download from `/api/download/{job_id}`.
+
+A deck from an *attached* document still goes through the full slide pipeline (translate ->
+outline -> fill). Generated files are written directly in the requested language, since each
+spec is one structured reply rather than prose TranslateGemma can translate chunk by chunk.
 
 ## Setup
 

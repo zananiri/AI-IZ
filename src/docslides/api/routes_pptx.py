@@ -1,4 +1,4 @@
-"""PPTX generation job kickoff, live status stream, and download."""
+"""PPTX generation job kickoff, live status stream, and download of any generated file."""
 
 from __future__ import annotations
 
@@ -14,6 +14,14 @@ from docslides.api.events import event_bus, job_outputs
 from docslides.pipeline.orchestrator import run_pipeline
 
 router = APIRouter(prefix="/api", tags=["pptx"])
+
+# /api/download serves every generated file: slide-pipeline decks and the chat's
+# documents/generator.py output alike.
+_MEDIA_TYPES = {
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pdf": "application/pdf",
+}
 
 
 class GenerateRequest(BaseModel):
@@ -47,5 +55,5 @@ async def download(job_id: str) -> FileResponse:
     return FileResponse(
         path=output_path,
         filename=Path(output_path).name,
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        media_type=_MEDIA_TYPES.get(Path(output_path).suffix.lower(), "application/octet-stream"),
     )

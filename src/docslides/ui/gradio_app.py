@@ -179,6 +179,9 @@ def _upload_file(file_path: str) -> dict:
     return {"path": data["file_path"], "name": data["original_filename"]}
 
 
+_FILE_KINDS = {".pptx": "presentation", ".xlsx": "Excel workbook", ".pdf": "PDF"}
+
+
 def _stream_job(job_id: str, history: list, rtl_hint: bool):
     """`history` must already include the user's turn as the last entry, in
     Gradio's "messages" format (`gr.Chatbot` in Gradio 6.x only accepts
@@ -228,7 +231,8 @@ def _stream_job(job_id: str, history: list, rtl_hint: bool):
                         output_path = data.get("output_path")
                         if output_path:
                             download_url = f"{API_BASE_URL}/api/download/{job_id}"
-                            content_text = f"Your presentation is ready: [Download {Path(output_path).name}]({download_url})"
+                            kind = _FILE_KINDS.get(Path(output_path).suffix.lower(), "file")
+                            content_text = f"Your {kind} is ready: [Download {Path(output_path).name}]({download_url})"
                             started_streaming = True
                         llm_status = "✅ Done"
                     elif event_kind == "error":
@@ -334,8 +338,9 @@ def build_chat_tab() -> None:
         label="Message",
         # Same size as the Legal tab's box, so the send arrow looks the same; it grows as text comes in.
         max_lines=24,
-        placeholder='Ask a question, paste a large block of text to rewrite/translate/summarize, or say '
-        '"make this into a presentation" -- attach a document (PDF, DOCX, PPTX, XLSX, image, or .txt) instead with the 📎 button',
+        placeholder='Ask a question, paste a large block of text to rewrite/translate/summarize, or ask for '
+        'a file -- "make this into a presentation", "create an Excel budget for...", "write a PDF report on..." '
+        '-- attach a document (PDF, DOCX, PPTX, XLSX, image, or .txt) instead with the 📎 button',
         # .txt matters here beyond ordinary file attachments: pasting a
         # large enough block of text makes the browser/Gradio turn the
         # paste itself into a text/plain file attachment instead of

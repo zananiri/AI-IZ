@@ -134,6 +134,7 @@ class LLMCallSite:
         "slide_fill",
         "translation",
         "chat_general",
+        "document_generation",
         "tone_rewrite",
         "chunk_summary",
         "legal_language_id",

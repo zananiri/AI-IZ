@@ -27,6 +27,7 @@ llm:
     slide_fill: false
     translation: false
     chat_general: true
+    document_generation: false
     tone_rewrite: true
     chunk_summary: false
   default_sampling:

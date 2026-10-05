@@ -24,6 +24,8 @@ class ThinkingDefaults(BaseModel):
     slide_fill: bool = False
     translation: bool = False
     chat_general: bool = True
+    # Generated files (documents/): one guided-JSON spec, so no reasoning competes with the grammar.
+    document_generation: bool = False
     tone_rewrite: bool = True
     chunk_summary: bool = False
     legal_language_id: bool = False

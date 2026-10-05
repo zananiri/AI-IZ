@@ -2,8 +2,10 @@
 rewrite.
 
 Every chat turn is first classified by Gemma 4: does it want a PowerPoint deck
-generated, the text itself translated, and in which language should the reply
-be? A chat turn may carry an `attachment_path` (a file already uploaded via
+generated from an attached document, another file generated (an Excel
+workbook, a PowerPoint deck from the request alone, or a PDF -- see
+documents/generator.py), the text itself translated, and in which language
+should the reply be? A chat turn may carry an `attachment_path` (a file already uploaded via
 /api/upload), whose extracted text is the material; otherwise the material is
 whatever the user pasted. Slide requests go to the full pipeline (translate ->
 outline -> fill -> PPTX assembly). Translation always goes through
@@ -32,6 +34,7 @@ from docslides.api.events import Event, event_bus, job_outputs
 from docslides.cleaning.chunking import chunk_document
 from docslides.cleaning.tokens import count_tokens
 from docslides.config import get_config
+from docslides.documents.generator import FORMAT_LABELS, build_document, generate_spec
 from docslides.ingestion.language_detect import detect_language
 from docslides.llm.client import (
     ChatMessage,
@@ -120,7 +123,10 @@ async def _classify_intent(client, user_message: str, has_attachment: bool) -> C
                 content=(
                     f"{material} Decide whether they explicitly asked for a PowerPoint / slide deck / "
                     "presentation to be generated from an attached document -- translation, rewriting, "
-                    "summarizing, or answering questions are NOT slide requests. Separately, decide "
+                    "summarizing, or answering questions are NOT slide requests. Decide which file, if "
+                    "any, they asked you to create: an Excel workbook / spreadsheet (xlsx), a "
+                    "PowerPoint / slides / presentation (pptx) or a PDF document / report (pdf); a "
+                    "question about a file, or a request for text in the chat, is 'none'. Separately, decide "
                     "whether they asked for the text itself (the attached document, or the text pasted "
                     "in the message) to be translated; a summary or answer in another language is NOT "
                     "a translation request. Extract the language they want the reply in as an ISO "
@@ -206,6 +212,32 @@ async def _publish_translated(
     await _stream_translation(job_id, client, text, written_in, target_lang)
 
 
+def _requested_file(intent: ChatIntent, has_attachment: bool) -> str | None:
+    """The file format to generate with documents/generator.py, if any. A deck from an attached
+    document is not one of them: it goes through the full slide pipeline instead."""
+    fmt = intent.document_format
+    if fmt == "none" and intent.wants_slides and not has_attachment:
+        fmt = "pptx"
+    if fmt == "pptx" and has_attachment:
+        return None
+    return None if fmt == "none" else fmt
+
+
+async def _generate_file(
+    job_id: str, client, fmt: str, request: str, lang: str, document_text: str | None
+) -> None:
+    label = FORMAT_LABELS[fmt]
+    await event_bus.publish_status(job_id, f"Writing the {label} ({LANGUAGE_NAMES.get(lang, lang)})")
+    if document_text:
+        budget = int(get_config().llm.max_model_len * _ATTACHMENT_CONTEXT_TOKEN_FRACTION)
+        document_text = _fit_to_token_budget(document_text, budget)
+    spec = await generate_spec(client, fmt, request, lang, _IDENTITY_PROMPT, document_text)
+    await event_bus.publish_status(job_id, f"Building the {label}")
+    output_path = build_document(spec, fmt, lang, job_id)
+    job_outputs[job_id] = str(output_path)
+    await event_bus.publish_done(job_id, output_path=str(output_path))
+
+
 async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
     client = get_client()
     try:
@@ -213,11 +245,17 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
         await event_bus.publish_status(job_id, "Reading your request")
         intent = await _classify_intent(client, user_message, has_attachment=bool(req.attachment_path))
         target_lang = intent.target_lang
+        file_format = _requested_file(intent, has_attachment=bool(req.attachment_path))
 
         if req.attachment_path:
             document_text, doc_lang = await extract_document_text(job_id, req.attachment_path)
 
-            if intent.wants_slides:
+            if file_format:
+                lang = target_lang or doc_lang or "en"
+                await _generate_file(job_id, client, file_format, user_message, lang, document_text)
+                return
+
+            if intent.wants_slides or intent.document_format == "pptx":
                 slides_lang = target_lang or doc_lang or "en"
                 await event_bus.publish_status(
                     job_id, f"Generating a presentation (target language: {slides_lang})"
@@ -253,6 +291,11 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
                 *[ChatMessage(role=m["role"], content=m["content"]) for m in req.messages],
             ]
         else:
+            if file_format:
+                lang = target_lang or detect_language(user_message) or "en"
+                await _generate_file(job_id, client, file_format, user_message, lang, None)
+                return
+
             if intent.wants_translation and target_lang:
                 text = _text_to_translate(user_message, intent.instruction)
                 if text:

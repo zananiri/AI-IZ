@@ -68,14 +68,26 @@ class ChunkSummary(BaseModel):
     key_points: list[str] = Field(default_factory=list)
 
 
+DocumentFormat = Literal["none", "xlsx", "pptx", "pdf"]
+
+
 class ChatIntent(BaseModel):
-    """Classifies a chat turn: a slide deck (the dedicated pipeline), a
+    """Classifies a chat turn: a slide deck (the dedicated pipeline), another
+    generated file (Excel workbook, PowerPoint deck or PDF -- documents/), a
     translation of the text itself (TranslateGemma), or a normal reply -- and
     the language the reply should be in, which TranslateGemma renders when it
     differs from the material's. See api/routes_chat.py."""
 
     wants_slides: bool = Field(
         description="True only if the user explicitly asked for a PowerPoint/slide deck/presentation"
+    )
+    document_format: DocumentFormat = Field(
+        default="none",
+        description=(
+            "The file the user asked to be generated: 'xlsx' for an Excel workbook / spreadsheet, "
+            "'pptx' for a PowerPoint / slide deck / presentation, 'pdf' for a PDF document or "
+            "report; 'none' when they did not ask for a file"
+        ),
     )
     wants_translation: bool = Field(
         default=False,
@@ -96,6 +108,55 @@ class ChatIntent(BaseModel):
             "German:'); otherwise empty"
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Generated documents (documents/): Gemma 4 writes the content as one of these
+# specs, and a deterministic builder renders it -- openpyxl for .xlsx,
+# python-pptx for .pptx, PyMuPDF for .pdf.
+# ---------------------------------------------------------------------------
+
+CellValue = str | float | None
+
+
+class SheetSpec(BaseModel):
+    name: str = Field(description="Worksheet tab name, at most 31 characters")
+    columns: list[str] = Field(description="Header row; the data rows start on row 2")
+    rows: list[list[CellValue]] = Field(
+        description=(
+            "Data rows, one value per column. Numbers as numbers; a string starting with '=' is an "
+            "Excel formula (e.g. '=SUM(B2:B6)'), with the header on row 1"
+        )
+    )
+
+
+class SpreadsheetSpec(BaseModel):
+    title: str
+    sheets: list[SheetSpec] = Field(min_length=1)
+
+
+class PresentationSpec(BaseModel):
+    title: str
+    subtitle: str = ""
+    slides: list[SlideContent] = Field(min_length=1)
+
+
+class TableSpec(BaseModel):
+    columns: list[str]
+    rows: list[list[str]]
+
+
+class PdfSection(BaseModel):
+    heading: str
+    paragraphs: list[str] = Field(default_factory=list)
+    bullets: list[str] = Field(default_factory=list)
+    table: TableSpec | None = None
+
+
+class PdfSpec(BaseModel):
+    title: str
+    subtitle: str = ""
+    sections: list[PdfSection] = Field(min_length=1)
 
 
 LegalSourceType = Literal["statute", "regulation", "ruling", "uploaded_document"]
@@ -344,6 +405,9 @@ SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "translated_chunk": TranslatedChunk,
     "chunk_summary": ChunkSummary,
     "chat_intent": ChatIntent,
+    "spreadsheet_spec": SpreadsheetSpec,
+    "presentation_spec": PresentationSpec,
+    "pdf_spec": PdfSpec,
     "research_memorandum": ResearchMemorandum,
     "legal_draft": LegalDraft,
     "entailment_verdict": EntailmentVerdict,

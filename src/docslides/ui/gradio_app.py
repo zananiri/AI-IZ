@@ -61,6 +61,8 @@ APP_CSS = """
 @media (prefers-reduced-motion: reduce) {
   .block.llm-status-general::after, .block.llm-status-legal::after { animation: none !important; }
 }
+/* The General tab's LLM cutoff line above the chat: one point bigger. */
+.llm-cutoff, .llm-cutoff * { font-size: calc(var(--text-md, 14px) + 1pt) !important; }
 /* The Legal tab's sources summary above the chat history: orange italics. */
 .legal-sources, .legal-sources * { color: #f97316 !important; font-style: italic !important; }
 /* Both chat tabs' send arrow: orange, and two text rows taller (growing
@@ -392,14 +394,14 @@ def send_tone_rewrite(
 
 
 def build_chat_tab(model_size_selector: gr.Radio) -> None:
+    # Gemma 4's training-data cutoff, so users know how current its knowledge is.
+    cutoff = gr.Markdown(_cutoff_markdown(model_size_selector.value), elem_classes=["llm-cutoff"])
+    model_size_selector.change(fn=_cutoff_markdown, inputs=model_size_selector, outputs=cutoff)
     chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log"])
     llm_status = gr.Markdown(
         value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-general"]
     )
     reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
-    # Gemma 4's training-data cutoff, so users know how current its knowledge is.
-    cutoff = gr.Markdown(_cutoff_markdown(model_size_selector.value))
-    model_size_selector.change(fn=_cutoff_markdown, inputs=model_size_selector, outputs=cutoff)
 
     msg_box = gr.MultimodalTextbox(
         label="Message",
@@ -870,9 +872,8 @@ def build_status_tab(tab: gr.Tab) -> None:
 
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="AI Workbench - Ibrahim Z.") as demo:
-        with gr.Row(equal_height=True):
-            gr.Markdown("# AI Workbench - Ibrahim Z.")
-            model_size_selector = build_model_size_selector()
+        gr.Markdown("# AI Workbench - Ibrahim Z.")
+        model_size_selector = build_model_size_selector()
         with gr.Tabs():
             with gr.Tab("General GPT"):
                 build_chat_tab(model_size_selector)

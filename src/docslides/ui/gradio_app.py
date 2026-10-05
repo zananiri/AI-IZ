@@ -826,10 +826,9 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
                 elem_id="legal-msg",
                 elem_classes=_IDLE_CLASSES,
             )
-            with gr.Row():
-                save_docx_button = gr.Button("💾 Save analysis as Word", variant="secondary", scale=0)
-                docx_file = gr.File(label="Word document", visible=False, interactive=False)
         with gr.Column(scale=1):
+            save_docx_button = gr.Button("💾 Save analysis as Word", variant="secondary")
+            docx_file = gr.File(label="Word document", visible=False, interactive=False)
             gr.Markdown("### Citations")
             citations_panel = gr.Markdown(value="_No citations yet._")
             with gr.Accordion("Research memorandum (Pass A)", open=False):

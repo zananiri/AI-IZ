@@ -420,8 +420,31 @@ class VLLMLaunchConfig(BaseModel):
     port: int = 8000
 
 
+class ModelSize(BaseModel):
+    """One choice in the UI's model-size selector: the Ollama tags a request runs on when the user
+    picks it (llm/client.py's model_size context). Only applies under the Ollama backend -- vLLM
+    serves a single model."""
+
+    # The general chat and the Legal tab (llm: and legal.orchestrator).
+    model: str
+    # TranslateGemma for the same requests, when a translator is configured (translation.translator).
+    translator_model: str | None = None
+    # Shown above the General tab's chat box.
+    knowledge_cutoff: str | None = None
+
+
+def _default_model_sizes() -> dict[str, ModelSize]:
+    return {
+        "12B": ModelSize(model="gemma4:12b", translator_model="translategemma:12b", knowledge_cutoff="January 2025"),
+        "27B": ModelSize(model="gemma3:27b", translator_model="translategemma:27b", knowledge_cutoff="August 2024"),
+    }
+
+
 class AppConfig(BaseModel):
     llm: LLMConfig
+    # The model-size selector above the tabs, its choices in order; default_model_size is preselected.
+    model_sizes: dict[str, ModelSize] = Field(default_factory=_default_model_sizes)
+    default_model_size: str = "12B"
     legal: LegalConfig
     legal_data: LegalDataConfig = Field(default_factory=LegalDataConfig)
     vllm_launch: VLLMLaunchConfig = Field(default_factory=VLLMLaunchConfig)

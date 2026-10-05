@@ -41,6 +41,7 @@ from docslides.llm.client import (
     SamplingParams,
     get_client,
     get_translator_client,
+    model_size,
 )
 from docslides.llm.prompts import LANGUAGE_NAMES
 from docslides.llm.schemas import ChatIntent
@@ -80,6 +81,7 @@ def _fit_to_token_budget(text: str, max_tokens: int) -> str:
 class ChatRequest(BaseModel):
     messages: list[dict]  # [{"role": "user"|"assistant"|"system", "content": str}]
     attachment_path: str | None = None  # server-side path from a prior /api/upload call
+    model_size: str | None = None  # the UI's model-size choice (config.model_sizes); None = the configured models
 
 
 class ToneRewriteRequest(BaseModel):
@@ -88,6 +90,7 @@ class ToneRewriteRequest(BaseModel):
     task_description: str = "Rewrite the following text."
     professionalism: int
     creativity: int
+    model_size: str | None = None  # the UI's model-size choice (config.model_sizes); None = the configured models
 
 
 # Long pasted text: the classifier sees its start and end, where the instruction usually sits.
@@ -411,7 +414,8 @@ async def _run_tone_rewrite(job_id: str, req: ToneRewriteRequest) -> None:
 @router.post("/chat")
 async def chat(req: ChatRequest, session: str | None = Header(default=None, alias=SESSION_HEADER)) -> dict:
     job_id = uuid.uuid4().hex[:12]
-    event_bus.start(job_id, _run_chat_turn(job_id, req), session)
+    with model_size(req.model_size):  # the job's task inherits it
+        event_bus.start(job_id, _run_chat_turn(job_id, req), session)
     return {"job_id": job_id}
 
 
@@ -420,7 +424,8 @@ async def tone_rewrite(
     req: ToneRewriteRequest, session: str | None = Header(default=None, alias=SESSION_HEADER)
 ) -> dict:
     job_id = uuid.uuid4().hex[:12]
-    event_bus.start(job_id, _run_tone_rewrite(job_id, req), session)
+    with model_size(req.model_size):
+        event_bus.start(job_id, _run_tone_rewrite(job_id, req), session)
     return {"job_id": job_id}
 
 

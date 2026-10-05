@@ -189,3 +189,51 @@ def test_output_room_is_what_the_cap_leaves(ollama):
     room = ollama.output_room(long_prompt)
     assert room == ollama._fit_context(long_prompt, SamplingParams(max_tokens=8000)).max_tokens
     assert ollama.output_room([ChatMessage("user", "א" * 30000)]) < 0  # the cap still leaves 256
+
+
+def test_the_picked_model_size_switches_every_ollama_deployment(monkeypatch):
+    """The UI's 12B/27B selector (config.model_sizes): within model_size(...), and in tasks started
+    inside it, the general, Legal and translator clients talk to that size's tags."""
+    from docslides.config import LLMConfig
+    from docslides.llm import client as llm_client
+
+    cfg = get_config()
+    ollama_cfg = LLMConfig(backend="ollama", base_url="http://localhost:1", model="gemma4:31b")
+    monkeypatch.setattr(cfg, "llm", ollama_cfg)
+    monkeypatch.setattr(cfg.legal, "orchestrator", ollama_cfg)
+    monkeypatch.setattr(cfg.translation, "translator", ollama_cfg.model_copy(update={"model": "translategemma:27b"}))
+    monkeypatch.setattr(llm_client, "_clients", {})
+
+    def models():
+        return (llm_client.get_client()._llm_cfg.model, llm_client.get_legal_orchestrator_client()._llm_cfg.model,
+                llm_client.get_translator_client()._llm_cfg.model)
+
+    assert models() == ("gemma4:31b", "gemma4:31b", "translategemma:27b")  # no size picked: as configured
+    with llm_client.model_size("12B"):
+        assert models() == ("gemma4:12b", "gemma4:12b", "translategemma:12b")
+
+        async def in_a_task():
+            return models()
+
+        async def start():
+            task = asyncio.create_task(in_a_task())  # started inside the block, as the API routes do
+            return task
+
+        loop = asyncio.new_event_loop()
+        task = loop.run_until_complete(start())
+    assert loop.run_until_complete(task) == ("gemma4:12b", "gemma4:12b", "translategemma:12b")
+    loop.close()
+    with llm_client.model_size("27B"):
+        assert models() == ("gemma3:27b", "gemma3:27b", "translategemma:27b")
+    with llm_client.model_size("70B"):  # not a configured size
+        assert models()[0] == "gemma4:31b"
+    assert llm_client.get_client() is llm_client.get_client()  # one client per tag, reused
+
+
+def test_a_vllm_server_keeps_its_one_model_whatever_size_is_picked(monkeypatch):
+    from docslides.llm import client as llm_client
+
+    monkeypatch.setattr(get_config().llm, "backend", "vllm")
+    monkeypatch.setattr(llm_client, "_clients", {})
+    with llm_client.model_size("27B"):
+        assert llm_client.get_client()._llm_cfg.model == get_config().llm.model

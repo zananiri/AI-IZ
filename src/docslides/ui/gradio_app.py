@@ -178,6 +178,37 @@ def _reset_session(request: gr.Request) -> None:
         pass
 
 
+def _sizes_selectable() -> bool:
+    """The model-size selector switches models per request only under Ollama; a vLLM server serves
+    a single model (llm/client.py's _sized)."""
+    return get_config().llm.backend == "ollama" and len(get_config().model_sizes) > 1
+
+
+def _cutoff_markdown(size: str | None) -> str:
+    """The knowledge cutoff above the General tab's chat box: the picked size's model's, or Gemma 4's
+    (the model vLLM serves)."""
+    choice = get_config().model_sizes.get(size or "") if _sizes_selectable() else None
+    return f"**LLM cutoff date:** {(choice and choice.knowledge_cutoff) or 'January 2025'}"
+
+
+def build_model_size_selector() -> gr.Radio:
+    """The 12B/27B choice at the top of the page, shared by the General and Legal tabs: every
+    request either tab sends runs on the picked size's models (config.model_sizes)."""
+    cfg = get_config()
+    sizes = list(cfg.model_sizes)
+    default = cfg.default_model_size if cfg.default_model_size in sizes else (sizes[0] if sizes else None)
+    selectable = _sizes_selectable()
+    return gr.Radio(
+        sizes,
+        value=default,
+        label="Model size (parameters)",
+        info="Used by General GPT and Legal GPT. 12B answers faster and needs less memory; 27B is the "
+        "larger model." if selectable else f"Fixed: the vLLM server serves one model ({cfg.llm.model}).",
+        interactive=selectable,
+        elem_id="model-size",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Chat tab (documents, translation, rewriting, and slide generation all go
 # through here -- see module docstring)
@@ -274,7 +305,7 @@ def _stream_job(job_id: str, history: list, rtl_hint: bool):
                         break  # after the yield, so the final status or error still shows
 
 
-def send_chat_message(message: dict, history: list, request: gr.Request = None):
+def send_chat_message(message: dict, history: list, size: str | None = None, request: gr.Request = None):
     """`message` is a `gr.MultimodalTextbox` payload: `{"text": str, "files":
     [local_path, ...]}`. Attachments are picked via that box's own attach
     button rather than a separate upload widget, and are per-message (no
@@ -303,6 +334,7 @@ def send_chat_message(message: dict, history: list, request: gr.Request = None):
     }
     if attachment:
         payload["attachment_path"] = attachment["path"]
+    payload["model_size"] = size
 
     with httpx.Client(timeout=60) as client:
         resp = client.post(f"{API_BASE_URL}/api/chat", json=payload, headers=_session_headers(request))
@@ -313,7 +345,12 @@ def send_chat_message(message: dict, history: list, request: gr.Request = None):
 
 
 def send_tone_rewrite(
-    message: dict, professionalism: int, creativity: int, history: list, request: gr.Request = None
+    message: dict,
+    professionalism: int,
+    creativity: int,
+    history: list,
+    size: str | None = None,
+    request: gr.Request = None,
 ):
     """Rewrites whatever is in the same message box used for regular chat --
     typed/pasted text, or a file attached via its 📎 button (extracted
@@ -337,6 +374,7 @@ def send_tone_rewrite(
         "text": text,
         "professionalism": professionalism,
         "creativity": creativity,
+        "model_size": size,
     }
     if attachment:
         payload["attachment_path"] = attachment["path"]
@@ -349,14 +387,15 @@ def send_tone_rewrite(
     yield from _stream_job(job_id, history, rtl_hint=False)
 
 
-def build_chat_tab() -> None:
+def build_chat_tab(model_size_selector: gr.Radio) -> None:
     chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log"])
     llm_status = gr.Markdown(
         value="_Idle_", label="LLM status", show_label=True, container=True, elem_classes=["llm-status-general"]
     )
     reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
     # Gemma 4's training-data cutoff, so users know how current its knowledge is.
-    gr.Markdown("**LLM cutoff date:** January 2025")
+    cutoff = gr.Markdown(_cutoff_markdown(model_size_selector.value))
+    model_size_selector.change(fn=_cutoff_markdown, inputs=model_size_selector, outputs=cutoff)
 
     msg_box = gr.MultimodalTextbox(
         label="Message",
@@ -397,10 +436,10 @@ def build_chat_tab() -> None:
 
     chat_outputs = [chatbot, reasoning_panel, msg_box, llm_status]
     send = _glow_while_running(send_chat_message, chat_outputs, msg_box)
-    msg_box.submit(fn=send, inputs=[msg_box, chatbot], outputs=chat_outputs)
+    msg_box.submit(fn=send, inputs=[msg_box, chatbot, model_size_selector], outputs=chat_outputs)
     rewrite_btn.click(
         fn=_glow_while_running(send_tone_rewrite, chat_outputs, msg_box),
-        inputs=[msg_box, professionalism_slider, creativity_slider, chatbot],
+        inputs=[msg_box, professionalism_slider, creativity_slider, chatbot, model_size_selector],
         outputs=chat_outputs,
     )
 
@@ -535,7 +574,9 @@ LEGAL_MODE_QUESTION = "Question"
 LEGAL_MODE_CASE = "Case analysis"
 
 
-def send_legal_message(message: dict, mode: str, history: list, request: gr.Request = None):
+def send_legal_message(
+    message: dict, mode: str, history: list, size: str | None = None, request: gr.Request = None
+):
     """`message` is a `gr.MultimodalTextbox` payload: `{"text": str, "files":
     [local_path, ...]}` -- an attached document (contract, filing, any file
     the chat tab accepts) is uploaded the same way as there. In question mode
@@ -563,7 +604,7 @@ def send_legal_message(message: dict, mode: str, history: list, request: gr.Requ
         content = text  # empty is fine: the attached documents are then the whole case file
     else:
         content = text or f"(No question -- I just attached {attachment['name'] if attachment else 'a file'}. Review it against the applicable Israeli law.)"
-    payload: dict = {"messages": [{"role": "user", "content": content}]}
+    payload: dict = {"messages": [{"role": "user", "content": content}], "model_size": size}
     if attachment:
         payload["attachment_path"] = attachment["path"]
 
@@ -593,7 +634,9 @@ def _case_folder_documents(files: list) -> tuple[list[str], list[str]]:
     return documents, skipped
 
 
-def send_case_folder(files: list, message: dict | None, history: list, request: gr.Request = None):
+def send_case_folder(
+    files: list, message: dict | None, history: list, size: str | None = None, request: gr.Request = None
+):
     """A case folder picked with the 📂 button next to the Mode selector (case mode only): every
     supported document in it is uploaded and the case is analyzed at once -- the backend reads each
     document, digests them one by one when they don't fit the case file together, and writes the
@@ -622,6 +665,7 @@ def send_case_folder(files: list, message: dict | None, history: list, request: 
     payload = {
         "messages": [{"role": "user", "content": text}],
         "documents": [{"path": u["path"], "name": u["name"] or Path(p).name} for u, p in zip(uploaded, documents)],
+        "model_size": size,
     }
     with httpx.Client(timeout=60) as client:
         resp = client.post(f"{API_BASE_URL}/api/legal-case", json=payload, headers=_session_headers(request))
@@ -664,7 +708,7 @@ def _corpus_summary(stats: dict | None) -> str:
     )
 
 
-def build_legal_tab() -> None:
+def build_legal_tab(model_size_selector: gr.Radio) -> None:
     legal = get_config().legal
     source = (
         f"legal corpus ({', '.join(legal.corpus.categories)})"
@@ -723,7 +767,7 @@ def build_legal_tab() -> None:
             with gr.Accordion("Research memorandum (Pass A)", open=False):
                 memo_view = gr.JSON(value=None, label="Claims → evidence")
 
-    send_inputs = [legal_msg_box, legal_mode, legal_chatbot]
+    send_inputs = [legal_msg_box, legal_mode, legal_chatbot, model_size_selector]
     send_outputs = [legal_chatbot, legal_reasoning_panel, legal_msg_box, citations_panel, legal_llm_status, memo_view]
     send = _glow_while_running(send_legal_message, send_outputs, legal_msg_box)
     legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
@@ -732,7 +776,7 @@ def build_legal_tab() -> None:
     )
     case_folder_button.upload(
         fn=_glow_while_running(send_case_folder, send_outputs, legal_msg_box),
-        inputs=[case_folder_button, legal_msg_box, legal_chatbot],
+        inputs=[case_folder_button, legal_msg_box, legal_chatbot, model_size_selector],
         outputs=send_outputs,
     )
 
@@ -758,12 +802,14 @@ def build_status_tab(tab: gr.Tab) -> None:
 
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="AI Workbench - Ibrahim Z.") as demo:
-        gr.Markdown("# AI Workbench - Ibrahim Z.")
+        with gr.Row(equal_height=True):
+            gr.Markdown("# AI Workbench - Ibrahim Z.")
+            model_size_selector = build_model_size_selector()
         with gr.Tabs():
             with gr.Tab("General GPT"):
-                build_chat_tab()
+                build_chat_tab(model_size_selector)
             with gr.Tab("Legal GPT"):
-                build_legal_tab()
+                build_legal_tab(model_size_selector)
             with gr.Tab("System status") as status_tab:
                 build_status_tab(status_tab)
         # Refreshing or closing the page stops whatever it left running on the server.

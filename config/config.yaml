@@ -35,6 +35,22 @@ llm:
     top_p: 0.92
     max_tokens: 2048
 
+# The model-size selector above the tabs (General GPT and Legal GPT): each choice is the Ollama tag
+# the general chat and the Legal tab run on, and the TranslateGemma tag that translates for them.
+# Under vLLM, which serves one model, the selector shows but is disabled. scripts/setup.* pull the
+# tags of every size the host has memory for; a size whose model isn't pulled answers with
+# Ollama's "model not found -- try pulling it first".
+model_sizes:
+  "12B":
+    model: "gemma4:12b"
+    translator_model: "translategemma:12b"
+    knowledge_cutoff: "January 2025"
+  "27B":
+    model: "gemma3:27b"
+    translator_model: "translategemma:27b"
+    knowledge_cutoff: "August 2024"
+default_model_size: "12B"
+
 legal:
   # Legal tab: grounded RAG over Israeli law (src/docslides/legal/). Gemma 4
   # researches (Pass A memorandum), drafts (Pass B), runs every

@@ -28,7 +28,9 @@ import dataclasses
 import json
 import re
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -619,48 +621,67 @@ class LLMClient:
                 break
 
 
-_client_singleton: LLMClient | None = None
-_legal_orchestrator_singleton: LLMClient | None = None
-_translator_singleton: LLMClient | None = None
+# The model size the current request asked for (the UI's 12B/27B selector, config.model_sizes), or
+# None for the configured models. Set by the API routes around the job they start: asyncio tasks
+# copy the context they're created in, so everything the job does sees it.
+_model_size: ContextVar[str | None] = ContextVar("model_size", default=None)
+# One client per (deployment, model tag): each size gets its own, created on first use.
+_clients: dict[tuple[str, str], LLMClient] = {}
+
+
+@contextmanager
+def model_size(size: str | None) -> Iterator[None]:
+    """Within this block (and in tasks started inside it) get_client, get_legal_orchestrator_client
+    and get_translator_client talk to `size`'s models. An unknown size or None keeps the
+    configured models."""
+    token = _model_size.set(size)
+    try:
+        yield
+    finally:
+        _model_size.reset(token)
+
+
+def _sized(llm_cfg: LLMConfig, translator: bool = False) -> LLMConfig:
+    """`llm_cfg` with the model of the size the current request picked. Ollama only: a vLLM
+    server serves one model, whatever the request names."""
+    size = get_config().model_sizes.get(_model_size.get() or "")
+    if size is None or llm_cfg.backend != "ollama":
+        return llm_cfg
+    tag = size.translator_model if translator else size.model
+    return llm_cfg.model_copy(update={"model": tag}) if tag else llm_cfg
+
+
+def _client_for(deployment: str, llm_cfg: LLMConfig) -> LLMClient:
+    key = (deployment, llm_cfg.model)
+    if key not in _clients:
+        _clients[key] = LLMClient(llm_cfg)
+    return _clients[key]
 
 
 def get_client() -> LLMClient:
-    global _client_singleton
-    if _client_singleton is None:
-        _client_singleton = LLMClient()
-    return _client_singleton
+    return _client_for("general", _sized(get_config().llm))
 
 
 def get_legal_orchestrator_client() -> LLMClient:
-    """Gemma 4: the Legal tab's research, drafting and verification model. See
+    """The Legal tab's research, drafting and verification model (Gemma). See
     legal/pipeline.py."""
-    global _legal_orchestrator_singleton
-    if _legal_orchestrator_singleton is None:
-        _legal_orchestrator_singleton = LLMClient(get_config().legal.orchestrator)
-    return _legal_orchestrator_singleton
+    return _client_for("legal_orchestrator", _sized(get_config().legal.orchestrator))
 
 
 def get_translator_client() -> LLMClient | None:
     """TranslateGemma, the dedicated translation model (config translation.translator), or None
     when none is configured -- then the general model translates on its own. See
     translation/translator.py."""
-    global _translator_singleton
     translator_cfg = get_config().translation.translator
     if translator_cfg is None:
         return None
-    if _translator_singleton is None:
-        _translator_singleton = LLMClient(translator_cfg)
-    return _translator_singleton
+    return _client_for("translator", _sized(translator_cfg, translator=True))
 
 
 async def aclose_all_clients() -> None:
-    """Closes whichever of the above singletons were actually instantiated,
+    """Closes whichever of the above clients were actually instantiated,
     without creating new ones just to close them -- called once at app
     shutdown (see api/main.py's lifespan)."""
-    for client in (
-        _client_singleton,
-        _legal_orchestrator_singleton,
-        _translator_singleton,
-    ):
-        if client is not None:
-            await client.aclose()
+    for client in list(_clients.values()):
+        await client.aclose()
+    _clients.clear()

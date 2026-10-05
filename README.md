@@ -335,6 +335,25 @@ document is dropped (`src/docslides/legal/pipeline.py`, `_case_documents_materia
 can't be read is named in the work file's notes, and the audit log lists every document and
 digest.
 
+### Choosing the model size (12B / 27B)
+
+A **Model size** selector at the top of the page, shared by General GPT and Legal GPT, picks the
+model every request from either tab runs on. **12B** is the default. Each size is an entry under
+`model_sizes` in `config/config.yaml`:
+
+| Size | Chat and Legal model | Translation model | Knowledge cutoff |
+|---|---|---|---|
+| 12B | `gemma4:12b` | `translategemma:12b` | January 2025 |
+| 27B | `gemma3:27b` | `translategemma:27b` | August 2024 |
+
+The choice travels with each request (`model_size`) and is applied per job by
+`src/docslides/llm/client.py` (`model_size()`), so two users can run different sizes at the same
+time. It needs the Ollama backend: vLLM serves a single model, so under vLLM the selector is shown
+but disabled. `scripts/setup.*` pull the 12B tags when the host has 12GB+ of RAM and the 27B tags
+with 32GB+. A size whose model isn't pulled answers with Ollama's "model not found" error;
+`ollama pull <tag>` fixes it. To make the larger option Gemma 4 31B instead, set its `model` to
+`gemma4:31b` (and rename the key, e.g. `"31B"`).
+
 ### Refreshing the page stops its running requests
 
 Refreshing or closing the page cancels everything that page still had running on the server:

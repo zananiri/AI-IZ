@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from docslides.api.events import SESSION_HEADER, event_bus, job_outputs
+from docslides.llm.client import model_size
 from docslides.pipeline.orchestrator import run_pipeline
 
 router = APIRouter(prefix="/api", tags=["pptx"])
@@ -27,6 +28,7 @@ _MEDIA_TYPES = {
 class GenerateRequest(BaseModel):
     file_path: str
     target_lang: str
+    model_size: str | None = None  # the UI's model-size choice (config.model_sizes); None = the configured models
 
 
 @router.post("/generate")
@@ -40,7 +42,8 @@ async def generate(req: GenerateRequest, session: str | None = Header(default=No
             return
         job_outputs[job_id] = str(output_path)
 
-    event_bus.start(job_id, _run(), session)
+    with model_size(req.model_size):
+        event_bus.start(job_id, _run(), session)
     return {"job_id": job_id}
 
 

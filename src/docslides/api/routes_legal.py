@@ -30,6 +30,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from docslides.api.events import SESSION_HEADER, Event, event_bus
 from docslides.legal.pipeline import LegalTurnResult, run_case_turn, run_legal_turn
+from docslides.llm.client import model_size
 
 router = APIRouter(prefix="/api", tags=["legal"])
 
@@ -43,6 +44,7 @@ class LegalChatRequest(BaseModel):
     messages: list[dict]  # [{"role": "user"|"assistant"|"system", "content": str}]
     attachment_path: str | None = None  # server-side path from a prior /api/upload call
     documents: list[CaseDocument] | None = None  # a case folder's files (/api/legal-case only)
+    model_size: str | None = None  # the UI's model-size choice (config.model_sizes); None = the configured models
 
 
 TurnFn = Callable[..., Awaitable[LegalTurnResult]]
@@ -84,7 +86,8 @@ async def _run_turn(job_id: str, req: LegalChatRequest, turn: TurnFn) -> None:
 
 def _start(req: LegalChatRequest, turn: TurnFn, session: str | None) -> dict:
     job_id = uuid.uuid4().hex[:12]
-    event_bus.start(job_id, _run_turn(job_id, req, turn), session)
+    with model_size(req.model_size):  # the job's task inherits it
+        event_bus.start(job_id, _run_turn(job_id, req, turn), session)
     return {"job_id": job_id}
 
 

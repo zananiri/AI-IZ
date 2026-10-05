@@ -225,7 +225,12 @@ else
       echo "       and reopen the app) so OLLAMA_MAX_LOADED_MODELS=1, OLLAMA_FLASH_ATTENTION=1"
       echo "       and OLLAMA_KV_CACHE_TYPE=q8_0 take effect."
     fi
-    for tag in "$OLLAMA_MODEL" "$OLLAMA_TRANSLATE_MODEL"; do
+    # The model-size selector above the tabs (config.yaml model_sizes): the 12B tags wherever they
+    # fit, the 27B ones with 32GB+ of RAM (both when the RAM couldn't be read).
+    SIZE_TAGS=()
+    if [ "$TOTAL_RAM_GB" -eq 0 ] || [ "$TOTAL_RAM_GB" -ge 12 ]; then SIZE_TAGS+=("gemma4:12b" "translategemma:12b"); fi
+    if [ "$TOTAL_RAM_GB" -eq 0 ] || [ "$TOTAL_RAM_GB" -ge 32 ]; then SIZE_TAGS+=("gemma3:27b" "translategemma:27b"); fi
+    for tag in $(printf '%s\n' "$OLLAMA_MODEL" "$OLLAMA_TRANSLATE_MODEL" ${SIZE_TAGS[@]+"${SIZE_TAGS[@]}"} | awk '!seen[$0]++'); do
       echo "Pulling $tag (this is a large download, comparable to the vLLM weights)..."
       ollama pull "$tag" || {
         echo "[warn] 'ollama pull $tag' failed. Check the exact tag at"

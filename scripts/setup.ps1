@@ -341,7 +341,12 @@ if ($Backend -eq "vllm") {
                 try { Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2 | Out-Null; $ollamaUp = $true } catch {}
             }
         }
-        foreach ($tag in @($OllamaModel, $OllamaTranslateModel)) {
+        # The model-size selector above the tabs (config.yaml model_sizes): the 12B tags wherever
+        # they fit, the 27B ones with 32GB+ of RAM (both when the RAM couldn't be read).
+        $sizeTags = @()
+        if ($TotalRamGB -eq 0 -or $TotalRamGB -ge 12) { $sizeTags += @("gemma4:12b", "translategemma:12b") }
+        if ($TotalRamGB -eq 0 -or $TotalRamGB -ge 32) { $sizeTags += @("gemma3:27b", "translategemma:27b") }
+        foreach ($tag in (@($OllamaModel, $OllamaTranslateModel) + $sizeTags | Select-Object -Unique)) {
             Write-Host "Pulling $tag (this is a large download, comparable to the vLLM weights)..."
             ollama pull $tag
             if ($LASTEXITCODE -ne 0) {

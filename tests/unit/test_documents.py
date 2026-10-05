@@ -119,6 +119,24 @@ def test_which_requests_generate_a_file(intent, has_attachment, expected):
     assert rc._requested_file(intent, has_attachment) == expected
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            "create an excel sheet to calculate the daily income and calculate the VAT, in addition to "
+            "tips which do not add to the VAT and calculated at the end of the month",
+            "xlsx",
+        ),
+        ("Make me a spreadsheet for my monthly budget", "xlsx"),
+        ("please generate a PDF report on solar energy", "pdf"),
+        ("How do I sum a column in Excel?", None),
+        ("Summarize this:\n" + "x " * 200 + "create an excel sheet", None),
+    ],
+)
+def test_explicit_file_request_fallback(message, expected):
+    assert rc._explicit_file_format(message) == expected
+
+
 class FakeGemma:
     def __init__(self, intent: ChatIntent) -> None:
         self.intent = intent

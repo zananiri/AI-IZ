@@ -22,6 +22,7 @@ UI only needs one event handler -- see ui/gradio_app.py's `_stream_job`.
 
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 
@@ -214,6 +215,31 @@ async def _publish_translated(
     await _stream_translation(job_id, client, text, written_in, target_lang)
 
 
+# A plain "create an Excel sheet ..." request the classifier still labelled 'none': the opening of
+# the message asks to create/make/... a named file type. Only the opening is checked, so a word
+# like "excel" inside a block of pasted text does not turn it into a file request.
+_FILE_REQUEST_HEAD_CHARS = 300
+_FILE_REQUEST_PATTERNS = {
+    fmt: re.compile(
+        r"\b(create|make|generate|build|prepare|produce|export|give me|i need|send me)\b[^.?!\n]*?\b(" + words + r")\b",
+        re.IGNORECASE,
+    )
+    for fmt, words in {
+        "xlsx": r"excel|xlsx|spreadsheets?|workbook",
+        "pdf": r"pdf",
+        "pptx": r"powerpoint|pptx|presentation|slide ?deck|slides",
+    }.items()
+}
+
+
+def _explicit_file_format(message: str) -> str | None:
+    head = message[:_FILE_REQUEST_HEAD_CHARS]
+    for fmt, pattern in _FILE_REQUEST_PATTERNS.items():
+        if pattern.search(head):
+            return fmt
+    return None
+
+
 def _requested_file(intent: ChatIntent, has_attachment: bool) -> str | None:
     """The file format to generate with documents/generator.py, if any. A deck from an attached
     document is not one of them: it goes through the full slide pipeline instead."""
@@ -246,6 +272,10 @@ async def _run_chat_turn(job_id: str, req: ChatRequest) -> None:
         user_message = req.messages[-1]["content"] if req.messages and req.messages[-1]["role"] == "user" else ""
         await event_bus.publish_status(job_id, "Reading your request")
         intent = await _classify_intent(client, user_message, has_attachment=bool(req.attachment_path))
+        if intent.document_format == "none" and not intent.wants_slides:
+            fallback = _explicit_file_format(user_message)
+            if fallback:
+                intent = intent.model_copy(update={"document_format": fallback})
         target_lang = intent.target_lang
         file_format = _requested_file(intent, has_attachment=bool(req.attachment_path))
 

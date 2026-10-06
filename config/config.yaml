@@ -134,6 +134,13 @@ legal:
     # the draft both start from. Budget = thinking + notes.
     analysis_pass: true
     analysis_max_tokens: 4096
+    # Per orchestrator model (name exactly as configured), only on a machine without an NVIDIA GPU
+    # (no nvidia-smi): replaces the settings above. Kaggle/Colab GPU evals keep the full pipeline.
+    cpu_model_overrides:
+      "gemma4:12b":              # Ollama on the CPU (~2-4 tokens/s): no Pass 0, no revisions
+        analysis_pass: false
+        max_memo_revisions: 0
+        max_draft_revisions: 0
   audit_dir: "./data/legal/audit"
   # Evals only: the grading model (legal/evaluation.get_judge_client), on the orchestrator's Ollama.
   # The family under test (gemma) never grades itself. DOCSLIDES_LEGAL_JUDGE_MODEL overrides it;

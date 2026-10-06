@@ -9,12 +9,13 @@ stays language- and environment-agnostic.
 from __future__ import annotations
 
 import os
+import shutil
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 DEFAULT_CONFIG_PATH = Path(os.environ.get("DOCSLIDES_CONFIG", "config/config.yaml"))
 
@@ -169,6 +170,11 @@ class LegalPipelineConfig(BaseModel):
     # evidence and that budget fit the orchestrator's max_model_len together.
     case_max_tokens: int = 6144
     case_material_max_tokens: int = 3000
+    # Orchestrator model name (exactly as configured, e.g. "gemma4:12b") -> pipeline settings that
+    # replace the ones above while that model runs the Legal tab on a machine without an NVIDIA GPU
+    # (no nvidia-smi): a CPU-only Ollama. GPU runs -- the Kaggle/Colab evals of the same model --
+    # keep the full pipeline. LegalConfig applies them.
+    cpu_model_overrides: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class LegalCorpusConfig(BaseModel):
@@ -294,6 +300,13 @@ class LegalConfig(BaseModel):
     # by itself. None = the orchestrator grades its own answers.
     # DOCSLIDES_LEGAL_JUDGE_MODEL overrides it.
     judge_model: str | None = "gpt-oss:20b"
+
+    @model_validator(mode="after")
+    def _apply_cpu_model_overrides(self) -> LegalConfig:
+        overrides = self.pipeline.cpu_model_overrides.get(self.orchestrator.model)
+        if overrides and shutil.which("nvidia-smi") is None:
+            self.pipeline = LegalPipelineConfig.model_validate({**self.pipeline.model_dump(), **overrides})
+        return self
 
 
 class LegalDataSourcesConfig(BaseModel):

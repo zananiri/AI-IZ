@@ -195,3 +195,80 @@ def test_index_search_and_answer_end_to_end(case_folder, monkeypatch):
     assert {r.rel_path: r.action for r in case_files.index_folder()}["Estate of Mizrahi/will.txt"] == "missing"
     assert {r.rel_path: r.action for r in case_files.index_folder(prune=True)}["Estate of Mizrahi/will.txt"] == "pruned"
     assert case_files.matters() == ["Cohen v. Levi"]
+
+
+class _FakeLLM:
+    model = "fake"
+
+    def __init__(self):
+        self.messages = None
+
+    async def complete_text(self, messages, call_site, sampling=None, enable_thinking=None):
+        self.messages = messages
+        return "The defence blames a strike at Haifa port [1]."
+
+
+def test_chat_turn_for_the_legal_tab_cites_files_and_follows_up(case_folder, monkeypatch, tmp_path):
+    import docslides.llm.client as client
+    from docslides.api import routes_legal
+
+    llm = _FakeLLM()
+    monkeypatch.setattr(client, "get_legal_orchestrator_client", lambda: llm)
+    monkeypatch.setattr(get_config().legal, "audit_dir", str(tmp_path / "audit"))
+    case_files.index_folder()
+    statuses = []
+
+    async def status(message):
+        statuses.append(message)
+
+    messages = [{"role": "user", "content": "What does the claim say?"},
+                {"role": "assistant", "content": "500 steel beams were ordered [1]."}]
+    result = asyncio.run(routes_legal._case_files_turn("And the defence? strike port", "job1", status,
+                                                        "Cohen v. Levi", messages))
+    assert result.display_answer.endswith("[1].") and not result.escalation_reasons
+    note = result.footnotes[0]
+    assert note["kind"] == "case_file" and note["matter"] == "Cohen v. Levi" and note["where"].startswith("Cohen v. Levi/")
+    assert [m.role for m in llm.messages] == ["system", "user", "assistant", "user"]  # the earlier turn is kept
+    assert statuses == ["Searching the case files of Cohen v. Levi"]
+    assert (tmp_path / "audit").exists()
+
+
+def test_search_sees_chunks_another_process_indexed(case_folder):
+    import json
+    import subprocess
+    import sys
+
+    case_files.index_folder()
+    assert case_files.search(["zebra crossing accident"])  # opens (and caches) this process's client
+    vector = _fake_embed(["zebra crossing accident witness"])[0].tolist()
+    vectordb = get_config().legal.case_files.vectordb_dir
+    script = f"""
+import chromadb, json, os, pathlib
+c = chromadb.PersistentClient(path={vectordb!r}).get_or_create_collection("case_files", embedding_function=None)
+c.upsert(ids=["other:0"], embeddings=[json.loads({json.dumps(json.dumps(vector))})],
+         documents=["zebra crossing accident witness"],
+         metadatas=[{{"matter": "Cohen v. Levi", "file": "x.txt", "file_id": "other", "chunk_index": 0, "chunk_count": 1}}])
+state = pathlib.Path({vectordb!r}) / "_case_files_state.sqlite"
+os.utime(state, ns=(state.stat().st_atime_ns, state.stat().st_mtime_ns + 10**9))
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)
+    hits = case_files.search(["zebra crossing accident witness"])
+    assert "other:0" in [h.chunk_id for h in hits]
+
+
+def test_legal_tab_case_files_history_and_footnotes():
+    from docslides.ui import gradio_app as ui
+
+    history = [
+        {"role": "user", "content": "⚖️ a question in Question mode"},
+        {"role": "assistant", "content": "law answer"},
+        {"role": "user", "content": f"{ui._FILES_MARKER} -- Cohen v. Levi\n\nWhen was notice sent?"},
+        {"role": "assistant", "content": f"On 5 March 2024 [1].\n\n_note_\n\n{ui._LEGAL_DISCLAIMER}"},
+    ]
+    assert ui._case_files_history(history) == [
+        {"role": "user", "content": "When was notice sent?"},
+        {"role": "assistant", "content": "On 5 March 2024 [1]."},
+    ]
+    rendered = ui._format_legal_footnotes([{"number": 1, "kind": "case_file", "where": "Cohen v. Levi/a.pdf, p. 3",
+                                            "doc_type": "e-mail", "matter": "Cohen v. Levi", "excerpt": "Notice\nsent"}])
+    assert rendered.startswith("**[1]** Cohen v. Levi/a.pdf, p. 3") and "> Notice sent" in rendered

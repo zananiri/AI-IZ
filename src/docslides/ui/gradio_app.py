@@ -468,6 +468,11 @@ def _format_legal_footnotes(footnotes: list[dict]) -> str:
         return "_No citations yet._"
     entries = []
     for note in footnotes:
+        if note.get("kind") == "case_file":  # Case files chat: a passage of the attorney's own files
+            details = " · ".join(p for p in (note.get("doc_type"), note.get("matter"), note.get("doc_date")) if p)
+            quote = " ".join((note.get("excerpt") or "").split())
+            entries.append(f"**[{note['number']}]** {note.get('where', '')}  \n_{details}_  \n> {quote}")
+            continue
         law_section = f"{note.get('law', '')} — {note.get('section', '')}"
         details = " · ".join(
             part
@@ -577,10 +582,73 @@ def _stream_legal_job(job_id: str, history: list):
 
 LEGAL_MODE_QUESTION = "Question"
 LEGAL_MODE_CASE = "Case analysis"
+LEGAL_MODE_FILES = "Case files chat"
+_FILES_MARKER = f"💬 **{LEGAL_MODE_FILES}**"
+_ALL_MATTERS = "All matters"
+
+
+_QUESTION_PLACEHOLDER = (
+    "Ask a question about Israeli law in any language -- answered only from the Israeli laws and procedural "
+    "regulations in the legal corpus, in your language -- or attach a document (PDF, DOCX, PPTX, XLSX, image, "
+    "or .txt) with the 📎 button to have it reviewed against the law"
+)
+_FILES_PLACEHOLDER = (
+    "Ask about the case files in legal_data/ -- facts, dates, who said what, a chronology -- in any language. "
+    "Pick a matter to search only its files; follow-up questions keep the conversation."
+)
+
+
+def _case_file_matters() -> list[str]:
+    """The matters indexed from legal_data/ (api/routes_legal.py), or [] when the API can't say."""
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(f"{API_BASE_URL}/api/case-files/matters")
+            resp.raise_for_status()
+            return resp.json().get("matters", [])
+    except Exception:  # noqa: BLE001 -- the dropdown still offers "All matters"
+        return []
+
+
+def _case_files_history(history: list) -> list[dict]:
+    """The earlier Case files chat turns in the Legal chat, as user/assistant messages: the question
+    without its mode line, the answer without the banner, notes and disclaimer the bubble adds."""
+    messages: list[dict] = []
+    for question, reply in zip(history, history[1:]):
+        q_text = _message_text(question.get("content"))
+        if question.get("role") != "user" or reply.get("role") != "assistant" or not q_text.startswith(_FILES_MARKER):
+            continue
+        q_text = q_text.split("\n\n", 1)[1] if "\n\n" in q_text else ""
+        parts = [part for part in _message_text(reply.get("content")).split("\n\n")
+                 if part.strip() and not part.startswith(("_", "⚠️"))]
+        if q_text.strip() and parts:
+            messages += [{"role": "user", "content": q_text.strip()},
+                         {"role": "assistant", "content": "\n\n".join(parts)}]
+    return messages[-6:]
+
+
+def index_case_files(matter: str | None):
+    """The 🔄 button in Case files chat mode: indexes new and changed files in legal_data/."""
+    gr.Info("Indexing legal_data/ -- new and changed files only. This can take a few minutes.")
+    try:
+        with httpx.Client(timeout=None) as client:
+            resp = client.post(f"{API_BASE_URL}/api/case-files/index")
+            if resp.status_code == 404:
+                raise gr.Error(resp.json().get("detail", "legal_data/ not found"))
+            resp.raise_for_status()
+            summary = resp.json()
+    except httpx.HTTPError as exc:
+        raise gr.Error(f"Indexing failed: {exc}") from exc
+    counts = summary.get("counts", {})
+    gr.Info("Case files: " + (", ".join(f"{n} {action}" for action, n in sorted(counts.items())) or "no files"))
+    for failed in [f for f in summary.get("files", []) if f["action"] in ("failed", "skipped")]:
+        gr.Warning(f"{failed['file']}: {failed['action']} -- {failed['message']}")
+    matters = summary.get("matters", [])
+    return gr.update(choices=[_ALL_MATTERS, *matters], value=matter if matter in matters else _ALL_MATTERS)
 
 
 def send_legal_message(
-    message: dict, mode: str, history: list, size: str | None = None, request: gr.Request = None
+    message: dict, mode: str, history: list, size: str | None = None, matter: str | None = None,
+    request: gr.Request = None,
 ):
     """`message` is a `gr.MultimodalTextbox` payload: `{"text": str, "files":
     [local_path, ...]}` -- an attached document (contract, filing, any file
@@ -593,6 +661,10 @@ def send_legal_message(
     files = message.get("files") or []
     if not text and not files:
         yield history, gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        return
+
+    if mode == LEGAL_MODE_FILES:
+        yield from _send_case_files_question(text, history, size, matter, request)
         return
 
     attachment = _upload_file(files[0]) if files else None
@@ -619,6 +691,25 @@ def send_legal_message(
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
 
+    yield from _stream_legal_job(job_id, history)
+
+
+def _send_case_files_question(text: str, history: list, size: str | None, matter: str | None,
+                              request: gr.Request | None):
+    """Case files chat mode: the question is answered from the attorney's indexed case files
+    (legal_data/, legal/case_files.py), within the picked matter, following up on this mode's
+    earlier turns in the chat. Attachments aren't used in this mode."""
+    if not text:
+        raise gr.Error("Type a question about the case files.")
+    matter = None if matter in (None, "", _ALL_MATTERS) else matter
+    earlier = _case_files_history(history)
+    scope = f" -- {matter}" if matter else ""
+    history = history + [{"role": "user", "content": f"{_FILES_MARKER}{scope}\n\n{text}"}]
+    payload = {"messages": [*earlier, {"role": "user", "content": text}], "model_size": size, "matter": matter}
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(f"{API_BASE_URL}/api/legal-case-files", json=payload, headers=_session_headers(request))
+        resp.raise_for_status()
+        job_id = resp.json()["job_id"]
     yield from _stream_legal_job(job_id, history)
 
 
@@ -796,13 +887,14 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
             legal_reasoning_panel = gr.Textbox(label="Reasoning (model's thinking)", lines=6, visible=False)
             with gr.Row(equal_height=True):
                 legal_mode = gr.Radio(
-                    [LEGAL_MODE_QUESTION, LEGAL_MODE_CASE],
+                    [LEGAL_MODE_QUESTION, LEGAL_MODE_CASE, LEGAL_MODE_FILES],
                     value=LEGAL_MODE_QUESTION,
                     label="Mode",
                     info="Question: a grounded answer with citations. Case analysis: describe the case and/or "
                     "pick its folder with 📂 (or attach a document) -- you get a work file (facts, chronology, "
                     "legal issues, deadlines, red flags, missing information, a draft document and the "
-                    "recommended next step).",
+                    "recommended next step). Case files chat: ask about the case files indexed from "
+                    "legal_data/ -- answers cite file, page and paragraph.",
                     scale=4,
                 )
                 # Case mode only: picks the folder holding the case's files; the analysis starts as soon
@@ -815,12 +907,16 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
                     min_width=160,
                     elem_id="case-folder",
                 )
+                # Case files chat only: which matter (legal_data/ subfolder) to ask about, and a button
+                # that indexes files added to legal_data/ since the last run.
+                matter_dropdown = gr.Dropdown(
+                    [_ALL_MATTERS], value=_ALL_MATTERS, label="Matter", visible=False, scale=2, min_width=180,
+                    allow_custom_value=False,
+                )
+                index_button = gr.Button("🔄 Index legal_data", visible=False, scale=1, min_width=150)
             legal_msg_box = gr.MultimodalTextbox(
                 label="Legal question",
-                placeholder="Ask a question about Israeli law in any language -- answered only from the "
-                "Israeli laws and procedural regulations in the legal corpus, in your language -- or attach "
-                "a document (PDF, DOCX, PPTX, XLSX, image, or .txt) with the 📎 button to have it reviewed "
-                "against the law",
+                placeholder=_QUESTION_PLACEHOLDER,
                 file_types=[".pdf", ".docx", ".pptx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".txt"],
                 file_count="single",
                 sources=["upload"],
@@ -835,13 +931,19 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
             with gr.Accordion("Research memorandum (Pass A)", open=False):
                 memo_view = gr.JSON(value=None, label="Claims → evidence")
 
-    send_inputs = [legal_msg_box, legal_mode, legal_chatbot, model_size_selector]
+    send_inputs = [legal_msg_box, legal_mode, legal_chatbot, model_size_selector, matter_dropdown]
     send_outputs = [legal_chatbot, legal_reasoning_panel, legal_msg_box, citations_panel, legal_llm_status, memo_view]
     send = _glow_while_running(send_legal_message, send_outputs, legal_msg_box)
     legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
-    legal_mode.change(
-        fn=lambda mode: gr.update(visible=mode == LEGAL_MODE_CASE), inputs=legal_mode, outputs=case_folder_button
-    )
+    def on_mode(mode: str):
+        files = mode == LEGAL_MODE_FILES
+        matters = gr.update(visible=True, choices=[_ALL_MATTERS, *_case_file_matters()]) if files else gr.update(visible=False)
+        box = gr.update(placeholder=_FILES_PLACEHOLDER if files else _QUESTION_PLACEHOLDER)
+        return gr.update(visible=mode == LEGAL_MODE_CASE), matters, gr.update(visible=files), box
+
+    legal_mode.change(fn=on_mode, inputs=legal_mode,
+                      outputs=[case_folder_button, matter_dropdown, index_button, legal_msg_box])
+    index_button.click(fn=index_case_files, inputs=matter_dropdown, outputs=matter_dropdown)
     case_folder_button.upload(
         fn=_glow_while_running(send_case_folder, send_outputs, legal_msg_box),
         inputs=[case_folder_button, legal_msg_box, legal_chatbot, model_size_selector],

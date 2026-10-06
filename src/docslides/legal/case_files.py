@@ -819,11 +819,39 @@ def _embed(texts: list[str]):
                                    convert_to_numpy=True), dtype=np.float32)
 
 
+def _state_stamp(vectordb: Path) -> int:
+    state_file = vectordb / STATE_FILE
+    return state_file.stat().st_mtime_ns if state_file.exists() else 0
+
+
+_opened_at: dict[str, int] = {}
+
+
+def _reload_if_changed(vectordb: Path) -> None:
+    """Chroma keeps one client per folder per process, and its vector index in memory: chunks
+    another process indexed (scripts/ingest_case_files.py while the app runs) are counted but never
+    found until that client is dropped. So when the state file changed since this process last
+    opened the store, only this store's client is closed -- the law corpus's are left alone."""
+    key = str(vectordb.resolve())
+    stamp = _state_stamp(vectordb)
+    if _opened_at.get(key, stamp) != stamp:
+        try:
+            from chromadb.api.client import SharedSystemClient
+
+            systems = SharedSystemClient._identifier_to_system
+            for identifier in [i for i in systems if i and Path(i).resolve() == vectordb.resolve()]:
+                systems.pop(identifier).stop()
+        except Exception as exc:  # noqa: BLE001 -- a chroma without this internal: search what is loaded
+            logger.warning("case_files_store_reload_failed", error=str(exc))
+    _opened_at[key] = stamp
+
+
 def open_store():
     from docslides.legal_data.corpus_index import CorpusCollection, CorpusState
 
     _, vectordb = _paths()
     vectordb.mkdir(parents=True, exist_ok=True)
+    _reload_if_changed(vectordb)
     return CorpusCollection(vectordb, get_config().legal.case_files.collection), CorpusState(vectordb / STATE_FILE)
 
 
@@ -926,7 +954,9 @@ class Excerpt:
 
 
 @lru_cache(maxsize=8)
-def _lexical_index(matter: str | None):
+def _lexical_index(matter: str | None, stamp: int = 0):
+    """BM25 over the indexed chunks (of one matter); `stamp` (the state file's mtime) rebuilds it
+    after any re-index, in this process or another."""
     from docslides.legal.corpus_lexical import CorpusLexicalIndex
     from docslides.legal_data.corpus_index import CorpusState
 
@@ -994,7 +1024,7 @@ def search(queries: list[str], matter: str | None = None, doc_type: str | None =
             fused[cid] = fused.get(cid, 0.0) + 1.0 / (60 + rank)
             via.setdefault(cid, set()).add("dense")
             found[cid] = (document, meta)
-        lexical = _lexical_index(matter)
+        lexical = _lexical_index(matter, _state_stamp(_paths()[1]))
         for rank, (cid, _score) in enumerate(lexical.search(query, cfg.fetch_k) if lexical else []):
             fused[cid] = fused.get(cid, 0.0) + 1.0 / (60 + rank)
             via.setdefault(cid, set()).add("lexical")
@@ -1093,3 +1123,68 @@ async def answer(question: str, history: list[Turn] | None = None, matter: str |
         enable_thinking=False,
     )
     return reply, excerpts
+
+
+# --- the Legal tab's "Case files chat" mode (api/routes_legal.py) -------------------------------
+
+
+def _footnote(number: int, excerpt: Excerpt) -> dict:
+    m = excerpt.metadata
+    body = excerpt.text.split("\n\n", 1)[-1]
+    return {
+        "number": number, "kind": "case_file", "file": m.get("file", ""), "where": excerpt.citation(),
+        "matter": m.get("matter", ""), "doc_type": _TYPE_LABELS.get(m.get("doc_type", ""), m.get("doc_type", "")),
+        "doc_date": m.get("doc_date", ""), "excerpt": body[:400] + ("..." if len(body) > 400 else ""),
+    }
+
+
+async def run_chat_turn(question: str, job_id: str, status, matter: str | None = None,
+                        history: list[Turn] | None = None):
+    """One turn of the case-files chat, as a legal/pipeline.LegalTurnResult so the Legal tab streams
+    and renders it like its other modes: the answer with [n] markers, a footnote per cited excerpt
+    (file, pages, paragraphs, and the excerpt itself), and an audit entry."""
+    from docslides.ingestion.language_detect import detect_language
+    from docslides.legal import audit
+    from docslides.legal.pipeline import LegalTurnResult
+    from docslides.llm import trace
+
+    question = question.strip()
+    if not question:
+        raise ValueError("Ask a question about the case files.")
+    await status(f"Searching the case files{f' of {matter}' if matter else ''}")
+    with trace.collect(job_id) as calls:
+        reply, excerpts = await answer(question, history, matter)
+    used = cited(reply, excerpts)
+    reasons = []
+    if excerpts and not used:
+        reasons.append("The answer cites none of the case-file excerpts -- check it against the files")
+    footnotes = [_footnote(n, e) for n, e in used]
+    entry = {
+        "job_id": job_id, "mode": "case_files", "query": question, "matter": matter,
+        "history": [{"question": t.question, "answer": t.answer} for t in history or []],
+        "retrieval": [{"chunk_id": e.chunk_id, "file": e.metadata.get("file"), "score": e.score, "via": e.via}
+                      for e in excerpts],
+        "answer": reply, "llm_calls": calls,
+    }
+    Path(get_config().legal.audit_dir).mkdir(parents=True, exist_ok=True)
+    path = audit.write_entry(entry)
+    output = {"research_memorandum": None, "answer_draft": reply, "escalation_flag": bool(reasons),
+              "escalation_reason": "; ".join(reasons) or None, "coverage_gaps": None}
+    language = detect_language(question) or detect_language(reply[:500]) or "en"
+    return LegalTurnResult(output, reply, footnotes, language, reasons, str(path),
+                           retrieved_chunks=[{"chunk_id": e.chunk_id, "source_id": e.metadata.get("file"),
+                                              "text": e.text, "distance": None, "via": e.via} for e in excerpts],
+                           llm_calls=calls)
+
+
+def index_summary(reports: list[FileReport]) -> dict:
+    """index_folder's reports, for the Legal tab's index button."""
+    counts: dict[str, int] = {}
+    for r in reports:
+        counts[r.action] = counts.get(r.action, 0) + 1
+    return {
+        "counts": counts,
+        "files": [{"file": r.rel_path, "action": r.action, "doc_type": r.doc_type, "chunks": r.chunks,
+                   "message": r.message, "notes": r.notes} for r in reports if r.action != "unchanged"],
+        "matters": matters(),
+    }

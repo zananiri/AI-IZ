@@ -17,18 +17,25 @@
     case folder (`documents`, each uploaded through /api/upload first): every
     document is read, and analyzed one by one when they don't fit the case
     file together, before the work file is written from them.
+  * POST /api/legal-case-files: the "Case files chat" mode -- a question answered from the
+    attorney's own indexed case files in legal_data/ (legal/case_files.py), optionally within one
+    `matter`, with the earlier turns of `messages` as the conversation. Same events again.
+  * POST /api/case-files/index: (re-)indexes legal_data/ -- new and changed files only -- and
+    returns what was done; GET /api/case-files/matters lists the indexed matters.
 """
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from docslides.api.events import SESSION_HEADER, Event, event_bus
+from docslides.legal import case_files
 from docslides.legal.pipeline import LegalTurnResult, run_case_turn, run_legal_turn
 from docslides.llm.client import model_size
 
@@ -45,6 +52,7 @@ class LegalChatRequest(BaseModel):
     attachment_path: str | None = None  # server-side path from a prior /api/upload call
     documents: list[CaseDocument] | None = None  # a case folder's files (/api/legal-case only)
     model_size: str | None = None  # the UI's model-size choice (config.model_sizes); None = the configured models
+    matter: str | None = None  # case-files chat only: one matter (legal_data/ subfolder); None = all
 
 
 TurnFn = Callable[..., Awaitable[LegalTurnResult]]
@@ -60,6 +68,8 @@ async def _run_turn(job_id: str, req: LegalChatRequest, turn: TurnFn) -> None:
         kwargs: dict = {"attachment_path": req.attachment_path}
         if req.documents:
             kwargs["documents"] = [(d.path, d.name) for d in req.documents]
+        if turn is _case_files_turn:
+            kwargs = {"matter": req.matter, "messages": req.messages[:-1]}
         result = await turn(text, job_id, status, **kwargs)
 
         if result.analysis_notes:
@@ -99,6 +109,33 @@ async def legal_chat(req: LegalChatRequest, session: str | None = Header(default
 @router.post("/legal-case")
 async def legal_case(req: LegalChatRequest, session: str | None = Header(default=None, alias=SESSION_HEADER)) -> dict:
     return _start(req, run_case_turn, session)
+
+
+async def _case_files_turn(text: str, job_id: str, status, matter: str | None, messages: list[dict]):
+    """The earlier user/assistant pairs of `messages` become the chat's history."""
+    history = [case_files.Turn(q["content"], a["content"]) for q, a in zip(messages[::2], messages[1::2])
+               if q.get("role") == "user" and a.get("role") == "assistant"]
+    return await case_files.run_chat_turn(text, job_id, status, matter or None, history)
+
+
+@router.post("/legal-case-files")
+async def legal_case_files(req: LegalChatRequest,
+                           session: str | None = Header(default=None, alias=SESSION_HEADER)) -> dict:
+    return _start(req, _case_files_turn, session)
+
+
+@router.post("/case-files/index")
+async def index_case_files() -> dict:
+    try:
+        reports = await asyncio.to_thread(case_files.index_folder)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return case_files.index_summary(reports)
+
+
+@router.get("/case-files/matters")
+async def case_file_matters() -> dict:
+    return {"matters": case_files.matters()}
 
 
 @router.get("/legal-events/{job_id}")

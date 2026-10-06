@@ -379,6 +379,12 @@ python scripts/ingest_case_files.py chat --matter "Cohen v. Levi"
 python scripts/ingest_case_files.py ask "When was the termination notice sent?"
 ```
 
+**In the app:** Legal GPT tab → Mode **Case files chat**. Pick a **Matter** (or All matters) and ask;
+follow-up questions keep the conversation, and the Citations panel shows each cited file, page,
+paragraph and the passage itself. **🔄 Index legal_data** indexes files added since the last run
+(the same as running the script). Files indexed by the script while the app is running are picked up
+on the next question, no restart needed.
+
 Answers come from the Legal tab's model (`legal.orchestrator`), only from the retrieved excerpts,
 with every statement cited to file, page and paragraph; parties' allegations are attributed to the
 party, not stated as fact. Settings: `legal.case_files` in `config/config.yaml`. Everything in

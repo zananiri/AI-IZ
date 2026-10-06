@@ -112,6 +112,8 @@ legal:
     reranker_model: "BAAI/bge-reranker-v2-m3"  # null = rank by embedding distance only
     rerank_candidates: 16
     rerank_max_length: 1024
+    cpu_rerank_candidates: 16                  # on the CPU: score only this many (null = no limit)
+    cpu_rerank_max_length: 512                 # ...at this many tokens per pair
     rerank_margin: 0.6                         # keep hits within this of the best reranker score
     rerank_floor: 0.1                          # ...and at least this
     min_rerank_score: 0.35                     # best score under this = thin coverage

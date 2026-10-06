@@ -203,7 +203,7 @@ def test_reranker_orders_hits_and_sets_the_thin_coverage_flag(load_index, monkey
         ("v:3", "עונה חלקית score=0.50", _meta("v:3", "v:3", "3"), 0.45),
     ])
     monkeypatch.setattr(cfg, "reranker_model", "fake")
-    monkeypatch.setattr(retrieval, "_reranker", lambda name: FakeReranker())
+    monkeypatch.setattr(retrieval, "_reranker", lambda name, device=None: FakeReranker())
     result = retrieval.retrieve("שאלה")
 
     assert [(c.chunk_id, c.score) for c in result.chunks] == [("v:2", 0.95), ("v:3", 0.50)]  # v:1 under the floor

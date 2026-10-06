@@ -308,8 +308,11 @@ def _reranker(model_name: str, device: str | None = None):
         from sentence_transformers import CrossEncoder
 
         on_gpu = bool(device and device.startswith("cuda"))
-        model = CrossEncoder(model_name, max_length=get_config().legal.retrieval.rerank_max_length,
-                             device="cpu" if on_gpu else device)
+        retrieval = get_config().legal.retrieval
+        max_length = retrieval.rerank_max_length
+        if _is_cpu(device) and retrieval.cpu_rerank_max_length:
+            max_length = min(max_length, retrieval.cpu_rerank_max_length)
+        model = CrossEncoder(model_name, max_length=max_length, device="cpu" if on_gpu else device)
     except Exception as exc:  # noqa: BLE001 -- a missing model must not block answering
         logger.warning("legal_reranker_unavailable", model=model_name, error=str(exc))
         return None
@@ -340,6 +343,25 @@ def reranker_device() -> str | None:
     """The device the reranker runs on: legal.retrieval.reranker_device, else legal.retrieval.device."""
     retrieval = get_config().legal.retrieval
     return retrieval.reranker_device or retrieval.device
+
+
+def _is_cpu(device: str | None) -> bool:
+    """Whether `device` is the CPU: "cpu", or None (library default) with no CUDA GPU visible."""
+    if device is not None:
+        return device == "cpu"
+    try:
+        import torch
+
+        return not torch.cuda.is_available()
+    except Exception:  # noqa: BLE001 -- no torch: nothing runs on a GPU
+        return True
+
+
+def rerank_limit(candidates: int) -> int:
+    """How many of `candidates` the reranker scores: all of them on a GPU, at most
+    legal.retrieval.cpu_rerank_candidates on the CPU."""
+    cap = get_config().legal.retrieval.cpu_rerank_candidates
+    return min(candidates, cap) if cap and _is_cpu(reranker_device()) else candidates
 
 
 def is_gpu_oom(exc: BaseException) -> bool:
@@ -482,13 +504,13 @@ def retrieve(query: str) -> RetrievalResult:
         seen_bodies.add(body)
         pool.append(candidate)
 
-    reranker = _reranker(cfg.reranker_model) if cfg.reranker_model else None
+    reranker = _reranker(cfg.reranker_model, reranker_device()) if cfg.reranker_model else None
     best_score: float | None = None
     if reranker is not None and pool:
         # A cross-encoder reads question and provision together: its score says how directly
         # the provision answers, which embedding distance can't (an unanswerable question's
         # nearest provision is often as close as an answerable one's).
-        head = pool[: cfg.rerank_candidates]
+        head = pool[: rerank_limit(cfg.rerank_candidates)]
         for candidate, score in zip(head, reranker.predict([(query, c.text) for c in head])):
             candidate.score = float(score)
         head.sort(key=lambda c: c.score, reverse=True)

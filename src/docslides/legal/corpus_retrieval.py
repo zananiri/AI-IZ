@@ -243,7 +243,7 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
 
     Falls back to plain embedding order when the reranker can't be loaded."""
     from docslides.legal.corpus_lexical import lexical_index
-    from docslides.legal.retrieval import _reranker, reranker_device
+    from docslides.legal.retrieval import _reranker, rerank_limit, reranker_device
     from docslides.legal_data.corpus_index import CorpusCollection
 
     legal_cfg = get_config().legal
@@ -306,12 +306,16 @@ def retrieve_planned(query_text: str, issues: list[EvalIssue], categories: list[
     reranker = _reranker(legal_cfg.retrieval.reranker_model, reranker_device()) \
         if legal_cfg.retrieval.reranker_model else None
     if reranker is not None and head:
+        # On the CPU only the best few are scored (rerank_limit), plus every direct section
+        # lookup; the rest follow them in fused order.
+        scored = head[:rerank_limit(len(head))]
+        scored += [h for h in lookup_hits if h not in scored]
         # The question and the issues, not the plan's law names: those are guesses, and a wrong
         # one ("חוק המכר" for a double sale of land) lifted every excerpt that mentions it.
         rerank_query = query_text + "\n" + "; ".join(i.issue for i in issues)
-        for hit, score in zip(head, reranker.predict([(rerank_query, h["text"]) for h in head])):
+        for hit, score in zip(scored, reranker.predict([(rerank_query, h["text"]) for h in scored])):
             hit["score"] = float(score)
-        ranked = sorted(head, key=lambda h: -h["score"])
+        ranked = sorted(scored, key=lambda h: -h["score"]) + [h for h in head if h not in scored]
     else:
         ranked = head
     if corpus_cfg.regulation_cap is not None:

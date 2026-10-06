@@ -127,6 +127,11 @@ class LegalRetrievalConfig(BaseModel):
     reranker_model: str | None = "BAAI/bge-reranker-v2-m3"
     rerank_candidates: int = 16
     rerank_max_length: int = 1024
+    # When the reranker runs on the CPU (no GPU, or moved off one): at most this many candidates
+    # scored per search (the rest keep their fused order after them) and this many tokens per pair.
+    # fp32 on a CPU, 40 pairs at 1024 tokens took minutes per question. None = no CPU limit.
+    cpu_rerank_candidates: int | None = 16
+    cpu_rerank_max_length: int | None = 512
     # Calibrated on the 16-question elections eval with scripts/eval_retrieval.py: every
     # answerable question's best score was >= 0.48, the unanswerable C2's 0.23.
     rerank_margin: float | None = 0.6  # keep hits scoring within this of the best one...

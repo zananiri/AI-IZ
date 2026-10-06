@@ -986,15 +986,17 @@ def _rerank(query: str, excerpts: list[Excerpt]) -> list[Excerpt]:
     retrieval_cfg = get_config().legal.retrieval
     if not retrieval_cfg.reranker_model or not excerpts:
         return excerpts
-    from docslides.legal.retrieval import _reranker, reranker_device
+    from docslides.legal.retrieval import _reranker, rerank_limit, reranker_device
 
     model = _reranker(retrieval_cfg.reranker_model, reranker_device())
     if model is None:
         return excerpts
-    scores = model.predict([(query, e.text) for e in excerpts])
-    for excerpt, score in zip(excerpts, scores):
+    n = rerank_limit(len(excerpts))  # on the CPU the rest keep their fused order after these
+    scored, rest = excerpts[:n], excerpts[n:]
+    scores = model.predict([(query, e.text) for e in scored])
+    for excerpt, score in zip(scored, scores):
         excerpt.score = float(score)
-    return sorted(excerpts, key=lambda e: -e.score)
+    return sorted(scored, key=lambda e: -e.score) + rest
 
 
 def search(queries: list[str], matter: str | None = None, doc_type: str | None = None) -> list[Excerpt]:

@@ -156,15 +156,17 @@ def search_caselaw(question: str, issues: list[str]) -> list[dict]:
     candidates.sort(key=lambda c: -c["fused"])
     candidates = candidates[:k]
 
-    from docslides.legal.retrieval import _reranker, reranker_device
+    from docslides.legal.retrieval import _reranker, rerank_limit, reranker_device
 
     reranker = _reranker(legal_cfg.retrieval.reranker_model, reranker_device()) \
         if legal_cfg.retrieval.reranker_model else None
     if reranker is not None and candidates:
         rerank_query = question + ("\n" + "; ".join(issues) if issues else "")
-        for c, score in zip(candidates, reranker.predict([(rerank_query, c["text"]) for c in candidates])):
+        n = rerank_limit(len(candidates))  # on the CPU the rest keep their fused order after these
+        scored, rest = candidates[:n], candidates[n:]
+        for c, score in zip(scored, reranker.predict([(rerank_query, c["text"]) for c in scored])):
             c["score"] = float(score)
-        candidates.sort(key=lambda c: -c["score"])
+        candidates = sorted(scored, key=lambda c: -c["score"]) + rest
 
     picked, docs, spent = [], set(), 0
     for c in candidates:

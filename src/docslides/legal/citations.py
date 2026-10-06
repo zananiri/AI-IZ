@@ -19,6 +19,12 @@ from dataclasses import dataclass
 _TOKEN_RE = re.compile(r"\[\[CITE:(?P<body>(?:(?!\]\]).)*?=(?:(?!\]\]).)*)\]\]")
 _FIELDS = ("claim_id", "source_id", "law", "section", "effective", "source_type", "relation")
 _ANY_CITE_TAG_RE = re.compile(r"\[\[\s*CITE\b[^\]]*\]\]")
+# The short form's values by position, without "CITE:" or the field names: gemma4:12b drafted
+# "[[C1 | wikisource:286381@1973-04-19:26 | supports]]" for every citation of a 6 Oct answer.
+_POSITIONAL_RE = re.compile(
+    r"\[\[\s*(?:CITE\s*:?\s*)?(?:(?P<claim>C\d+)\s*\|\s*)?(?P<source>[^|\]\s=\"]+)\s*\|\s*"
+    r"(?P<relation>supports|contrary)\s*\]\]"
+)
 
 
 @dataclass
@@ -61,6 +67,18 @@ def parse_citations(text: str) -> list[Citation]:
             )
         )
     return citations
+
+
+def normalize_positional(text: str) -> str:
+    """Rewrites tokens written by position -- "[[C1 | <source_id> | supports]]", or
+    "[[<source_id> | contrary]]" without a claim -- into the keyed short form parse_citations
+    reads. A token that isn't exactly that shape is left as written."""
+
+    def keyed(match: re.Match[str]) -> str:
+        claim = f"claim_id={match.group('claim')} | " if match.group("claim") else ""
+        return f"[[CITE: {claim}source_id={match.group('source')} | relation={match.group('relation')}]]"
+
+    return _POSITIONAL_RE.sub(keyed, text)
 
 
 def format_citation(**fields: str) -> str:

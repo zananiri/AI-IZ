@@ -1,6 +1,7 @@
 from docslides.legal.citations import (
     expand_citations,
     format_citation,
+    normalize_positional,
     parse_citations,
     render_with_footnotes,
     sentence_before,
@@ -57,6 +58,15 @@ def test_parse_handles_quotes_inside_law_names():
     assert citation.law == LAW
     assert citation.source_id == "law@1973:14"
     assert citation.relation == "supports"
+
+
+def test_positional_tokens_are_read_as_the_short_form():
+    sid = "wikisource:286381@1973-04-19:26"
+    text = normalize_positional(f"One. [[C1 | {sid} | supports]] Two. [[CITE: {sid} | contrary]] Three. [[C2 | x]]")
+    first, second = parse_citations(text)
+    assert (first.claim_id, first.source_id, first.relation) == ("C1", sid, "supports")
+    assert (second.claim_id, second.source_id, second.relation) == ("", sid, "contrary")
+    assert "[[C2 | x]]" in text  # not the token's shape: left for the checks to reject
 
 
 def test_render_numbers_footnotes_by_source():

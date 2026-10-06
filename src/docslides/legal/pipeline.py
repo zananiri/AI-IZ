@@ -40,6 +40,7 @@ from docslides.legal.chunking import normalize_hebrew_quotes
 from docslides.legal.citations import (
     expand_citations,
     format_citation,
+    normalize_positional,
     parse_citations,
     remove_cited_sentences,
     render_with_footnotes,
@@ -677,9 +678,12 @@ def _parse_draft(raw: str, truncated: bool = False) -> LegalDraft | None:
         text = fenced.group(1).strip()
     if _DRAFT_OPENING_RE.match(text):
         try:
-            return LegalDraft.model_validate(json.loads(text))
+            draft = LegalDraft.model_validate(json.loads(text))
+            draft.answer_draft = normalize_positional(draft.answer_draft)
+            return draft
         except (json.JSONDecodeError, ValueError):
             text = _unterminated_json_string(text[_DRAFT_OPENING_RE.match(text).end() :])
+    text = normalize_positional(text)
     escalations, gaps = [], []
     for match in _DRAFT_TRAILER_RE.finditer(text):
         value = match.group(2).strip()
@@ -1362,7 +1366,7 @@ async def _case_turn(
     work_file = re.sub(r"\n{3,}", "\n\n", _ESCALATE_RE.sub("", work_file)).strip()
 
     # The model writes source_id and relation only; law/section/effective come from the metadata.
-    work_file = expand_citations(work_file, evidence).replace('relation=""', 'relation="supports"')
+    work_file = expand_citations(normalize_positional(work_file), evidence).replace('relation=""', 'relation="supports"')
     citations = parse_citations(work_file)
     if citations:
         await status(f"Verifying {len(citations)} citation(s) against their sources")

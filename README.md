@@ -569,6 +569,11 @@ tunnel. The ngrok authtoken goes in the `NGROK_AUTHTOKEN` Kaggle secret. Without
 free static ngrok domain for a fixed link. The statute corpus and case-law index
 are picked up from attached Kaggle inputs. The link has no login, so share it
 with care. Setup steps are at the top of the notebook.
+`notebooks/kaggle_host_app_ngrok_2026-10-07.ipynb` is the same with every optional
+piece installed and checked before the link opens: MinerU with its weights,
+LibreOffice (with Hebrew fonts), Tesseract, PaddleOCR, Surya, the retrieval
+models, the 12B model pair for the size selector, and a system-status report;
+it expects the statute corpus zip and the `case_law22` case-law dataset as inputs.
 `notebooks/colab_host_app.ipynb` does the same on Colab.
 
 ## Tests

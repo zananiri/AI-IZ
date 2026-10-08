@@ -113,7 +113,26 @@ _IDENTITY_PROMPT = (
 )
 
 
+# Small talk ("hi", "thanks", "what's the time?") skips the classifier, a whole model call that
+# delays the reply by seconds on slower GPUs: a few words with no attachment and none of the words
+# a file, slide, translation or other-language request needs.
+_SMALL_TALK_MAX_WORDS = 4
+_SMALL_TALK_MAX_CHARS = 40
+_REQUEST_WORDS = re.compile(
+    r"translat|תרגם|תרגום|ترجم|slide|deck|excel|xlsx|pdf|pptx|powerpoint|presentation|spreadsheet|workbook"
+    r"|מצגת|שקפ|אקסל|عرض|شرائح|\bin\s+\w+",
+    re.IGNORECASE,
+)
+
+
+def _is_small_talk(message: str, has_attachment: bool) -> bool:
+    return (not has_attachment and len(message) <= _SMALL_TALK_MAX_CHARS
+            and len(message.split()) <= _SMALL_TALK_MAX_WORDS and not _REQUEST_WORDS.search(message))
+
+
 async def _classify_intent(client, user_message: str, has_attachment: bool) -> ChatIntent:
+    if _is_small_talk(user_message, has_attachment):
+        return ChatIntent(wants_slides=False)
     material = (
         "The user has attached a document to this chat and sent a request about it."
         if has_attachment

@@ -1,0 +1,381 @@
+# aicodex configuration
+# All model paths, thresholds, and language settings live here so the rest of
+# the codebase never hardcodes environment- or language-specific assumptions.
+
+llm:
+  # "vllm" (NVIDIA GPU only, fastest) or "ollama" (CPU/CUDA/ROCm/Metal,
+  # portable). Override per-environment without editing this file via the
+  # AICODEX_LLM_BACKEND / AICODEX_LLM_BASE_URL / AICODEX_LLM_MODEL env
+  # vars -- see docker-compose.portable.yml and scripts/setup.*.
+  backend: "vllm"
+  base_url: "http://vllm:8000/v1"        # OpenAI-compatible endpoint served by vLLM
+  # General chat (chat, rewrite, slides, and the glossary work around translation): the same
+  # Gemma 4 as the Legal tab. vLLM serves Gemma 4 31B; under Ollama, scripts/setup.* pick the
+  # Legal tab's tag for this host (gemma4:31b / gemma4:12b / gemma3:4b-it-qat) for both.
+  model: "google/gemma-4-31B-it"
+  api_key: "not-needed"                   # vLLM does not require a real key locally
+  request_timeout_s: 600
+  # Ollama num_ctx for the general chat; vLLM serves 16384 (docker-compose.yml VLLM_MAX_MODEL_LEN).
+  max_model_len: 16384
+  guided_decoding_backend: "xgrammar"     # xgrammar | outlines
+  # Gemma runs with thinking off, as on the Legal tab (Gemma 3 has no thinking mode; Gemma 4's
+  # stays off). The per-call-site defaults below only apply to a model with supports_thinking.
+  supports_thinking: false
+  # Per call-site defaults for the `enable_thinking` chat-template flag.
+  thinking_defaults:
+    outline_generation: true
+    slide_fill: false
+    translation: false
+    chat_general: true
+    document_generation: false
+    tone_rewrite: true
+    chunk_summary: false
+  default_sampling:
+    temperature: 0.6
+    top_p: 0.92
+    max_tokens: 2048
+
+# The model-size selector above the tabs (General GPT and Legal GPT): each choice is the Ollama tag
+# the general chat and the Legal tab run on, and the TranslateGemma tag that translates for them.
+# Under vLLM, which serves one model, the selector shows but is disabled. scripts/setup.* pull the
+# tags of every size the host has memory for; a size whose model isn't pulled answers with
+# Ollama's "model not found -- try pulling it first".
+model_sizes:
+  "12B":
+    label: "LLM 12 Billion"   # what the selector shows -- no model names
+    model: "gemma4:12b"
+    translator_model: "translategemma:12b"
+    knowledge_cutoff: "January 2025"
+  "31B":
+    label: "LLM 31 Billion"
+    model: "gemma4:31b"
+    translator_model: "translategemma:27b"
+    knowledge_cutoff: "January 2025"
+default_model_size: "12B"
+
+legal:
+  # Legal tab: grounded RAG over Spanish law (src/aicodex/legal/). Gemma 4
+  # researches (Pass A memorandum), drafts (Pass B), runs every
+  # verification step and answers in the question's language. Sources are
+  # staged, human-reviewed and signed into the index offline with
+  # scripts/ingest_legal.py. An independent deployment from the `llm:`
+  # section above.
+  orchestrator:
+    backend: "vllm"
+    base_url: "http://vllm:8000/v1"
+    # Gemma 4 31B: the same weights docker-compose.yml's vLLM serves (VLLM_MODEL_REPO), so the
+    # Legal tab and the general chat share one server. The Ollama path (scripts/setup.*,
+    # docker-compose.portable.yml, .env.local) picks the tag by host memory: gemma4:31b, gemma4:12b
+    # under 32GB of RAM or without a GPU, gemma3:4b-it-qat under 12GB -- the general chat too.
+    model: "google/gemma-4-31B-it"
+    supports_thinking: false
+    api_key: "not-needed"
+    request_timeout_s: 900
+    # Must not exceed the served --max-model-len (docker-compose.yml:
+    # VLLM_MAX_MODEL_LEN, default 16384). Under Ollama it is the num_ctx sent
+    # with every request (AICODEX_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN overrides
+    # it). Output budgets are capped to fit it (llm/client.py): 16384 holds
+    # the full evidence budget below plus the thinking analysis pass's
+    # pipeline.analysis_max_tokens; at 8192 both get squeezed.
+    max_model_len: 16384
+    guided_decoding_backend: "xgrammar"
+    # Thinking stays off for every JSON call (memo, draft, verification): the
+    # analysis pass does the reasoning in free text, and its reasoning is
+    # logged -- see pipeline.analysis_pass and logging.llm_trace_dir.
+    thinking_defaults:
+      legal_analysis: true
+    default_sampling:
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 2048
+  retrieval:
+    # What the Legal tab searches: "corpus" = the bulk corpus below (legal.corpus: BOE laws and
+    # regulations, EU law, planned retrieval -- legal/corpus_retrieval.py); "signed_index" = the
+    # signed index of the drop-in law PDFs in legal_txt/ and reviewed sources (vectordb_dir).
+    source: "corpus"
+    vectordb_dir: "./data/legal_vectordb"
+    embedding_model: "BAAI/bge-m3"             # multilingual: English/Catalan queries still match Spanish statutes
+    top_k: 6
+    fetch_k: 24                                # candidates before dedupe + MMR cut them to top_k
+    mmr_lambda: 0.7                            # 1.0 = pure relevance; lower favours diverse sections
+    low_relevance_distance: 0.55               # cosine distance; tune against real queries
+    min_relevant_chunks: 2
+    max_cross_refs: 4
+    # What reaches the model (null disables each). Margins were inherited from the Israeli build's
+    # calibration -- re-check them on a Spanish eval set (scripts/eval_retrieval.py).
+    relevance_margin: 0.08                     # drop hits this much farther than the best hit
+    sibling_margin: 0.12                       # add other parts of a split provision only this close
+    max_evidence_tokens: 5000                  # all evidence, best-first; fits the 16k window with the
+                                               # analysis/memo/draft outputs -- lower it with max_model_len
+    keyword_search: true                       # Spanish-aware (accent-folded, stemmed) BM25 fused with the embedding ranking
+    section_lookup_max: 2                      # chunks per section number the question names
+    reranker_model: "BAAI/bge-reranker-v2-m3"  # null = rank by embedding distance only
+    rerank_candidates: 16
+    rerank_max_length: 1024
+    cpu_rerank_candidates: 16                  # on the CPU: score only this many (null = no limit)
+    cpu_rerank_max_length: 512                 # ...at this many tokens per pair
+    rerank_margin: 0.6                         # keep hits within this of the best reranker score
+    rerank_floor: 0.1                          # ...and at least this
+    min_rerank_score: 0.35                     # best score under this = thin coverage
+                                               # (scripts/eval_retrieval.py calibrates these)
+  ingestion:
+    sources_dir: "./data/legal/sources"        # official texts + <file>.meta.json sidecars
+    legal_txt_dir: "./legal_txt"               # drop-in law PDFs, indexed by scripts/ingest_legal_txt.py
+    uploads_dir: "./uploads"                   # memos / firm / client documents (always need sign-off)
+    staging_dir: "./data/legal/staging"
+    bundle_manifest: "./data/legal/signed_bundle.json"   # HMAC key: AICODEX_LEGAL_BUNDLE_KEY env var
+    chunk_max_tokens: 500                      # soft; structural boundaries always win
+  pipeline:
+    max_memo_revisions: 2
+    max_draft_revisions: 1
+    entailment_concurrency: 4
+    # Pass 0 (legal/pipeline.analyze_question): the model reads the evidence against
+    # the question with thinking ON and writes notes that the memorandum and
+    # the draft both start from. Budget = thinking + notes.
+    analysis_pass: true
+    analysis_max_tokens: 4096
+    # Per orchestrator model (name exactly as configured), only on a machine without an NVIDIA GPU
+    # (no nvidia-smi): replaces the settings above. Kaggle/Colab GPU evals keep the full pipeline.
+    cpu_model_overrides:
+      "gemma4:12b":              # Ollama on the CPU (~2-4 tokens/s): no Pass 0, no revisions
+        analysis_pass: false
+        max_memo_revisions: 0
+        max_draft_revisions: 0
+  audit_dir: "./data/legal/audit"
+  # Evals only: the grading model (legal/evaluation.get_judge_client), on the orchestrator's Ollama.
+  # The family under test (gemma) never grades itself. AICODEX_LEGAL_JUDGE_MODEL overrides it;
+  # null = the orchestrator grades its own answers.
+  judge_model: "gpt-oss:20b"
+  # Bulk corpus built from legal_txt/ JSONL by scripts/legal_data/vectorize.py: its own Chroma
+  # store (one collection per category), separate from the signed index above.
+  corpus:
+    vectordb_dir: "./data/legal_corpus_vectordb"
+    collection_prefix: "spanish_law_corpus"
+    chunk_max_tokens: 500
+    chunk_overlap_tokens: 64
+    embed_batch_size: 64
+    fold_accents_for_embedding: false
+    # Searched by the Legal tab when retrieval.source is "corpus". Add "regional_laws" for
+    # autonomous-community law (derecho foral, leyes autonómicas).
+    categories: ["laws", "regulations", "eu_law"]
+    top_k: 12                                  # chunks kept after reranking, then cut to max_evidence_tokens
+    # Case law (src/aicodex/legal/caselaw.py): the corpus category holding the Tribunal Constitucional's
+    # sentencias (fetch_constitutional_court.py + vectorize.py). null = off.
+    caselaw_category: "constitutional_court"
+    # Doctrine cards (JSONL of reviewed notes on case-law doctrines); none ship with AI-Codex.
+    doctrine_cards_path: null
+
+  # The attorney's own case files: drop them into legal_data/ at the project root (one subfolder
+  # per matter), index with `python scripts/ingest_case_files.py`, then chat with
+  # `python scripts/ingest_case_files.py chat`. Chunking strategy: src/aicodex/legal/case_files.py.
+  case_files:
+    folder: "./legal_data"
+    vectordb_dir: "./data/legal_case_files_vectordb"
+    chunk_max_tokens: 450
+    chunk_overlap_tokens: 60
+    ocr_scanned_pages: true
+    top_k: 8
+    max_evidence_tokens: 5000
+
+# Corpus acquisition: scripts/legal_data/fetch_*.py (see scripts/legal_data/README.md). Only the
+# hosts below are contacted, robots.txt is honoured, at most one request per second per host.
+legal_data:
+  contact_email: ""              # REQUIRED -- goes in the User-Agent (or AICODEX_LEGAL_DATA_CONTACT_EMAIL)
+  output_dir: "./legal_txt"
+  min_interval_s: 1.0
+  max_retries: 6
+  backoff_base_s: 2.0
+  backoff_max_s: 300.0
+  timeout_s: 120.0
+  sources:
+    boe_api: "https://www.boe.es/datosabiertos/api"                      # BOE open data: legislación consolidada
+    tc_hj: "https://hj.tribunalconstitucional.es"                        # Tribunal Constitucional case law
+    eurlex_cellar: "http://publications.europa.eu/resource/celex"        # EU law by CELEX (Spanish XHTML)
+    eurlex_sparql: "https://publications.europa.eu/webapi/rdf/sparql"    # newest consolidated version lookup
+  boe:
+    regions: []            # autonomous communities kept in regional_laws, e.g. ["Cataluña", "Madrid"]; [] = all
+    exclude_ranks: []      # e.g. ["Circular", "Instrucción"]
+  constitutional_court:
+    doc_types: ["SENTENCIA"]     # add "AUTO", "DECLARACIÓN" for the whole case law
+    anonymize_parties: true      # private parties' names -> [persona N]; magistrates kept
+    first_id: 1
+    known_id: 32000
+    stop_after_missing: 50
+  eu_law:
+    prefer_consolidated: true
+    celex:
+      - "12016P/TXT"     # Carta de los Derechos Fundamentales de la UE
+      - "12016M/TXT"     # Tratado de la Unión Europea (versión consolidada 2016)
+      - "12016E/TXT"     # Tratado de Funcionamiento de la UE (versión consolidada 2016)
+      - "32016R0679"     # Reglamento General de Protección de Datos (RGPD)
+      - "32024R1689"     # Reglamento de Inteligencia Artificial
+      - "32022R2065"     # Reglamento de Servicios Digitales (DSA)
+      - "32022R1925"     # Reglamento de Mercados Digitales (DMA)
+      - "32023R2854"     # Reglamento de Datos (Data Act)
+      - "32014R0910"     # eIDAS (identificación electrónica y servicios de confianza)
+      - "32023R1114"     # Mercados de criptoactivos (MiCA)
+      - "32012R1215"     # Bruselas I bis (competencia judicial y ejecución en materia civil y mercantil)
+      - "32008R0593"     # Roma I (ley aplicable a las obligaciones contractuales)
+      - "32007R0864"     # Roma II (ley aplicable a las obligaciones extracontractuales)
+      - "32012R0650"     # Sucesiones
+      - "32019R1111"     # Bruselas II ter (matrimonio, responsabilidad parental, sustracción de menores)
+      - "32015R0848"     # Procedimientos de insolvencia
+      - "32006R1896"     # Proceso monitorio europeo
+      - "32007R0861"     # Proceso europeo de escasa cuantía
+      - "32020R1784"     # Notificación y traslado de documentos
+      - "32020R1783"     # Obtención de pruebas
+      - "31993L0013"     # Cláusulas abusivas en los contratos celebrados con consumidores
+      - "32011L0083"     # Derechos de los consumidores
+      - "32019L0771"     # Contratos de compraventa de bienes
+      - "32011L0007"     # Morosidad en las operaciones comerciales
+      - "32003L0088"     # Ordenación del tiempo de trabajo
+      - "32019L1937"     # Protección de los denunciantes (whistleblowing)
+      - "32022L2555"     # Ciberseguridad (NIS 2)
+      - "32006L0112"     # Sistema común del IVA
+      - "32024L2853"     # Responsabilidad por los daños causados por productos defectuosos
+  # Core codes and laws check_corpus_coverage.py requires (label -> BOE identifier).
+  required_laws:
+    CE: "BOE-A-1978-31229"        # Constitución Española
+    CC: "BOE-A-1889-4763"         # Código Civil
+    CP: "BOE-A-1995-25444"        # Código Penal
+    CCom: "BOE-A-1885-6627"       # Código de Comercio
+    LEC: "BOE-A-2000-323"         # Ley de Enjuiciamiento Civil
+    LECrim: "BOE-A-1882-6036"     # Ley de Enjuiciamiento Criminal
+    LOPJ: "BOE-A-1985-12666"      # Ley Orgánica del Poder Judicial
+    LJCA: "BOE-A-1998-16718"      # Jurisdicción Contencioso-administrativa
+    LRJS: "BOE-A-2011-15936"      # Jurisdicción Social
+    ET: "BOE-A-2015-11430"        # Estatuto de los Trabajadores
+    LPAC: "BOE-A-2015-10565"      # Procedimiento Administrativo Común
+    LRJSP: "BOE-A-2015-10566"     # Régimen Jurídico del Sector Público
+    LAU: "BOE-A-1994-26003"       # Arrendamientos Urbanos
+    LSC: "BOE-A-2010-10544"       # Sociedades de Capital
+    TRLC: "BOE-A-2020-4859"       # Ley Concursal
+    LGT: "BOE-A-2003-23186"       # Ley General Tributaria
+    TRLGDCU: "BOE-A-2007-20555"   # Defensa de los Consumidores y Usuarios
+    LOPDGDD: "BOE-A-2018-16673"   # Protección de Datos
+
+vllm_launch:
+  # Reference command used at deploy time to sanity-check the served model
+  # matches this config. See scripts/verify_vllm_launch.py.
+  quantization: "fp8"                     # bf16 | fp8 | awq | gptq
+  gpu_memory_utilization: 0.90
+  port: 8000
+
+paths:
+  data_dir: "./data"
+  upload_dir: "./data/uploads"
+  output_dir: "./data/outputs"
+  cache_dir: "./data/cache"
+  template_potx: "./assets/templates/default.potx"
+  glossary_dir: "./data/glossaries"
+
+languages:
+  # Spanish first; Spain's co-official languages (Catalan, Galician, Basque) and Portuguese too.
+  supported: ["es", "ca", "gl", "eu", "en", "fr", "pt", "it", "de", "ar", "he"]
+  rtl: ["ar", "he"]
+  # spaCy/Stanza model identifiers per language, used by cleaning/segmentation.py
+  spacy_models:
+    en: "en_core_web_sm"
+    fr: "fr_core_news_sm"
+    es: "es_core_news_sm"
+    ca: "ca_core_news_sm"
+    pt: "pt_core_news_sm"
+    it: "it_core_news_sm"
+    de: "de_core_news_sm"
+  stanza_models:
+    # Stanza covers languages spaCy has no small pipeline for (gl, eu, ar, he).
+    gl: "gl"
+    eu: "eu"
+    ar: "ar"
+    he: "he"
+  fasttext_model_path: "./models/lid.176.bin"
+
+ocr:
+  # Engine routing per language. "primary" is tried first; "fallback_cpu" is a
+  # lightweight CPU fallback; "fallback_gpu" is the VLM-based escalation path
+  # used only when primary/fallback_cpu confidence is below threshold.
+  confidence_threshold: 0.80
+  engines_by_script:
+    latin:
+      languages: ["es", "ca", "gl", "eu", "en", "fr", "pt", "it", "de"]
+      primary: "paddleocr"
+      fallback_cpu: "tesseract"
+      fallback_gpu: "paddleocr_vl"
+    arabic:
+      languages: ["ar"]
+      primary: "paddleocr_vl"
+      fallback_cpu: "tesseract"      # ara.traineddata
+      fallback_gpu: "surya"
+    hebrew:
+      languages: ["he"]
+      primary: "surya"
+      fallback_cpu: "tesseract"      # heb.traineddata
+      fallback_gpu: "paddleocr_vl"
+  tesseract:
+    lang_codes:
+      es: "spa"
+      ca: "cat"
+      gl: "glg"
+      eu: "eus"
+      pt: "por"
+      en: "eng"
+      fr: "fra"
+      it: "ita"
+      de: "deu"
+      ar: "ara"
+      he: "heb"
+  gpu_arbiter:
+    # Never hold a GPU OCR model resident while vLLM is actively generating a
+    # batch. The arbiter is a cooperative lock the OCR fallback must acquire
+    # before loading itself onto the GPU, and it yields immediately if vLLM
+    # reports an active generation.
+    poll_interval_s: 1.0
+    max_wait_s: 30.0
+
+scan_detection:
+  # Used by the PyMuPDF fallback when MinerU is unavailable for an input type.
+  min_chars_per_page_area: 0.0008   # extractable chars / page area (pt^2)
+
+cleaning:
+  header_footer_repetition_threshold: 0.6   # fraction of pages a line must repeat on
+  max_chunk_tokens: 1500
+  mask_categories: ["number", "unit", "named_entity", "placeholder", "formula"]
+
+translation:
+  glossary_max_terms: 200
+  # TranslateGemma translates each chunk; Gemma 4 (llm: above) builds the glossary first and
+  # fixes any glossary term a chunk's translation missed (translation/translator.py). Under
+  # Ollama, scripts/setup.* set it (AICODEX_TRANSLATOR_*) to the size matching the Legal tab's
+  # Gemma: translategemma:27b with gemma4:31b, :12b with gemma4:12b, :4b with gemma3:4b-it-qat.
+  # null (the vLLM default) = Gemma 4 translates on its own.
+  translator: null
+
+slides:
+  default_bullet_count: 4
+  max_bullets_per_slide: 6
+  layouts: ["title_bullets", "two_column", "section_header", "image_caption", "quote"]
+  schema_retry_attempts: 2
+
+tone_control:
+  professionalism_levels:
+    1: { label: "Casual", temp_cap: 1.0 }
+    2: { label: "Conversational", temp_cap: 0.9 }
+    3: { label: "Standard business", temp_cap: 0.8 }
+    4: { label: "Formal", temp_cap: 0.6 }
+    5: { label: "Executive/Legal", temp_cap: 0.4 }
+  creativity_levels:
+    1: { label: "Minimal", temperature: 0.2, top_p: 0.85 }
+    2: { label: "Low", temperature: 0.4, top_p: 0.90 }
+    3: { label: "Balanced", temperature: 0.6, top_p: 0.92 }
+    4: { label: "High", temperature: 0.85, top_p: 0.95 }
+    5: { label: "Maximum", temperature: 1.0, top_p: 0.97 }
+
+logging:
+  level: "INFO"
+  json: true
+  # One JSON line per LLM call: call site, the model's reasoning ("thinking"),
+  # its output, stop reason, token counts, and (llm_trace_prompts) the full
+  # prompt. Holds questions and evidence verbatim. null disables the file;
+  # override with AICODEX_LLM_TRACE_DIR. Render with scripts/llm_trace_report.py.
+  llm_trace_dir: "./data/llm_trace"
+  llm_trace_prompts: true

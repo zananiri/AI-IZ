@@ -1,0 +1,63 @@
+# Portable path: no NVIDIA GPU required. Ollama runs NATIVELY on the host
+# (installed by scripts/setup.ps1 / setup.sh) rather than in a container --
+# Docker on macOS can't pass Apple Silicon's Metal GPU through to a
+# container, so running Ollama in Docker there would silently fall back to
+# CPU-only. Running it on the host lets Ollama use whatever acceleration is
+# actually available (Metal on Mac, CUDA/ROCm on Windows/Linux, or CPU).
+#
+# This compose file starts ONLY the app container, pointed at the host's
+# Ollama via host.docker.internal. Start Ollama first (it installs itself as
+# a background service on both Windows and macOS, so `ollama serve` is
+# usually already running -- see scripts/setup.*).
+#
+# Usage:
+#   docker compose -f docker-compose.portable.yml up -d
+#
+# Compare with docker-compose.yml (vLLM + app, NVIDIA GPU required, faster).
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    ports:
+      - "8456:8456"  # FastAPI (Gradio UI mounted at /ui)
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./assets:/app/assets
+      - ./models:/app/models
+      - ./hf_cache:/root/.cache/huggingface
+      - ./paddleocr_cache:/root/.paddleocr
+      - ./stanza_cache:/root/stanza_resources
+    environment:
+      - AICODEX_CONFIG=/app/config/config.yaml
+      - HF_HUB_OFFLINE=1
+      - AICODEX_APP_PORT=8456
+      - AICODEX_LLM_BACKEND=ollama
+      - AICODEX_LLM_BASE_URL=http://host.docker.internal:11434
+      # General chat (chat, rewrite, slides, the glossary work around translation): the same Gemma
+      # as the Legal tab below, thinking off. scripts/setup.* pick OLLAMA_MODEL for this host.
+      - AICODEX_LLM_MODEL=${OLLAMA_MODEL:-gemma4:31b}
+      - AICODEX_LLM_SUPPORTS_THINKING=false
+      # General chat context window (Ollama num_ctx).
+      - AICODEX_LLM_MAX_MODEL_LEN=16384
+      # Legal tab: an independent deployment (see config/config.yaml's `legal:`
+      # section) -- also routed to the same host Ollama instance rather than
+      # config.yaml's vLLM-only default (http://vllm:8000). Gemma runs with
+      # thinking off.
+      - AICODEX_LEGAL_ORCHESTRATOR_BACKEND=ollama
+      - AICODEX_LEGAL_ORCHESTRATOR_BASE_URL=http://host.docker.internal:11434
+      - AICODEX_LEGAL_ORCHESTRATOR_MODEL=${OLLAMA_MODEL:-gemma4:31b}
+      - AICODEX_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false
+      # Context window (Ollama num_ctx) for the Legal tab: evidence + thinking pass. scripts/setup.*
+      # write the value picked for this host's memory to .env.local; 16384 is the config default.
+      - AICODEX_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=${LEGAL_CONTEXT_LENGTH:-16384}
+      # Translation: TranslateGemma translates each chunk, sized to match OLLAMA_MODEL
+      # (translategemma:27b with gemma4:31b, :12b with gemma4:12b, :4b with gemma3:4b-it-qat).
+      - AICODEX_TRANSLATOR_BACKEND=ollama
+      - AICODEX_TRANSLATOR_BASE_URL=http://host.docker.internal:11434
+      - AICODEX_TRANSLATOR_MODEL=${OLLAMA_TRANSLATE_MODEL:-translategemma:27b}
+      - AICODEX_TRANSLATOR_MAX_MODEL_LEN=8192
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux needs this; Docker Desktop (Win/Mac) provides it natively

@@ -1,0 +1,23 @@
+# Spanish legal corpus pipeline (scripts/legal_data/: BOE, EUR-Lex, Tribunal Constitucional). Either:
+#   pip install -e ".[legal,legal-data]"
+# or, next to an existing install of this repo:
+#   pip install -r requirements-legal-data.txt
+
+# fetchers (scripts/legal_data/fetch_*.py)
+httpx>=0.27
+pydantic>=2.8
+PyYAML>=6.0
+orjson>=3.10
+structlog>=24.4
+PyMuPDF>=1.24          # PDF text (legal/pdf_text.py)
+lxml>=5.2              # BOE XML, TC HTML, EUR-Lex XHTML
+
+# vectorize.py
+chromadb>=0.5
+# Capped at <6.0: 6.x requires transformers>=5.0, which conflicts with
+# magic-pdf (ingestion-mineru extra)'s transformers<5.0 pin -- see the same
+# cap on pyproject.toml's `legal` extra.
+sentence-transformers>=3.0,<6.0
+# Qwen3-Embedding (legal.retrieval.embedding_model) needs transformers >= 4.51
+transformers>=4.51,<5.0
+scikit-learn>=1.2      # BM25 over the corpus (legal/corpus_lexical.py)

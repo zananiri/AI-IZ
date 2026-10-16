@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Before/after-RAG knowledge test for the Legal tab, with scores.
+
+    python scripts/eval_legal.py                         # both phases, full pipeline
+    python scripts/eval_legal.py --ingest                # index legal_txt/ between the phases
+    python scripts/eval_legal.py --phase before          # baseline only (model alone)
+    python scripts/eval_legal.py --phase after
+    python scripts/eval_legal.py --run-dir data/legal/eval/<run>   # resume / re-report a run
+    python scripts/eval_legal.py --only A1,B4,C2
+    python scripts/eval_legal.py --run-dir data/legal/eval/<run> --rejudge   # re-grade saved answers
+
+BEFORE: the orchestrator model answers each question with no context.
+AFTER: the full Legal pipeline answers over the index. Every answer is graded
+by the same model as an LLM judge against the gold answer. Scoring rules:
+src/aicodex/legal/evaluation.py. Results are saved after every question
+(before.json / after.json in the run directory) and summarized in report.md.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from aicodex.legal import evaluation as ev
+from aicodex.legal.citations import strip_citations
+from aicodex.llm.client import aclose_all_clients, get_legal_orchestrator_client
+
+DEFAULT_SET = Path(__file__).resolve().parent.parent / "evals" / "legal" / "lau_2026_es.json"
+
+
+def _save(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _load(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def _log(message: str) -> None:
+    print(f"[{datetime.now():%H:%M:%S}] {message}", flush=True)
+
+
+async def _grade(llm, q: ev.EvalQuestion, answer: str, cited: list[str] | None = None) -> dict:
+    """The judge sees the answer with the provisions it cites; key facts and traps are matched on its text."""
+    shown = ev.with_citations(answer, cited or [])
+    try:
+        judgement = await ev.judge(llm, q, shown)
+        verdict, fabricated, explanation = judgement.verdict, judgement.fabricated_specifics, judgement.explanation
+    except Exception as exc:  # noqa: BLE001 -- an ungradable answer is recorded, not fatal
+        verdict, fabricated, explanation = "incorrect", False, f"judge failed: {exc}"
+    facts, traps = ev.fact_coverage(answer, q.key_facts), ev.trap_hits(answer, q.traps)
+    graded = {"verdict": verdict, "fabricated_specifics": fabricated, "judge_explanation": explanation,
+              "fact_coverage": facts, "trap_hits": traps}
+    if ev.needs_contradiction_check(q, verdict, facts, traps):
+        try:
+            check = await ev.contradiction(llm, q, shown)
+        except Exception as exc:  # noqa: BLE001
+            graded["contradiction_check"] = f"failed: {exc}"
+            return graded
+        graded["contradiction_check"] = {"contradicts_gold": check.contradicts_gold, "conflict": check.conflict}
+        if check.contradicts_gold:
+            graded["needs_review"] = True  # every key fact present, yet judged wrong: a person should look
+        if not check.contradicts_gold:
+            # Every key fact present and nothing contradicts the gold answer: the judge's
+            # verdict is kept for the record, the grade is correct.
+            graded.update(judge_verdict=verdict, verdict="correct", fabricated_specifics=False)
+    return graded
+
+
+async def run_before(questions, out: Path) -> dict:
+    llm = get_legal_orchestrator_client()
+    results = _load(out)
+    for q in questions:
+        if q.id in results:
+            continue
+        _log(f"BEFORE {q.id}: asking the model with no context")
+        started = time.monotonic()
+        try:
+            answer = await ev.ask_baseline(llm, q)
+        except Exception as exc:  # noqa: BLE001
+            results[q.id] = {"answer_text": "", "error": str(exc), "classification": "error"}
+            _save(out, results)
+            continue
+        graded = await _grade(ev.get_judge_client(), q, answer)
+        graded["classification"] = ev.classify_baseline(
+            q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"]
+        )
+        results[q.id] = {"answer_text": answer, "seconds": round(time.monotonic() - started), **graded}
+        _save(out, results)
+        _log(f"BEFORE {q.id}: {graded['classification']}")
+    return results
+
+
+async def run_after(questions, out: Path) -> dict:
+    from aicodex.legal import retrieval
+    from aicodex.legal.pipeline import run_legal_turn
+
+    if retrieval.collection_count() == 0:
+        raise SystemExit("The Legal index is empty -- run with --ingest, or scripts/ingest_legal_txt.py first.")
+    results = _load(out)
+    for q in questions:
+        if q.id in results:
+            continue
+        _log(f"AFTER {q.id}: running the Legal pipeline")
+        started = time.monotonic()
+
+        async def status(message: str, qid: str = q.id) -> None:
+            _log(f"  {qid}: {message}")
+
+        try:
+            turn = await run_legal_turn(q.question, f"eval-{q.id}", status)
+        except Exception as exc:  # noqa: BLE001
+            # Retrieval and citation are unknown, not zero: the pipeline failed (e.g. a model
+            # timeout), which says nothing about what retrieval found.
+            results[q.id] = {"answer_text": "", "error": f"{type(exc).__name__}: {exc}", "verdict": "error",
+                             "score": 0.0, "passed": False, "retrieval": None, "citation": None}
+            _save(out, results)
+            continue
+
+        answer = strip_citations(turn.output["answer_draft"])
+        retrieved_texts = [c["text"] for c in turn.retrieved_chunks]
+        cited_ids = {note["source_id"] for note in turn.footnotes}
+        cited_texts = [c["text"] for c in turn.retrieved_chunks if c["source_id"] in cited_ids]
+        cited = [f"{n['law']} {n['section']} ({'verified' if n['verified'] else 'unverified'})" for n in turn.footnotes]
+        graded = await _grade(ev.get_judge_client(), q, answer, cited)
+        scores = ev.score_after(
+            q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"], retrieved_texts, cited_texts
+        )
+        results[q.id] = {
+            "answer_text": answer,
+            "seconds": round(time.monotonic() - started),
+            "escalation_reasons": turn.escalation_reasons,
+            "cited": cited,
+            "retrieved": [c["source_id"] for c in turn.retrieved_chunks],
+            "audit_path": turn.audit_path,
+            **graded,
+            **scores,
+            **ev.reasoning_record(turn),
+        }
+        _save(out, results)
+        _log(f"AFTER {q.id}: verdict={graded['verdict']} score={scores['score']:.2f}")
+    return results
+
+
+async def rejudge(questions, run_dir: Path, after_only: bool = False) -> None:
+    """Re-grades saved answers with the current judge (ev.get_judge_client); the pipeline is not re-run."""
+    llm = ev.get_judge_client()
+    before, after = _load(run_dir / "before.json"), _load(run_dir / "after.json")
+    ev.backfill_answer_texts(before, after)
+    for q in questions:
+        for phase, results in ((("AFTER", after),) if after_only else (("BEFORE", before), ("AFTER", after))):
+            record = results.get(q.id)
+            if not record or record.get("error"):
+                continue
+            old = record.get("classification") or record.get("verdict")
+            graded = await _grade(llm, q, record.get("answer_text", ""), record.get("cited"))
+            record.pop("needs_review", None)
+            record.pop("judge_verdict", None)
+            record.update(graded)
+            if phase == "BEFORE":
+                record["classification"] = ev.classify_baseline(
+                    q, graded["verdict"], graded["fabricated_specifics"], graded["trap_hits"]
+                )
+            else:
+                record.update(ev.rescore_after(q, record, graded["verdict"], graded["fabricated_specifics"],
+                                               graded["trap_hits"]))
+            new = record.get("classification") or record.get("verdict")
+            _log(f"REJUDGE {phase} {q.id}: {old} -> {new}")
+    _save(run_dir / "before.json", before)
+    _save(run_dir / "after.json", after)
+
+
+async def main_async(args) -> int:
+    meta_set, questions = ev.load_eval_set(Path(args.eval_set))
+    if args.only:
+        wanted = {x.strip() for x in args.only.split(",")}
+        questions = [q for q in questions if q.id in wanted]
+
+    run_dir = Path(args.run_dir) if args.run_dir else Path("data/legal/eval") / datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    _log(f"Run directory: {run_dir}")
+
+    from aicodex.config import get_config
+
+    legal = get_config().legal
+    meta = _load(run_dir / "meta.json") or {
+        "eval_set": meta_set["name"],
+        "started": datetime.now().isoformat(timespec="seconds"),
+        "model (before RAG, pipeline, judge)": legal.orchestrator.model,
+        "judge": os.environ.get("AICODEX_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
+        "retrieval": f"{legal.retrieval.embedding_model}, top_k={legal.retrieval.top_k}, "
+                     f"keyword={legal.retrieval.keyword_search}, reranker={legal.retrieval.reranker_model}, "
+                     f"evidence budget={legal.retrieval.max_evidence_tokens}",
+    }
+    _save(run_dir / "meta.json", meta)
+
+    if args.rejudge:
+        try:
+            await rejudge(questions, run_dir, args.after_only)
+        finally:
+            await aclose_all_clients()
+        args.phase = "report"
+
+    try:
+        before = await run_before(questions, run_dir / "before.json") if args.phase in ("before", "both") else _load(run_dir / "before.json")
+        if args.ingest and args.phase in ("after", "both"):
+            from aicodex.legal import folder_ingest
+
+            _log("Indexing legal_txt/ (the RAG step)")
+            for r in folder_ingest.run():
+                _log(f"  [{r.action}] {r.path.name} {r.law_name} {r.chunk_count or ''} {r.message}")
+        after = (
+            await run_after(questions, run_dir / "after.json")
+            if args.phase in ("after", "both") else _load(run_dir / "after.json")
+        )
+    finally:
+        await aclose_all_clients()
+
+    ev.backfill_answer_texts(before, after)
+    summary = ev.summarize(questions, before, after)
+    _save(run_dir / "summary.json", summary)
+    report = ev.render_report(meta, questions, before, after, summary)
+    (run_dir / "report.md").write_text(report, encoding="utf-8")
+
+    b, a = summary.get("before") or {}, summary.get("after") or {}
+    print("\n==================== SCORES ====================")
+    if b:
+        print(f"Before RAG: {b['score']:.0f}/100 non-hallucination  | hallucinations {b['hallucinations']}/{b['answered']}, "
+              f"abstained {b['abstained']}, correct without context {b['correct_without_context']}")
+    if a:
+        print(f"After RAG:  {a['score']:.0f}/100 overall             | hallucinations {a['hallucinations']}/{a['answered']}")
+        for group, row in a["by_group"].items():
+            parts = "  ".join(f"{p} {row[p]:.0f}%" for p in ("retrieval", "answer", "citation") if p in row)
+            print(f"   group {group}: {row['score']:.0f}/100  {parts}")
+    print(f"Report: {run_dir / 'report.md'}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--phase", choices=["before", "after", "both"], default="both")
+    parser.add_argument("--eval-set", default=str(DEFAULT_SET))
+    parser.add_argument("--run-dir", help="existing run directory to resume or re-report")
+    parser.add_argument("--only", help="comma-separated question ids")
+    parser.add_argument("--ingest", action="store_true", help="index legal_txt/ before the after-RAG phase")
+    # Accepted and ignored: older copies of notebooks/kaggle_legal_eval.ipynb still pass it.
+    parser.add_argument("--no-dicta", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--rejudge", action="store_true",
+                        help="re-grade the run's saved answers with the current judge prompt, then re-report")
+    parser.add_argument("--after-only", action="store_true", help="with --rejudge: leave before-RAG grades alone")
+    return asyncio.run(main_async(parser.parse_args()))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

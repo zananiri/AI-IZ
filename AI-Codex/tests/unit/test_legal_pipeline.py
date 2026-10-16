@@ -1,0 +1,858 @@
+"""End-to-end Legal pipeline runs against scripted fake models and a fake
+retrieval result: exercises routing, the Pass A gate, citation
+verification and the audit log without any model server."""
+
+import asyncio
+import json
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from aicodex.config import get_config
+from aicodex.legal import pipeline
+from aicodex.legal.chunking import normalize_json_quotes
+from aicodex.legal.citations import format_citation
+from aicodex.legal.models import ChunkMetadata
+from aicodex.legal.retrieval import RetrievalResult, RetrievedLegalChunk
+from aicodex.llm import schemas
+
+LAW = 'Real Decreto de 24 de julio de 1889 por el que se publica el Código Civil'
+SOURCE = "codigo-civil@1889-08-16:1265"
+CHUNK_TEXT = f"{LAW} > Artículo 1265\n\nSerá nulo el consentimiento prestado por error, violencia, intimidación o dolo."
+CITE = format_citation(
+    claim_id="C1", source_id=SOURCE, law=LAW, section="1265", effective="current",
+    source_type="statute", relation="supports",
+)
+
+GOOD_MEMO = {
+    "issues": [{"issue_id": "I1", "question": "rescission for mistake", "legal_domain": "contracts"}],
+    "facts_relied_on": [{"fact_id": "F1", "text": "the user contracted by mistake"}],
+    "governing_law": [{"claim_id": "C1", "text": "A party who contracted by mistake may rescind.", "issue_id": "I1",
+                       "fact_ids": ["F1"], "source_ids": [SOURCE]}],
+    "contrary_authority": [],
+    "contrary_search_performed": True,
+    "unresolved_questions": ["C1: searched the evidence for contrary authority; none found"],
+}
+
+
+class FakeClient:
+    """Pops scripted responses per call site; records every call."""
+
+    def __init__(self, model, json_responses=None, text_responses=None):
+        self.model = model
+        self.json_responses = {k: list(v) for k, v in (json_responses or {}).items()}
+        self.text_responses = {k: list(v) for k, v in (text_responses or {}).items()}
+        self.calls = []
+        self.samplings = []  # (call site, SamplingParams) per call
+
+    async def complete_json(self, messages, call_site, schema, sampling=None, **_):
+        self.calls.append((call_site.name, messages))
+        self.samplings.append((call_site.name, sampling))
+        queue = self.json_responses.get(call_site.name)
+        if not queue:
+            raise AssertionError(f"unexpected JSON call to {call_site.name}")
+        return schema.model_validate(queue.pop(0))
+
+    async def complete_text(self, messages, call_site, sampling=None, **_):
+        self.calls.append((call_site.name, messages))
+        self.samplings.append((call_site.name, sampling))
+        queue = self.text_responses.get(call_site.name)
+        if not queue and call_site.name == "legal_draft" and self.json_responses.get("legal_draft"):
+            return _draft_text(self.json_responses["legal_draft"].pop(0))  # scripted as the draft's fields
+        if not queue:
+            if call_site.name == "legal_analysis":  # Pass 0 is optional: no notes unless scripted
+                return ""
+            raise AssertionError(f"unexpected text call to {call_site.name}")
+        return queue.pop(0)
+
+    def names(self):
+        return [name for name, _ in self.calls]
+
+
+def _draft_text(fields: dict) -> str:
+    """A draft scripted as LegalDraft fields, as the drafter writes it: the answer, then its closing lines."""
+    text = fields["answer_draft"]
+    if fields.get("escalation_flag"):
+        text += f"\nESCALATE: {fields.get('escalation_reason') or 'flagged'}"
+    if fields.get("coverage_gaps"):
+        text += f"\nGAPS: {fields['coverage_gaps']}"
+    return text
+
+
+def _retrieval() -> RetrievalResult:
+    meta = ChunkMetadata(
+        chunk_id=SOURCE, source_id=SOURCE, section_key=SOURCE, law_id="codigo-civil", law_name=LAW,
+        chapter="CAPÍTULO II", part=None, section_number="1265", subsection_number=None, breadcrumb=f"{LAW} > Artículo 1265",
+        effective_date_start="1889-08-16", effective_date_end=None, status="current", source_type="statute",
+        source_origin="boe", ingestion_date="2026-09-23", language="es",
+    )
+    chunk = RetrievedLegalChunk(SOURCE, CHUNK_TEXT, meta, 0.2, "search")
+    return RetrievalResult(chunks=[chunk], low_relevance=False, best_distance=0.2, bundle_verification="signed")
+
+
+@pytest.fixture
+def wire(monkeypatch, tmp_path):
+    monkeypatch.setattr(get_config().legal, "audit_dir", str(tmp_path))
+    monkeypatch.setattr(get_config().legal.retrieval, "source", "signed_index")  # fake_retrieve stands in for it
+    queries = []
+
+    def fake_retrieve(query):
+        queries.append(query)
+        return _retrieval()
+
+    monkeypatch.setattr(pipeline, "retrieve", fake_retrieve)
+    monkeypatch.setattr(pipeline, "amendment_index", dict)  # never touch the real vector DB
+
+    def install(llm):
+        monkeypatch.setattr(pipeline, "get_legal_orchestrator_client", lambda: llm)
+        return queries
+
+    return install
+
+
+async def _noop_status(message):
+    pass
+
+
+def _run(query):
+    return asyncio.run(pipeline.run_legal_turn(query, "job1", _noop_status))
+
+
+def _audit(result):
+    return json.loads(Path(result.audit_path).read_text(encoding="utf-8").splitlines()[-1])
+
+
+def test_spanish_turn_revises_memo_and_answers_with_the_verified_draft(wire):
+    draft_es = f"El consentimiento prestado por error es nulo. {CITE}"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [{**GOOD_MEMO, "contrary_search_performed": False}, GOOD_MEMO],
+            "legal_draft": [{"answer_draft": draft_es, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "artículo 1265"}],
+        },
+    )
+    queries = wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    assert result.reply_language == "es"
+    assert queries == ["¿Puedo anular un contrato que firmé por error?"]  # retrieval searches the question as asked
+    assert "legal_language_id" not in llm.names()  # Spanish recognised locally, no model call
+    assert llm.names().count("legal_research_memo") == 2  # gate sent the first memo back
+    assert result.output["answer_draft"] == draft_es
+    assert result.footnotes[0]["verified"] and result.footnotes[0]["section"] == "1265"
+    assert not result.output["escalation_flag"]
+
+    entry = _audit(result)
+    assert entry["orchestrator_model"] == "gemma4"
+    assert len(entry["memorandum_attempts"]) == 2 and entry["memorandum_attempts"][0]["errors"]
+    assert entry["final_integrity"]["structural_problems"] == {}
+
+
+def test_english_turn_withholds_a_draft_whose_only_citation_fails(wire):
+    # An invented claim too: a known claim with one source in the memo would be repaired to it.
+    invented = CITE.replace(SOURCE, "invented:99").replace('claim_id="C1"', 'claim_id="C9"')
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_language_id": [{"language": "en"}],
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [
+                {"answer_draft": f"A mistaken party may rescind. {invented}", "escalation_flag": False},
+                {"answer_draft": f"A mistaken party may rescind. {invented}", "escalation_flag": False},
+            ],
+        },
+    )
+    wire(llm)
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    assert result.reply_language == "en"
+    assert llm.names().count("legal_draft") == 2  # one redraft after the failed verification
+    assert result.display_answer.startswith("The drafted answer could not be verified")
+    assert result.output["escalation_flag"] and result.footnotes == []
+    assert any("no answer was given" in r and "invented:99" in r for r in result.escalation_reasons)
+    entry = _audit(result)
+    assert "rescind" in entry["withheld_draft"] and entry["removed_sentences"][0]["source_id"] == "invented:99"
+
+
+def test_memo_failing_gate_after_revisions_escalates_without_drafting(wire):
+    bad = {**GOOD_MEMO, "contrary_search_performed": False}
+    llm = FakeClient(
+        "gemma4",
+        json_responses={"legal_language_id": [{"language": "fr"}], "legal_research_memo": [bad, bad, bad]},
+    )
+    wire(llm)
+
+    result = _run("Puis-je annuler un contrat signé par erreur ?")
+
+    assert "legal_draft" not in llm.names()
+    assert result.output["escalation_flag"]
+    assert result.display_answer.startswith("Je n'ai pas pu")
+
+
+def test_memo_schema_limits_each_claim_to_retrieved_sources():
+    turn_schema = schemas.grounded_memorandum_schema([SOURCE])
+    wire_schema = json.dumps(turn_schema.model_json_schema(), ensure_ascii=False)
+    assert SOURCE in wire_schema and '"minItems": 1' in wire_schema
+    invented = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "source_ids": ["made-up:1"]}]}
+    with pytest.raises(ValidationError):
+        turn_schema.model_validate(invented)
+
+
+def test_a_claim_naming_no_source_gets_the_evidence_it_quotes(wire):
+    quoting = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "source_ids": [],
+                                              "text": "Será nulo el consentimiento prestado por error, violencia, intimidación o dolo."}]}
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_language_id": [{"language": "en"}],
+            "legal_research_memo": [quoting],
+            "legal_draft": [{"answer_draft": f"A mistaken party may rescind. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}],
+        },
+    )
+    wire(llm)
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    support = result.output["research_memorandum"]["supporting_authority"]
+    assert [(a["source_id"], a["attached_by"], a["section"], a["law"]) for a in support] == [
+        (SOURCE, "pipeline", "1265", LAW)
+    ]
+    assert llm.names().count("legal_research_memo") == 1 and not result.output["escalation_flag"]
+
+
+def test_short_form_citation_is_expanded_and_a_citationless_draft_escalates(wire):
+    short = f"[[CITE: claim_id=C1 | source_id={SOURCE} | relation=supports]]"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_language_id": [{"language": "en"}, {"language": "en"}],
+            "legal_research_memo": [GOOD_MEMO, GOOD_MEMO],
+            "legal_draft": [
+                {"answer_draft": f"A mistaken party may rescind. {short}", "escalation_flag": False},
+                {"answer_draft": "A mistaken party may rescind.", "escalation_flag": False},
+                {"answer_draft": "A mistaken party may rescind.", "escalation_flag": False},
+            ],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}],
+        },
+    )
+    wire(llm)
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+    assert result.output["answer_draft"] == f"A mistaken party may rescind. {CITE}"
+    assert result.footnotes[0]["verified"] and not result.output["escalation_flag"]
+
+    uncited = _run("Can I cancel a contract I signed by mistake?")
+    assert uncited.output["escalation_flag"]
+    assert any("no [[CITE]] tokens" in r for r in uncited.escalation_reasons)
+    assert uncited.display_answer.startswith("The drafted answer could not be verified")  # nothing verified to give
+
+
+def test_memo_revisions_start_from_the_best_attempt_not_the_last(wire):
+    # One problem the gate can't auto-fix: a claim linked to a fact that doesn't exist.
+    nearly = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "fact_ids": ["F9"]}]}
+    worse = {**nearly, "governing_law": [{**nearly["governing_law"][0], "source_ids": []}],
+             "authority_conflicts": ["C1 lists no source_ids and is not listed in unresolved_questions"]}
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_language_id": [{"language": "en"}],
+            "legal_research_memo": [nearly, worse, GOOD_MEMO],
+            "legal_draft": [{"answer_draft": f"A mistaken party may rescind. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}],
+        },
+    )
+    wire(llm)
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    memo_calls = [messages for name, messages in llm.calls if name == "legal_research_memo"]
+    revised_from = memo_calls[2][2].content  # the assistant turn the third attempt was asked to fix
+    assert f'"source_ids":["{SOURCE}"]' in revised_from.replace(" ", "")  # attempt 1, not the worse attempt 2
+    assert not result.output["escalation_flag"]
+    assert result.output["research_memorandum"]["authority_conflicts"] == []
+
+
+def test_failed_gate_keeps_the_attempt_with_fewest_problems(wire):
+    nearly = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "fact_ids": ["F9"]}]}
+    worse = {**nearly, "governing_law": [{**nearly["governing_law"][0], "source_ids": []}], "unresolved_questions": []}
+    llm = FakeClient(
+        "gemma4",
+        json_responses={"legal_language_id": [{"language": "en"}], "legal_research_memo": [nearly, worse, worse]},
+    )
+    wire(llm)
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    assert result.output["research_memorandum"]["supporting_authority"]  # attempt 1 kept
+    assert len([r for r in result.escalation_reasons if "has no supporting_authority" in r]) == 0
+
+
+# --- answer guards: unverified sentences, wrong-script words, several laws, missing sections ----------
+
+TWO_CLAIM_MEMO = {
+    **GOOD_MEMO,
+    "governing_law": [*GOOD_MEMO["governing_law"],
+                      {"claim_id": "C2", "text": "Rescission is possible for ten years.", "issue_id": "I1",
+                       "fact_ids": [], "source_ids": [SOURCE]}],
+    "unresolved_questions": [*GOOD_MEMO["unresolved_questions"], "C2: searched for contrary authority; none found"],
+}
+CITE_C2 = CITE.replace('claim_id="C1"', 'claim_id="C2"')
+
+LAW2 = 'Ley 1/2000, de 7 de enero, de Enjuiciamiento Civil'
+SOURCE2 = "lec@2001-01-08:25"
+
+
+def _two_law_retrieval(**extra) -> RetrievalResult:
+    result = _retrieval()
+    meta = ChunkMetadata(
+        chunk_id=SOURCE2, source_id=SOURCE2, section_key=SOURCE2, law_id="lec", law_name=LAW2, chapter=None,
+        part=None, section_number="25", subsection_number=None, breadcrumb=f"{LAW2} > Artículo 25",
+        effective_date_start="2001-01-08", effective_date_end=None, status="current", source_type="statute",
+        source_origin="boe", ingestion_date="2026-09-23", language="es",
+    )
+    result.chunks.append(RetrievedLegalChunk(SOURCE2, f"{LAW2} > Artículo 25\n\nLa vista podrá celebrarse por videoconferencia.", meta, 0.3,
+                                             "section_lookup"))
+    for key, value in extra.items():
+        setattr(result, key, value)
+    return result
+
+
+def test_a_sentence_whose_source_does_not_state_it_is_removed(wire):
+    draft = f"El consentimiento prestado por error es nulo. {CITE} La anulación puede pedirse durante diez años. {CITE_C2}"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [TWO_CLAIM_MEMO],
+            "legal_draft": [{"answer_draft": draft, "escalation_flag": False}] * 2,
+            "legal_citation_verification": [
+                {"verdict": "entailed", "explanation": "art. 1265"}, {"verdict": "not_entailed", "explanation": "no term"},
+            ] * 2,
+        },
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    assert result.output["answer_draft"] == f"El consentimiento prestado por error es nulo. {CITE}"
+    assert [n["verified"] for n in result.footnotes] == [True]
+    assert any("Removed 1 statement" in r for r in result.escalation_reasons)
+    assert _audit(result)["removed_sentences"][0]["sentence"] == "La anulación puede pedirse durante diez años."
+
+
+def test_words_in_another_script_are_repaired_word_by_word(wire):
+    draft = f"El consentimiento 報導 prestado por error es nulo согласие. {CITE}"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": draft, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}],
+            # The second replacement is itself foreign, so it isn't applied.
+            "legal_script_repair": [{"repairs": [{"word": "報導", "replacement": "otorgado"},
+                                                 {"word": "согласие", "replacement": "同意"}]}],
+        },
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    assert result.output["answer_draft"] == f"El consentimiento otorgado prestado por error es nulo согласие. {CITE}"
+    assert any("another script remain" in r and "согласие" in r for r in result.escalation_reasons)
+    assert _audit(result)["script_check"]["flagged"] == ["報導", "согласие"]
+
+
+def test_draft_fields_echoed_into_the_answer_text_are_dropped(wire):
+    draft = (f"El consentimiento prestado por error es nulo. {CITE}\n\n escalated_flag: true\n escalation_reason: falta la fecha.\n"
+             " coverage_gaps: sin información.")
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": draft, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}],
+        },
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    assert result.output["answer_draft"] == f"El consentimiento prestado por error es nulo. {CITE}"
+    assert "legal_script_repair" not in llm.names()  # nothing left to repair
+    assert len(_audit(result)["dropped_field_lines"]) == 3
+
+
+def test_an_answer_leaving_out_a_law_in_play_says_so_up_front(wire, monkeypatch):
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            # Asked (twice) to add a claim for the second law; it never does.
+            "legal_research_memo": [GOOD_MEMO] * 3,
+            "legal_draft": [{"answer_draft": f"El consentimiento prestado por error es nulo. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}],
+        },
+    )
+    wire(llm)
+    monkeypatch.setattr(pipeline, "retrieve", lambda q: _two_law_retrieval(laws_in_play=[LAW, LAW2]))
+
+    result = _run("¿Qué establece el artículo 25?")
+
+    memo_calls = [messages for name, messages in llm.calls if name == "legal_research_memo"]
+    assert len(memo_calls) == 3 and f"no claim cites {normalize_json_quotes(LAW2)}" in memo_calls[1][-1].content
+    assert llm.names().count("legal_draft") == 1  # the memorandum has nothing on LAW2 to cite
+    assert result.output["answer_draft"].startswith("La consulta es ambigua")
+    assert f"no aborda: {LAW2}" in result.output["answer_draft"].split("\n\n")[0]
+    assert any("leaves out" in r and LAW2 in r for r in result.escalation_reasons)
+
+
+def test_a_draft_citing_one_law_of_two_the_memo_covers_is_revised(wire, monkeypatch):
+    memo = {**TWO_CLAIM_MEMO, "governing_law": [TWO_CLAIM_MEMO["governing_law"][0],
+                                                {**TWO_CLAIM_MEMO["governing_law"][1], "source_ids": [SOURCE2]}]}
+    cite2 = CITE_C2.replace(SOURCE, SOURCE2).replace(LAW, LAW2).replace('section="1265"', 'section="25"')
+    both = f"La consulta es ambigua. En el Código Civil: es anulable. {CITE} En la LEC: vista por videoconferencia. {cite2}"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [memo],
+            "legal_draft": [{"answer_draft": f"Es anulable. {CITE}", "escalation_flag": False},
+                            {"answer_draft": both, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}] * 3,
+        },
+    )
+    wire(llm)
+    monkeypatch.setattr(pipeline, "retrieve", lambda q: _two_law_retrieval(laws_in_play=[LAW, LAW2]))
+
+    result = _run("¿Qué establece el artículo 25?")
+
+    revision = [messages for name, messages in llm.calls if name == "legal_draft"][1][-1].content
+    assert f"the memorandum has claims for {normalize_json_quotes(LAW2)}" in revision
+    assert result.output["answer_draft"] == both and not result.output["escalation_flag"]
+
+
+def test_a_named_section_missing_from_the_index_is_said_up_front(wire, monkeypatch):
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": f"El consentimiento prestado por error es nulo. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}],
+        },
+    )
+    wire(llm)
+    missing = _retrieval()
+    missing.missing_sections = ["25(2)"]
+    monkeypatch.setattr(pipeline, "retrieve", lambda q: missing)
+
+    result = _run("¿Qué establece el artículo 25(2) del Código Civil?")
+
+    memo_prompt = next(messages for name, messages in llm.calls if name == "legal_research_memo")[1].content
+    assert "does not hold the text of article 25(2)" in memo_prompt
+    assert result.output["answer_draft"].startswith("El texto del artículo 25(2) no figura en el índice")
+    assert any("not in the index: 25(2)" in r for r in result.escalation_reasons)
+
+
+# --- Pass 0 notes, JSON-safe quotes, a draft that can't be generated or ran away, a section in several laws ---
+
+
+def test_analysis_notes_reach_the_memo_and_the_draft(wire):
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": f"El consentimiento prestado por error es nulo. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}],
+        },
+        text_responses={"legal_analysis": ['Direct answer: yes -- "será nulo" (art. 1265).']},
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    assert llm.names()[:2] == ["legal_analysis", "legal_research_memo"]
+    for name in ("legal_research_memo", "legal_draft"):
+        prompt = next(messages for n, messages in llm.calls if n == name)[1].content
+        assert "Analysis notes" in prompt and "«será nulo»" in prompt  # its quotes can't end a JSON string
+    assert result.analysis_notes.startswith("Direct answer: yes")
+    assert _audit(result)["analysis_notes"] == result.analysis_notes
+
+
+def test_analysis_notes_drop_a_final_answer_written_after_them():
+    # Pass 0 as gemma4:12b wrote it in the Legal tab: the notes, then an answer and a disclaimer of its own.
+    notes = (
+        "**Análisis jurídico**\n\n"
+        "1. **Pregunta:** ¿Cuándo debe cumplirse una obligación sin plazo fijado?\n"
+        "3. **Respuesta directa:** el acreedor puede pedir que los tribunales fijen el plazo.\n"
+        "5. **Riesgos:** la ley no define cuánto tiempo es razonable.\n\n"
+        "---\n\n"
+        "**Respuesta:**\n\n"
+        "Según el artículo 1128 del Código Civil, los tribunales fijarán la duración del plazo.\n\n"
+        "*Este documento no constituye asesoramiento jurídico.*"
+    )
+
+    trimmed = pipeline._trim_analysis_notes(notes)
+
+    assert trimmed.startswith("Análisis jurídico") and "**" not in trimmed
+    assert trimmed.endswith("5. Riesgos: la ley no define cuánto tiempo es razonable.")
+    assert "3. Respuesta directa: el acreedor" in trimmed  # the direct-answer item is part of the notes
+    assert "asesoramiento jurídico" not in trimmed and "artículo 1128" not in trimmed
+    assert pipeline._trim_analysis_notes("Answer:\nyes") == "Answer:\nyes"  # nothing but an answer: kept
+
+
+def test_the_drafter_sees_the_memo_with_json_safe_quotes(wire):
+    claim = 'se sustituye "7 días" por "30 días".'
+    quoted = {**GOOD_MEMO, "governing_law": [{**GOOD_MEMO["governing_law"][0], "text": claim}]}
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [quoted],
+            "legal_draft": [{"answer_draft": f"El consentimiento prestado por error es nulo. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}],
+        },
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    draft_prompt = next(messages for n, messages in llm.calls if n == "legal_draft")[1].content
+    assert "«30 días»" in draft_prompt and '\\"30' not in draft_prompt
+    assert result.output["research_memorandum"]["governing_law"][0]["text"] == claim  # stored as written
+
+
+def test_a_draft_that_cannot_be_generated_escalates_instead_of_failing_the_turn(wire):
+    llm = FakeClient(
+        "gemma4",
+        json_responses={"legal_language_id": [{"language": "en"}], "legal_research_memo": [GOOD_MEMO]},
+    )  # no legal_draft response: every draft call fails
+    wire(llm)
+
+    result = _run("Can I cancel a contract I signed by mistake?")
+
+    assert result.display_answer.startswith("The drafted answer could not be verified")
+    assert any("No well-formed draft" in r for r in result.escalation_reasons)
+    assert _audit(result)["draft_attempts"][0]["draft"] is None
+
+
+def test_a_draft_cut_off_in_a_loop_keeps_each_sentence_once_up_to_its_last_citation():
+    short = f"[[CITE: claim_id=C1 | source_id={SOURCE} | relation=supports]]"
+    raw = f"El contrato es anulable. {short} El contrato es anulable. {short} El contrato es anu"
+    draft = pipeline._parse_draft(raw, truncated=True)
+    assert draft.answer_draft == f"El contrato es anulable. {short}"
+    assert draft.escalation_flag and "length limit" in draft.escalation_reason
+    assert pipeline._parse_draft("", truncated=True) is None
+
+
+def test_the_draft_is_plain_text_so_an_ascii_quote_in_the_answer_cannot_cut_it_off():
+    short = f"[[CITE: claim_id=C1 | source_id={SOURCE} | relation=supports]]"
+    answer = f'Según el "Código Civil", el consentimiento prestado por error es nulo. {short}'
+    draft = pipeline._parse_draft(f"{answer}\nESCALATE: none\nGAPS: el plazo para anular\n")
+    assert draft.answer_draft == answer and not draft.escalation_flag
+    assert draft.coverage_gaps == "el plazo para anular"
+    flagged = pipeline._parse_draft(f"```\n{answer}\n\n**ESCALATE: a filing deadline**\n```")
+    assert flagged.answer_draft == answer and flagged.escalation_reason == "a filing deadline"
+    as_json = pipeline._parse_draft('{"answer_draft": "Es anulable.", "escalation_flag": false}')
+    assert as_json.answer_draft == "Es anulable." and not as_json.escalation_flag
+    assert pipeline._parse_draft("  \n") is None
+
+
+def test_a_named_section_several_laws_have_is_flagged_up_front(wire, monkeypatch):
+    memo = {**TWO_CLAIM_MEMO, "governing_law": [TWO_CLAIM_MEMO["governing_law"][0],
+                                                {**TWO_CLAIM_MEMO["governing_law"][1], "source_ids": [SOURCE2]}]}
+    cite2 = CITE_C2.replace(SOURCE, SOURCE2).replace(LAW, LAW2).replace('section="1265"', 'section="25"')
+    both = f"En el Código Civil el contrato con error es anulable. {CITE} En la LEC la vista puede ser por videoconferencia. {cite2}"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [memo],
+            "legal_draft": [{"answer_draft": both, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "ok"}] * 2,
+        },
+    )
+    wire(llm)
+    monkeypatch.setattr(pipeline, "retrieve", lambda q: _two_law_retrieval(
+        laws_in_play=[LAW, LAW2], ambiguous_sections={"25": [LAW, LAW2]}))
+
+    result = _run("¿Qué establece el artículo 25?")
+
+    memo_prompt = next(messages for n, messages in llm.calls if n == "legal_research_memo")[1].content
+    assert "article 25, which the question names, exists in several laws" in memo_prompt
+    opening = result.output["answer_draft"].split("\n\n")[0]
+    assert opening.startswith("La consulta es ambigua: el artículo 25 figura en más de una norma indexada")
+    assert opening.endswith("A continuación se indica lo que establece cada una.")
+    assert result.output["answer_draft"].endswith(cite2)
+    assert not any("leaves out" in r for r in result.escalation_reasons)
+
+
+# --- 25 Sept fixes: a rejected restatement is kept, invented source ids are repaired, a cut-off draft is
+# --- redrafted with different sampling, "not stated" is an answer, "no conflict" isn't a conflict --------
+
+
+def test_a_verbatim_sentence_the_verifier_rejects_is_kept_as_unverified(wire):
+    verbatim = f"Será nulo el consentimiento prestado por error, violencia, intimidación o dolo. {CITE}"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": verbatim, "escalation_flag": False}] * 2,
+            "legal_citation_verification": [{"verdict": "not_entailed", "explanation": "misread"}] * 2,
+        },
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    assert result.output["answer_draft"] == verbatim  # not removed, not withheld
+    assert result.footnotes[0]["verified"] is False
+    assert "kept as unverified" in result.footnotes[0]["problems"][0]
+    assert any("could not be verified" in r for r in result.escalation_reasons)
+    assert pipeline._grounded("Será nulo el consentimiento prestado por error, violencia, intimidación o dolo.", CHUNK_TEXT)
+    assert not pipeline._grounded("Será nulo el consentimiento prestado por error en un plazo de 30 días.", CHUNK_TEXT)  # 30 isn't there
+    assert not pipeline._grounded("La anulación puede pedirse durante diez años.", CHUNK_TEXT)
+
+
+def test_a_citation_to_an_invented_source_is_repaired_from_the_memo(wire):
+    invented = "El consentimiento prestado por error es nulo. [[CITE: claim_id=C1 | source_id=S1 | relation=supports]]"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": invented, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}],
+        },
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    assert result.output["answer_draft"] == f"El consentimiento prestado por error es nulo. {CITE}"
+    assert result.footnotes[0]["verified"] and not result.output["escalation_flag"]
+    assert _audit(result)["draft_attempts"][0]["repaired_source_ids"] == [f"C1: S1 -> {SOURCE}"]
+
+
+def test_a_draft_cut_off_after_a_lead_in_is_redrafted_with_different_sampling(wire):
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": "Esto es lo que establece la ley:", "escalation_flag": False},
+                            {"answer_draft": f"El consentimiento prestado por error es nulo. {CITE}", "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}],
+        },
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    temperatures = [s.temperature for name, s in llm.samplings if name == "legal_draft"]
+    assert temperatures == [0.0, 0.7]
+    revision = [m for n, m in llm.calls if n == "legal_draft"][1]
+    assert revision[-2].content == "Esto es lo que establece la ley:"  # the draft as written, not JSON
+    assert "no [[CITE]] tokens" in revision[-1].content
+    assert result.output["answer_draft"] == f"El consentimiento prestado por error es nulo. {CITE}"
+    assert _audit(result)["draft_attempts"][0]["cut_off"] is True
+
+
+def test_nothing_in_the_evidence_is_answered_as_not_stated(wire):
+    empty = {**GOOD_MEMO, "governing_law": [], "unresolved_questions": []}
+    llm = FakeClient(
+        "gemma4",
+        json_responses={"legal_research_memo": [empty] * 3},
+        text_responses={"legal_analysis": ["3. Direct answer: NOT STATED -- no provision counts indictments."]},
+    )
+    wire(llm)
+
+    result = _run("¿Contra cuántos acusados se formuló acusación según la ley?")
+
+    assert "legal_draft" not in llm.names()
+    assert result.display_answer.startswith("La normativa indexada no lo establece")
+    assert result.escalation_reasons[0].startswith("No retrieved provision states what was asked")
+
+
+def test_a_memo_that_fails_the_gate_for_another_reason_still_gets_the_gate_notice(wire):
+    bad = {**GOOD_MEMO, "contrary_search_performed": False}
+    llm = FakeClient(
+        "gemma4",
+        json_responses={"legal_research_memo": [bad] * 3},
+        text_responses={"legal_analysis": ["Direct answer: NOT STATED"]},  # the memo has claims: not "not stated"
+    )
+    wire(llm)
+
+    assert _run("¿Puedo anular un contrato que firmé por error?").display_answer.startswith("No ha sido posible elaborar un memorándum")
+
+
+def test_corpus_source_plans_the_search_and_answers_from_the_corpus(wire, monkeypatch):
+    monkeypatch.setattr(get_config().legal.retrieval, "source", "corpus")
+    searched = []
+
+    def fake_retrieve_corpus(query, issues):
+        searched.append((query, [(i.law, i.sections) for i in issues]))
+        return _retrieval()
+
+    def no_signed_index(*_):
+        raise AssertionError("the signed index must not be searched")
+
+    monkeypatch.setattr(pipeline.corpus_retrieval, "retrieve_corpus", fake_retrieve_corpus)
+    monkeypatch.setattr(pipeline, "retrieve", no_signed_index)
+    monkeypatch.setattr(pipeline, "amendment_index", no_signed_index)
+    draft_es = f"El consentimiento prestado por error es nulo. {CITE}"
+    llm = FakeClient(
+        "gemma4",
+        json_responses={
+            "legal_retrieval_plan": [{"issues": [{"issue": "nulidad por error", "law": LAW, "sections": ["1265"]}]}],
+            "legal_research_memo": [GOOD_MEMO],
+            "legal_draft": [{"answer_draft": draft_es, "escalation_flag": False}],
+            "legal_citation_verification": [{"verdict": "entailed", "explanation": "artículo 1265"}],
+        },
+    )
+    wire(llm)
+
+    result = _run("¿Puedo anular un contrato que firmé por error?")
+
+    assert searched == [("¿Puedo anular un contrato que firmé por error?", [(LAW, ["1265"])])]
+    assert result.output["answer_draft"] == draft_es and not result.output["escalation_flag"]
+    assert _audit(result)["retrieval_plan"][0]["sections"] == ["1265"]
+
+
+# --- case mode: a work file ending in a recommended next step, instead of an answer ----------------------
+
+CASE_TEXT = "El cliente firmó un contrato por error hace un mes y quiere anularlo. ¿Qué hacemos?"
+
+
+def _run_case(text, job_id="case1"):
+    return asyncio.run(pipeline.run_case_turn(text, job_id, _noop_status))
+
+
+def test_a_case_gets_a_work_file_with_its_citations_verified(wire):
+    good = f"[[CITE: source_id={SOURCE} | relation=supports]]"
+    invented = "[[CITE: source_id=codigo-civil@1889-08-16:99 | relation=supports]]"
+    work_file = (
+        "## 1. Resumen de los hechos\nEl cliente firmó un contrato por error.\n\n"
+        f"## 3. Cuestiones jurídicas\nSerá nulo el consentimiento prestado por error, violencia, intimidación o dolo. {good}\n"
+        f"La anulación es posible en cualquier momento. {invented}\n\n"
+        "## 8. Siguiente paso recomendado\n1. Enviar un requerimiento de anulación a la otra parte.\n\n"
+        "ESCALATE: none"
+    )
+    llm = FakeClient(
+        "gemma4",
+        json_responses={"legal_citation_verification": [{"verdict": "entailed", "explanation": "artículo 1265"}]},
+        text_responses={"legal_case_analysis": [work_file]},
+    )
+    queries = wire(llm)
+
+    result = _run_case(CASE_TEXT)
+
+    assert queries == [CASE_TEXT]  # the case file itself is what's searched
+    assert llm.names() == ["legal_case_analysis", "legal_citation_verification"]  # the invented source isn't sent
+    system, user = next(messages for n, messages in llm.calls if n == "legal_case_analysis")
+    assert "TASK -- case work file" in system.content and "## 8. Siguiente paso recomendado" in system.content
+    assert f"<case_file>\n{CASE_TEXT}\n</case_file>" in user.content and SOURCE in user.content
+    assert "[[CITE" not in result.display_answer and "ESCALATE" not in result.display_answer
+    assert "[1]" in result.display_answer and "[2]" in result.display_answer
+    assert [note["verified"] for note in result.footnotes] == [True, False]
+    assert result.footnotes[0]["law"] == LAW
+    assert "not in the retrieved evidence" in result.footnotes[1]["problems"][0]
+    assert result.escalation_reasons == ["1 citation(s) could not be verified against their sources"]
+    assert not result.notes  # "## 3." and "1." are structure, not figures missing from the sources
+    assert _audit(result)["mode"] == "case"
+
+
+def test_a_case_escalation_line_becomes_a_reason_and_an_empty_case_is_refused(wire):
+    work_file = (
+        "## 3. Cuestiones jurídicas\nSerá nulo el consentimiento prestado por error, violencia, intimidación o dolo. "
+        f"[[CITE: source_id={SOURCE} | relation=supports]]\n\n**ESCALATE: a filing deadline is close**"
+    )
+    llm = FakeClient(
+        "gemma4",
+        json_responses={"legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}]},
+        text_responses={"legal_case_analysis": [work_file]},
+    )
+    wire(llm)
+
+    result = _run_case(CASE_TEXT)
+
+    assert result.escalation_reasons == ["a filing deadline is close"]
+    assert result.output["escalation_flag"] and "ESCALATE" not in result.output["answer_draft"]
+    with pytest.raises(ValueError, match="case file is empty"):
+        _run_case("   ", "case2")
+
+
+# --- case folder: every document read, digested one by one when they don't fit together ----------------
+
+CASE_WORK_FILE = (
+    "## 3. Cuestiones jurídicas\nSerá nulo el consentimiento prestado por error, violencia, intimidación o dolo. "
+    f"[[CITE: source_id={SOURCE} | relation=supports]]\n\nESCALATE: none"
+)
+
+
+def _case_folder(monkeypatch, texts):
+    """Case documents whose extracted text is `texts[name]` (an exception is raised for that file)."""
+
+    async def fake_extract(job_id, path):
+        text = texts[Path(path).name]
+        if isinstance(text, Exception):
+            raise text
+        return text, "es"
+
+    monkeypatch.setattr(pipeline, "extract_document_text", fake_extract)
+    return [(f"/uploads/{name}", name) for name in texts]
+
+
+def _case_llm(digests=()):
+    return FakeClient(
+        "gemma4",
+        json_responses={"legal_citation_verification": [{"verdict": "entailed", "explanation": "art. 1265"}]},
+        text_responses={"legal_case_analysis": [CASE_WORK_FILE], "legal_case_document": list(digests)},
+    )
+
+
+def test_a_case_folder_that_fits_goes_to_the_work_file_whole(wire, monkeypatch):
+    documents = _case_folder(monkeypatch, {
+        "contract.pdf": "Contrato de compraventa de 1.8.2026.",
+        "letter.docx": "Burofax de requerimiento de 1.9.2026.",
+        "scan.png": RuntimeError("OCR failed"),
+    })
+    llm = _case_llm()
+    wire(llm)
+
+    result = asyncio.run(pipeline.run_case_turn(CASE_TEXT, "folder1", _noop_status, documents=documents))
+
+    assert "legal_case_document" not in llm.names()  # small enough: no digests
+    _, user = next(messages for n, messages in llm.calls if n == "legal_case_analysis")
+    assert (f"<case_file>\n{CASE_TEXT}\n\n--- Document 1: contract.pdf ---\nContrato de compraventa de 1.8.2026.\n\n"
+            "--- Document 2: letter.docx ---\nBurofax de requerimiento de 1.9.2026.\n</case_file>") in user.content
+    assert result.notes[0] == "Case document scan.png could not be read: OCR failed"
+    assert [d["name"] for d in _audit(result)["case_documents"]] == ["contract.pdf", "letter.docx", "scan.png"]
+
+
+def test_a_large_case_folder_is_digested_document_by_document(wire, monkeypatch):
+    monkeypatch.setattr(get_config().legal.pipeline, "case_material_max_tokens", 400)
+    documents = _case_folder(monkeypatch, {"a.pdf": "Cláusula larga. " * 400, "b.pdf": "Carta larga. " * 400})
+    statuses = []
+
+    async def status(message):
+        statuses.append(message)
+
+    llm = _case_llm(digests=["El contrato de compraventa se firmó entre las partes por un precio que no se ha pagado.", "Burofax de requerimiento de 1.9.2026."])
+    wire(llm)
+
+    result = asyncio.run(pipeline.run_case_turn("", "folder2", status, documents=documents))
+
+    assert llm.names()[:3] == ["legal_case_document", "legal_case_document", "legal_case_analysis"]
+    first = next(messages for n, messages in llm.calls if n == "legal_case_document")
+    assert first[1].content.startswith('<document name="a.pdf">\nCláusula larga.')
+    _, user = next(messages for n, messages in llm.calls if n == "legal_case_analysis")
+    assert ("<case_file>\n--- Document 1: a.pdf ---\nEl contrato de compraventa se firmó entre las partes por un precio que no se ha pagado.\n\n"
+            "--- Document 2: b.pdf ---\nBurofax de requerimiento de 1.9.2026.\n</case_file>") in user.content
+    assert "Analyzing case document 2/2: b.pdf" in statuses
+    assert len(_audit(result)["case_document_digests"]) == 2
+
+
+def test_a_case_folder_with_nothing_readable_says_why(wire, monkeypatch):
+    documents = _case_folder(monkeypatch, {"blank.pdf": "   "})
+    wire(_case_llm())
+
+    with pytest.raises(ValueError, match="None of the case documents could be read: Case document blank.pdf"):
+        asyncio.run(pipeline.run_case_turn("", "folder3", _noop_status, documents=documents))

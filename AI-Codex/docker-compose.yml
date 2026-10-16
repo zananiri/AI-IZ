@@ -1,0 +1,80 @@
+# Two services, per the target architecture: vLLM serving Gemma 4 31B (FP8), and the
+# app (FastAPI + Gradio UI + pipeline). Both are GPU-visible so the app's
+# opportunistic GPU-OCR fallback can run on the same card as vLLM without
+# ever being resident at the same time as a vLLM generation batch (see
+# src/aicodex/ocr/gpu_arbiter.py) -- vLLM itself always owns the GPU by
+# default via --gpu-memory-utilization headroom.
+#
+# Nothing here reaches the internet at request time. Model weights must be
+# downloaded ahead of time into the volumes below -- these are host bind
+# mounts (not named Docker volumes) so `scripts/download_models.sh` and
+# `huggingface-cli download`, run on the HOST, land exactly where each
+# container expects them. See README.md.
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    command:
+      # Gemma 4 31B, the Legal tab's and the general chat's model (the Ollama path runs it as
+      # gemma4:31b), quantized to FP8 on load: ~33GB of weights, so a GPU above 40GB. A gated repo:
+      # accept its license on huggingface.co before scripts/download_models.sh fetches it.
+      # Translation here is Gemma 4 alone (config.yaml translation.translator: null); TranslateGemma
+      # runs on the Ollama path.
+      - "--model=${VLLM_MODEL_REPO:-google/gemma-4-31B-it}"
+      - "--quantization=${VLLM_QUANTIZATION:-fp8}"
+      # 16k: the Legal tab's evidence + thinking pass (config.yaml legal.orchestrator.max_model_len)
+      # and the general chat's window. On a card too small for that at full precision, set
+      # VLLM_KV_CACHE_DTYPE=fp8.
+      - "--max-model-len=${VLLM_MAX_MODEL_LEN:-16384}"
+      - "--kv-cache-dtype=${VLLM_KV_CACHE_DTYPE:-auto}"
+      - "--gpu-memory-utilization=${VLLM_GPU_MEM_UTIL:-0.90}"
+      - "--port=8000"
+      - "--guided-decoding-backend=${VLLM_GUIDED_BACKEND:-xgrammar}"
+      - "--enable-auto-tool-choice"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./hf_cache:/root/.cache/huggingface
+    environment:
+      - HF_HUB_OFFLINE=1  # inference-time: no network calls for model files
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    depends_on:
+      vllm:
+        condition: service_healthy
+    ports:
+      - "8456:8456"  # FastAPI (Gradio UI mounted at /ui)
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./assets:/app/assets
+      - ./models:/app/models                        # fastText lid.176.bin (paths.fasttext_model_path)
+      - ./hf_cache:/root/.cache/huggingface          # shared with vllm: Surya weights + the tokenizer used for chunk budgeting both resolve repo ids via this same cache
+      - ./paddleocr_cache:/root/.paddleocr           # PaddleOCR/PaddleOCR-VL weights (its own cache dir, not under ~/.cache)
+      - ./stanza_cache:/root/stanza_resources        # Stanza ar/he pipelines
+    environment:
+      - AICODEX_CONFIG=/app/config/config.yaml
+      - HF_HUB_OFFLINE=1
+      - AICODEX_APP_PORT=8456
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]  # only exercised by the opportunistic GPU-OCR fallback

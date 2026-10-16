@@ -1,0 +1,253 @@
+{
+ "name": "lau-2026-es",
+ "description": "Knowledge test for the Ley 29/1994 de Arrendamientos Urbanos (consolidated BOE text, BOE-A-1994-26003), in Spanish. Gold answers quote the current consolidated text. Groups: A = exact numbers and periods, B = definitions / exceptions / multi-part, C = unanswerable (the law does not say).",
+ "scoring_notes": {
+  "key_facts": "Regexes that a correct answer must contain (all of them). Deterministic support for the LLM judge, which grades against the gold answer.",
+  "evidence": "Groups of regexes. Each group must co-occur in ONE retrieved chunk for retrieval to count as a hit. The same test on the cited chunks decides whether the right article was cited.",
+  "traps": "Group C only: regexes for a fabricated specific (a date, an amount). Any match counts as a hallucination."
+ },
+ "questions": [
+  {
+   "id": "A1",
+   "group": "A",
+   "question": "¿Cuál es la duración mínima de un arrendamiento de vivienda habitual si el arrendador es una persona física, y cuál si es una persona jurídica?",
+   "gold": "Si se pacta una duración inferior, el contrato se prorroga obligatoriamente por plazos anuales hasta alcanzar cinco años si el arrendador es persona física, o siete años si es persona jurídica, salvo que el arrendatario manifieste con treinta días de antelación su voluntad de no renovarlo (art. 9.1 LAU).",
+   "key_facts": [
+    "cinco años|5 años",
+    "siete años|7 años"
+   ],
+   "evidence": [
+    [
+     "cinco años",
+     "siete años",
+     "prorrogará"
+    ]
+   ]
+  },
+  {
+   "id": "A2",
+   "group": "A",
+   "question": "¿Con cuánta antelación debe comunicar el inquilino que no quiere renovar el contrato durante el plazo mínimo de cinco años?",
+   "gold": "Con treinta días de antelación como mínimo a la fecha de terminación del contrato o de cualquiera de las prórrogas (art. 9.1 LAU).",
+   "key_facts": [
+    "treinta días|30 días"
+   ],
+   "evidence": [
+    [
+     "treinta días",
+     "no renovarlo"
+    ]
+   ]
+  },
+  {
+   "id": "A3",
+   "group": "A",
+   "question": "Pasado el plazo mínimo, ¿con qué antelación deben arrendador y arrendatario notificar que no renuevan para evitar la prórroga tácita, y cuánto dura esa prórroga?",
+   "gold": "El arrendador debe notificarlo al menos con cuatro meses de antelación y el arrendatario al menos con dos meses; si no lo hacen, el contrato se prorroga obligatoriamente por plazos anuales hasta un máximo de tres años más (art. 10.1 LAU).",
+   "key_facts": [
+    "cuatro meses|4 meses",
+    "dos meses|2 meses",
+    "tres años|3 años"
+   ],
+   "evidence": [
+    [
+     "cuatro meses",
+     "dos meses"
+    ]
+   ]
+  },
+  {
+   "id": "A4",
+   "group": "A",
+   "question": "¿Cuándo puede el arrendatario de una vivienda habitual desistir del contrato y con qué preaviso?",
+   "gold": "Una vez transcurridos al menos seis meses, siempre que lo comunique al arrendador con una antelación mínima de treinta días; el desistimiento así ejercido no genera indemnización a favor del arrendador (art. 11.1 y 11.3 LAU).",
+   "key_facts": [
+    "seis meses|6 meses",
+    "treinta días|30 días"
+   ],
+   "evidence": [
+    [
+     "desistir",
+     "seis meses"
+    ]
+   ]
+  },
+  {
+   "id": "A5",
+   "group": "A",
+   "question": "¿Qué fianza en metálico es obligatoria en un arrendamiento de vivienda y en uno para uso distinto del de vivienda?",
+   "gold": "Una mensualidad de renta en el arrendamiento de vivienda y dos mensualidades en el arrendamiento para uso distinto del de vivienda (art. 36.1 LAU).",
+   "key_facts": [
+    "[Uu]na mensualidad",
+    "dos"
+   ],
+   "evidence": [
+    [
+     "fianza en metálico",
+     "una mensualidad"
+    ]
+   ]
+  },
+  {
+   "id": "A6",
+   "group": "A",
+   "question": "En un contrato de vivienda de hasta cinco años con arrendador persona física, ¿qué valor máximo puede tener la garantía adicional a la fianza?",
+   "gold": "No puede exceder de dos mensualidades de renta (art. 36.5 LAU).",
+   "key_facts": [
+    "dos mensualidades"
+   ],
+   "evidence": [
+    [
+     "garantía adicional",
+     "dos mensualidades"
+    ]
+   ]
+  },
+  {
+   "id": "A7",
+   "group": "A",
+   "question": "Si al terminar el alquiler el arrendador no devuelve la fianza, ¿desde cuándo devenga intereses y de qué tipo?",
+   "gold": "El saldo de la fianza que deba restituirse devenga el interés legal transcurrido un mes desde la entrega de las llaves sin que se haya restituido (art. 36.4 LAU).",
+   "key_facts": [
+    "inter[eé]s legal",
+    "un mes"
+   ],
+   "evidence": [
+    [
+     "interés legal",
+     "entrega de las llaves"
+    ]
+   ]
+  },
+  {
+   "id": "A8",
+   "group": "A",
+   "question": "En un arrendamiento de vivienda temporal, ¿cuándo puede desistir el arrendatario y con qué preaviso?",
+   "gold": "Una vez transcurrido al menos un mes desde su formalización, comunicándolo al arrendador con una antelación mínima de diez días (art. 11.2 LAU).",
+   "key_facts": [
+    "un mes",
+    "diez días|10 días"
+   ],
+   "evidence": [
+    [
+     "vivienda temporal",
+     "diez días"
+    ]
+   ]
+  },
+  {
+   "id": "B1",
+   "group": "B",
+   "question": "Si fallece el arrendatario, ¿quiénes pueden subrogarse en el contrato de arrendamiento de vivienda?",
+   "gold": "El cónyuge que conviviera con él; la pareja de hecho que hubiera convivido de forma permanente al menos los dos años anteriores (o con descendencia común); los descendientes sujetos a su patria potestad o tutela o que hubieran convivido con él los dos años precedentes; los ascendientes y hermanos que hubieran convivido con él esos dos años; y ciertos parientes con minusvalía igual o superior al 65 por 100. Si no existe ninguna de estas personas, el arrendamiento se extingue (art. 16.1 LAU).",
+   "key_facts": [
+    "c[oó]nyuge",
+    "dos años"
+   ],
+   "evidence": [
+    [
+     "muerte del arrendatario",
+     "cónyuge"
+    ]
+   ]
+  },
+  {
+   "id": "B2",
+   "group": "B",
+   "question": "¿Puede el arrendador cobrar al inquilino los gastos de la inmobiliaria por formalizar el contrato?",
+   "gold": "No. Los gastos de gestión inmobiliaria y de formalización del contrato no pueden ser repercutidos al arrendatario, ni directa ni indirectamente (art. 20.2 LAU).",
+   "key_facts": [
+    "gesti[oó]n inmobiliaria",
+    "\\bno\\b"
+   ],
+   "evidence": [
+    [
+     "gestión inmobiliaria",
+     "repercutidos"
+    ]
+   ]
+  },
+  {
+   "id": "B3",
+   "group": "B",
+   "question": "Si el contrato de alquiler de vivienda no dice nada sobre la actualización de la renta, ¿se actualiza cada año?",
+   "gold": "No. En defecto de pacto expreso no se aplica actualización de rentas a los contratos (art. 18.1 LAU).",
+   "key_facts": [
+    "no se aplica|no se actualiza|no procede|\\bno\\b"
+   ],
+   "evidence": [
+    [
+     "defecto de pacto",
+     "actualización"
+    ]
+   ]
+  },
+  {
+   "id": "B4",
+   "group": "B",
+   "question": "Si el propietario vende la vivienda alquilada, ¿tiene el comprador que respetar el contrato de alquiler?",
+   "gold": "Sí: el adquirente queda subrogado en los derechos y obligaciones del arrendador durante los cinco primeros años de vigencia del contrato, o siete si el arrendador anterior fuese persona jurídica, aun cuando concurran en él los requisitos del artículo 34 de la Ley Hipotecaria (art. 14 LAU).",
+   "key_facts": [
+    "subrogad",
+    "cinco (primeros )?años|5 años"
+   ],
+   "evidence": [
+    [
+     "adquirente",
+     "subrogado"
+    ]
+   ]
+  },
+  {
+   "id": "B5",
+   "group": "B",
+   "question": "¿Puede el arrendador recuperar la vivienda antes de cinco años porque la necesita para vivir en ella?",
+   "gold": "Solo si es persona física, una vez transcurrido el primer año, y siempre que al celebrar el contrato se hubiera hecho constar de forma expresa la necesidad de ocupar la vivienda para sí o para los familiares que la ley indica; debe comunicarlo al arrendatario con la antelación que exige la ley (art. 9.3 LAU).",
+   "key_facts": [
+    "primer año",
+    "persona f[ií]sica",
+    "expresa|constar"
+   ],
+   "evidence": [
+    [
+     "necesidad",
+     "primer año"
+    ]
+   ]
+  },
+  {
+   "id": "B6",
+   "group": "B",
+   "question": "¿Puede el arrendador exigir al inquilino que contrate un seguro de impago de renta?",
+   "gold": "No. En ningún caso puede exigirse al arrendatario la contratación de seguros de impago de renta u otras coberturas análogas (art. 36.5 LAU).",
+   "key_facts": [
+    "ning[uú]n caso|\\bno\\b",
+    "seguro"
+   ],
+   "evidence": [
+    [
+     "seguros de impago"
+    ]
+   ]
+  },
+  {
+   "id": "C1",
+   "group": "C",
+   "question": "Según la Ley de Arrendamientos Urbanos, ¿cuál es el importe máximo en euros de la renta mensual de un piso en Madrid?",
+   "gold": "La Ley de Arrendamientos Urbanos no fija un importe máximo de renta en euros.",
+   "traps": [
+    "\\d[\\d.,]*\\s*(€|euros)"
+   ]
+  },
+  {
+   "id": "C2",
+   "group": "C",
+   "question": "¿En qué fecha de 2027 se publicará el próximo valor del índice IRAV según la ley?",
+   "gold": "La ley no fija esa fecha.",
+   "traps": [
+    "\\d{1,2} de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)( de)? 2027",
+    "\\d{1,2}[./]\\d{1,2}[./](20)?27"
+   ]
+  }
+ ]
+}

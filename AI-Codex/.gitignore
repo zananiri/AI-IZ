@@ -1,0 +1,39 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+data/
+models/
+hf_cache/
+paddleocr_cache/
+stanza_cache/
+.env
+.env.local
+*.pptx
+!tests/fixtures/*.pptx
+
+# Bulk legal corpus (scripts/legal_data/): downloaded and generated data, never committed.
+# Hand-made eval sets (legal_txt/Evals/) and curated PDFs directly in legal_txt/ stay tracked.
+legal_txt/laws/
+legal_txt/regulations/
+legal_txt/regional_laws/
+legal_txt/eu_law/
+legal_txt/constitutional_court/
+legal_txt/boe/
+legal_txt/_manifests/
+legal_txt/_sample/
+# The built corpus vectordb/jsonl zips (Kaggle Output): far too big for git, and rebuildable from
+# the fetch above + scripts/legal_data/vectorize.py. Install locally with install_corpus.py, or
+# upload as a private Kaggle Dataset for notebooks that need it as an input (see notebooks/).
+legal_txt/chroma_bkp/
+
+# The bulk corpus archives (1.3 GB) live in the Kaggle dataset, not in git
+legal_txt/Legal_Corpus/
+*.log
+
+# The attorney's case files (scripts/ingest_case_files.py): privileged client material, never
+# committed. Only the folder's README is tracked. Their index lives under data/ (ignored above).
+legal_data/*
+!legal_data/README.md

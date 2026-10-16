@@ -35,18 +35,18 @@ def test_baseline_classification():
     assert ev.classify_baseline(a, "correct", False, []) == "correct_without_context"
     assert ev.classify_baseline(a, "incorrect", True, []) == "hallucination"
     assert ev.classify_baseline(c, "correct", False, []) == "abstained"
-    assert ev.classify_baseline(c, "correct", False, ["500 ש\"ח"]) == "hallucination"
+    assert ev.classify_baseline(c, "correct", False, ["500 euros"]) == "hallucination"
 
 
 def test_after_scoring_retrieval_answer_citation_and_multihop():
-    q = _q(group="B", evidence=[["רשות ציבורית"], ["גורם ציבורי"]])
-    scores = ev.score_after(q, "correct", False, [], ["...רשות ציבורית...", "...גורם ציבורי..."], ["...רשות ציבורית..."])
+    q = _q(group="B", evidence=[["Administración pública"], ["entidad pública"]])
+    scores = ev.score_after(q, "correct", False, [], ["...Administración pública...", "...entidad pública..."], ["...Administración pública..."])
     assert scores["retrieval"] == 1.0 and scores["citation"] == 0.5 and scores["answer"] == 1.0
     assert abs(scores["score"] - 2.5 / 3) < 1e-9
 
-    c = _q(group="C", traps=[r"\d+\s*ש\"ח"])
+    c = _q(group="C", traps=[r"\d+\s*euros"])
     assert ev.score_after(c, "correct", False, [], [], [])["passed"]
-    assert not ev.score_after(c, "correct", False, ["1,000 ש\"ח"], [], [])["passed"]
+    assert not ev.score_after(c, "correct", False, ["1.000 euros"], [], [])["passed"]
     assert not ev.score_after(c, "incorrect", True, [], [], [])["passed"]
 
 

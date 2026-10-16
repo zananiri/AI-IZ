@@ -101,8 +101,8 @@ legal:
     low_relevance_distance: 0.55               # cosine distance; tune against real queries
     min_relevant_chunks: 2
     max_cross_refs: 4
-    # What reaches the model (null disables each). Margins were inherited from the Israeli build's
-    # calibration -- re-check them on a Spanish eval set (scripts/eval_retrieval.py).
+    # What reaches the model (null disables each). Margins are the original build's calibration --
+    # re-check them on the Spanish eval set (scripts/eval_retrieval.py, evals/legal/lau_2026_es.json).
     relevance_margin: 0.08                     # drop hits this much farther than the best hit
     sibling_margin: 0.12                       # add other parts of a split provision only this close
     max_evidence_tokens: 5000                  # all evidence, best-first; fits the 16k window with the

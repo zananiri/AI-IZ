@@ -16,7 +16,7 @@ from aicodex.legal.validation import (
 )
 from aicodex.llm.schemas import ResearchMemorandum
 
-LAW = 'חוק החוזים (חלק כללי), תשל"ג-1973'  # contains an ASCII double quote on purpose
+LAW = 'Ley 7/1998, sobre "Condiciones Generales" de la Contratación'  # contains an ASCII double quote on purpose
 
 
 def cite(claim="C1", source="law@1973:14", relation="supports", source_type="statute"):
@@ -30,8 +30,8 @@ def meta(source_id="law@1973:14", section="14", source_type="statute"):
     return ChunkMetadata(
         chunk_id=source_id, source_id=source_id, section_key=source_id, law_id="law", law_name=LAW, chapter=None,
         part=None, section_number=section, subsection_number=None, breadcrumb="", effective_date_start="1973-06-01",
-        effective_date_end=None, status="current", source_type=source_type, source_origin="knesset",
-        ingestion_date="2026-09-23", language="he",
+        effective_date_end=None, status="current", source_type=source_type, source_origin="boe",
+        ingestion_date="2026-09-23", language="es",
     )
 
 
@@ -61,7 +61,7 @@ def test_parse_handles_quotes_inside_law_names():
 
 
 def test_positional_tokens_are_read_as_the_short_form():
-    sid = "wikisource:286381@1973-04-19:26"
+    sid = "boe:BOE-A-1998-8789@1998-05-04:26"
     text = normalize_positional(f"One. [[C1 | {sid} | supports]] Two. [[CITE: {sid} | contrary]] Three. [[C2 | x]]")
     first, second = parse_citations(text)
     assert (first.claim_id, first.source_id, first.relation) == ("C1", sid, "supports")
@@ -161,7 +161,7 @@ def test_missing_contrary_note_is_auto_recorded_only_when_the_search_was_affirme
 
 def test_a_citation_on_a_fragment_or_a_lead_in_is_flagged():
     evidence = {"law@1973:14": meta()}
-    for fragment in ("ובנוסף,", "שונו מספרים בהתאם לחוקים הבאים:"):
+    for fragment in ("Además,", "Se modifican las cifras conforme a las siguientes leyes:"):
         problems = check_draft_citations(f"{fragment} {cite()}", memo(), evidence)
         assert "doesn't state the claim" in problems[0][-1]
     two_tokens = f"A mistaken party may rescind. {cite()}{cite()}"  # the second shares the first's sentence

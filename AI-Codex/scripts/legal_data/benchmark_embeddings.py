@@ -12,11 +12,16 @@ the text, truncated to --max-tokens. A question is answered when a gold article 
 Reports recall@1/5/10 and MRR@10 per model, for dense search alone and for dense + BM25
 (legal/keyword.py's Spanish tokenizer) fused by reciprocal rank, as legal/retrieval.py does.
 Query prompts come from rag/embedding.query_prompt (the model's own convention).
+
+With --reranker, the top --rerank-k of each ranking are re-scored by the cross-encoder, as the Legal
+tab does after fusion: the "dense+bm25+rerank" row is the full retrieval path. Document vectors are
+cached under --cache-dir (by model, length and corpus), so re-runs only encode the questions.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -72,6 +77,9 @@ def main() -> int:
     parser.add_argument("--device", default=None)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--output", help="write the results JSON here")
+    parser.add_argument("--reranker", help="cross-encoder for the fused top candidates, e.g. BAAI/bge-reranker-v2-m3")
+    parser.add_argument("--rerank-k", type=int, default=20)
+    parser.add_argument("--cache-dir", default="data/embedding_benchmark_cache")
     args = parser.parse_args()
 
     docs = load_documents(Path(args.input))
@@ -88,22 +96,47 @@ def main() -> int:
     keyword = KeywordIndex([(str(i), t) for i, t in enumerate(texts)])
     bm25 = [[int(i) for i, _ in keyword.search(q["question"], 100)] for q in questions]
     results = {"documents": len(texts), "questions": len(questions), "bm25": metrics(bm25, golds), "models": {}}
-    print(f"BM25 alone: {results['bm25']}")
-
     import numpy as np
+
+    reranker = None
+    if args.reranker:
+        from sentence_transformers import CrossEncoder
+
+        reranker = CrossEncoder(args.reranker, max_length=512, device=args.device)
+
+    def rerank(question: str, ranking: list[int]) -> list[int]:
+        head = list(ranking[: args.rerank_k])
+        scores = np.asarray(reranker.predict([(question, texts[i]) for i in head]))
+        return [head[i] for i in np.argsort(-scores)] + list(ranking[args.rerank_k :])
+
+    if reranker is not None:
+        results["bm25+rerank"] = metrics([rerank(q["question"], b) for q, b in zip(questions, bm25)], golds)
+    print(f"BM25 alone: {results['bm25']}" + (f" | BM25+rerank: {results['bm25+rerank']}" if reranker else ""),
+          flush=True)
+    corpus_key = hashlib.sha1("\n".join(texts).encode("utf-8")).hexdigest()[:12]
+    cache = Path(args.cache_dir)
+    cache.mkdir(parents=True, exist_ok=True)
 
     for model in args.models:
         started = time.time()
-        doc_vectors = np.asarray(encode_documents(model, texts, batch_size=args.batch_size, device=args.device,
-                                                  max_seq_length=args.max_tokens))
+        cached = cache / f"{model.replace('/', '__')}-{args.max_tokens}-{corpus_key}.npy"
+        if cached.exists():
+            doc_vectors = np.load(cached)
+        else:
+            doc_vectors = np.asarray(encode_documents(model, texts, batch_size=args.batch_size, device=args.device,
+                                                      max_seq_length=args.max_tokens), dtype=np.float32)
+            np.save(cached, doc_vectors)
         query_vectors = np.asarray(encode_queries(model, [q["question"] for q in questions], device=args.device))
         dense = [list(np.argsort(-(doc_vectors @ v))[:100]) for v in query_vectors]
         fused = [rrf(d, b) for d, b in zip(dense, bm25)]
         row = {"dense": metrics(dense, golds), "dense+bm25": metrics(fused, golds),
+               **({"dense+bm25+rerank": metrics([rerank(q["question"], f) for q, f in zip(questions, fused)], golds)}
+                  if reranker is not None else {}),
                "seconds": round(time.time() - started), "misses_dense+bm25": [
                    q["id"] for q, f, g in zip(questions, fused, golds) if not (set(f[:10]) & g)]}
         results["models"][model] = row
-        print(f"{model}: dense {row['dense']} | dense+bm25 {row['dense+bm25']} | {row['seconds']}s", flush=True)
+        print(f"{model}: " + " | ".join(f"{k} {v}" for k, v in row.items() if k.startswith("dense"))
+              + f" | {row['seconds']}s", flush=True)
     if args.output:
         Path(args.output).write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
     return 0

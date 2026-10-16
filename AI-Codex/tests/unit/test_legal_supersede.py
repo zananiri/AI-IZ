@@ -10,9 +10,9 @@ from aicodex.legal.sources import looks_visual_order
 
 def _row(start, status="current", end=""):
     meta = {
-        "law_id": "law", "law_name": "חוק", "source_id": f"law@{start}:1", "section_number": "1",
+        "law_id": "law", "law_name": "Ley", "source_id": f"law@{start}:1", "section_number": "1",
         "subsection_number": "", "effective_date_start": start, "effective_date_end": end, "status": status,
-        "source_type": "statute", "source_origin": "knesset",
+        "source_type": "statute", "source_origin": "boe",
     }
     return (f"law@{start}:1", f"text {start}", meta)
 

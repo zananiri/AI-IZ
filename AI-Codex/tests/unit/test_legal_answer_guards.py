@@ -23,10 +23,10 @@ def test_removing_a_citation_takes_its_sentence_and_the_tokens_attached_to_it():
 
 def test_a_source_id_with_a_garbled_version_date_resolves_to_the_one_match():
     meta = ChunkMetadata(
-        chunk_id="x", source_id="law-a@2026-05-11:3", section_key="x", law_id="law-a", law_name="חוק", chapter=None,
+        chunk_id="x", source_id="law-a@2026-05-11:3", section_key="x", law_id="law-a", law_name="Ley", chapter=None,
         part=None, section_number="3", subsection_number=None, breadcrumb="", effective_date_start="2026-05-11",
-        effective_date_end=None, status="current", source_type="statute", source_origin="knesset",
-        ingestion_date="2026-09-24", language="he",
+        effective_date_end=None, status="current", source_type="statute", source_origin="boe",
+        ingestion_date="2026-09-24", language="es",
     )
     evidence = {"law-a@2026-05-11:3": meta, "law-a@2026-05-11:4": meta}
     assert parse_citations(expand_citations(_cite(1, "law-a@2026-11:3"), evidence))[0].source_id == "law-a@2026-05-11:3"
@@ -34,15 +34,15 @@ def test_a_source_id_with_a_garbled_version_date_resolves_to_the_one_match():
 
 
 def test_foreign_words_flags_mixed_and_wrong_script_words_but_not_evidence_terms():
-    allowed = allowed_words(["הודעה באמצעות WhatsApp"])
-    answer = f"השר מ報導 ב октяבר, הugo של חוזה simultaneously דרך WhatsApp בשנת 2026. {_cite(1)}"
-    assert foreign_words(answer, "he", allowed) == ["מ報導", "октяבר", "הugo", "simultaneously"]
-    assert foreign_words("Under חוק הבחירות the minister 報導", "en", allowed_words(["חוק הבחירות לכנסת"])) == ["報導"]
+    allowed = allowed_words(["notificación por WhatsApp", "Ley de la Ciudad"])
+    answer = f"El ministro 報導 en oктubre, el contrato שלום por WhatsApp en 2026, según la Ley. {_cite(1)}"
+    assert foreign_words(answer, "es", allowed) == ["報導", "oктubre", "שלום"]
+    assert foreign_words("Under the Ley de la Ciudad the minister 報導", "en", allowed) == ["報導"]
 
 
 def test_replace_words_swaps_whole_words_outside_citation_tokens_only():
-    text = f"ugo מ報導 בזמן. {_cite(1, 'ugo@1:1')}"
-    assert replace_words(text, {"מ報導": "מדווח", "ugo": ""}) == f" מדווח בזמן. {_cite(1, 'ugo@1:1')}"
+    text = f"ugo 報導 a tiempo. {_cite(1, 'ugo@1:1')}"
+    assert replace_words(text, {"報導": "informado", "ugo": ""}) == f" informado a tiempo. {_cite(1, 'ugo@1:1')}"
 
 
 def test_a_subsection_only_referred_to_by_an_amendment_is_not_held():
@@ -59,5 +59,5 @@ def test_a_subsection_only_referred_to_by_an_amendment_is_not_held():
 
 def test_the_judge_sees_which_provisions_an_answer_cites():
     assert with_citations("Jerusalem.", []) == "Jerusalem."
-    shown = with_citations("Jerusalem.", ["חוק העמדה לדין, section 4"])
-    assert shown.endswith("Provisions cited in the answer:\n- חוק העמדה לדין, section 4")
+    shown = with_citations("Jerusalem.", ["Ley 1/2000, artículo 4"])
+    assert shown.endswith("Provisions cited in the answer:\n- Ley 1/2000, artículo 4")

@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from codex_sentinel.ocr import router
-from codex_sentinel.ocr.engines import OCRResult
+from docslides.ocr import router
+from docslides.ocr.engines import OCRResult
 
 
 class _Broken:

@@ -25,8 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from codex_sentinel.legal_data import cli
-from codex_sentinel.legal_data.legislation import run_legislation
+from docslides.legal_data import cli
+from docslides.legal_data.legislation import run_legislation
 
 
 def main() -> int:

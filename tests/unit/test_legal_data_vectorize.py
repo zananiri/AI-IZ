@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from codex_sentinel.cleaning.tokens import count_tokens
-from codex_sentinel.legal import chunking
-from codex_sentinel.legal_data import corpus_index, wikisource
-from codex_sentinel.legal_data.corpus_chunking import CorpusChunk, chunk_record, pack_paragraphs
-from codex_sentinel.legal_data.corpus_index import CorpusState
-from codex_sentinel.legal_data.records import CorpusRecord
+from docslides.cleaning.tokens import count_tokens
+from docslides.legal import chunking
+from docslides.legal_data import corpus_index, wikisource
+from docslides.legal_data.corpus_chunking import CorpusChunk, chunk_record, pack_paragraphs
+from docslides.legal_data.corpus_index import CorpusState
+from docslides.legal_data.records import CorpusRecord
 
 WIKITEXT = """{{ח:התחלה}}
 {{ח:כותרת|חוק החוזים (חלק כללי), תשל״ג–1973}}
@@ -111,7 +111,7 @@ def _vectorize():
 
 def test_nan_vectors_from_fp16_are_re_encoded_in_fp32(monkeypatch):
     np = pytest.importorskip("numpy")
-    from codex_sentinel.rag import embedding
+    from docslides.rag import embedding
 
     class Model:
         def __init__(self, bad: bool) -> None:

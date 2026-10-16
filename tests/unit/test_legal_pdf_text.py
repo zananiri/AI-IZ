@@ -4,10 +4,10 @@ text-level fixes, chunk dedupe, MMR and the parser's quote/title handling."""
 
 import numpy as np
 
-from codex_sentinel.legal import pdf_text
-from codex_sentinel.legal.chunking import SourceMeta, chunk_sections, normalized_body
-from codex_sentinel.legal.retrieval import _mmr
-from codex_sentinel.legal.structure import parse_sections
+from docslides.legal import pdf_text
+from docslides.legal.chunking import SourceMeta, chunk_sections, normalized_body
+from docslides.legal.retrieval import _mmr
+from docslides.legal.structure import parse_sections
 
 
 def _visual_line(visual: str, baseline: float = 100.0, width: float = 5.0):

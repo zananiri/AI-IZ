@@ -112,7 +112,7 @@ class _Room:
     """output_room as LLMClient computes it, for a 16k context."""
 
     def output_room(self, messages):
-        from codex_sentinel.llm.client import LLMClient
+        from docslides.llm.client import LLMClient
         return 16384 - LLMClient._estimate_tokens(messages) - 512
 
 

@@ -35,7 +35,7 @@ RUN python -m spacy download en_core_web_sm \
     && python -m spacy download it_core_news_sm \
     && python -m spacy download de_core_news_sm
 
-ENV CODEX_SENTINEL_CONFIG=/app/config/config.yaml
+ENV DOCSLIDES_CONFIG=/app/config/config.yaml
 EXPOSE 8456
 
-CMD ["python", "-m", "codex_sentinel.api.main"]
+CMD ["python", "-m", "docslides.api.main"]

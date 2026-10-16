@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 
-from codex_sentinel.legal import amendments
-from codex_sentinel.legal.models import ChunkMetadata
-from codex_sentinel.legal.prompts import format_evidence
-from codex_sentinel.legal.retrieval import RetrievedLegalChunk
+from docslides.legal import amendments
+from docslides.legal.models import ChunkMetadata
+from docslides.legal.prompts import format_evidence
+from docslides.legal.retrieval import RetrievedLegalChunk
 
 PREAMBLE = """תיקונים עקיפים:
 חוק הבחירות לכנסת [נוסח משולב], התשכ"ט-1969 - מס' 79

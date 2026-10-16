@@ -3,7 +3,7 @@
 Builds an offline corpus of Israeli legislation and Supreme Court rulings under `./legal_txt/`,
 normalized to JSONL, and vectorizes it into a Chroma store **separate from the Legal tab's signed
 index** (`data/legal_corpus_vectordb`, one collection per category). Code:
-`src/codex_sentinel/legal_data/`.
+`src/docslides/legal_data/`.
 
 ## Sources (the only hosts contacted)
 
@@ -30,7 +30,7 @@ quietly (a working install, MinerU's OCR/formula-recognition breaking the next t
 than at install time.
 
 Set your contact address in `config/config.yaml` (`legal_data.contact_email`) or in the
-`CODEX_SENTINEL_LEGAL_DATA_CONTACT_EMAIL` environment variable. It goes in the User-Agent, and the
+`DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL` environment variable. It goes in the User-Agent, and the
 fetchers refuse to send requests without it.
 
 ## Build it all on Kaggle and install it here (laws + regulations)
@@ -112,7 +112,7 @@ legal_txt/
 These folders are gitignored, and `scripts/ingest_legal_txt.py` skips them: the curated PDFs
 directly in `legal_txt/` stay the Legal tab's own index.
 
-### Record fields (`src/codex_sentinel/legal_data/records.py`)
+### Record fields (`src/docslides/legal_data/records.py`)
 
 All records: `id, source, source_url, license, attribution, category, title, authority_level
 (basic_law | law | ordinance | regulation | judgment | decision), status (in_force | repealed |
@@ -196,7 +196,7 @@ On Kaggle (`notebooks/kaggle_legal_corpus_vectorize.ipynb`):
 ## Retrieval and answering variants (30 Sept)
 
 Each is a `legal.corpus` switch, off by default, so one can be measured at a time on the v2 dev split
-(`eval_run.py answer --variant <names>`); the code is in `src/codex_sentinel/legal/corpus_navigation.py`.
+(`eval_run.py answer --variant <names>`); the code is in `src/docslides/legal/corpus_navigation.py`.
 
 | --variant | Setting | What it does |
 |---|---|---|

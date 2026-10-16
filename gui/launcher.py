@@ -1,9 +1,9 @@
-"""Codex Sentinel desktop launcher -- Windows and macOS.
+"""docslides desktop launcher -- Windows and macOS.
 
 A single-file, dependency-free (stdlib-only: tkinter, subprocess, urllib)
 GUI that starts/stops the system and shows live status for the vLLM and
 app services, plus a streaming log pane. Works the same on both platforms;
-see gui/CodexSentinel.bat (Windows) and gui/CodexSentinel.command (macOS) for
+see gui/DocSlides.bat (Windows) and gui/DocSlides.command (macOS) for
 double-clickable entry points.
 
 Run directly:
@@ -29,7 +29,7 @@ import tkinter as tk
 from tkinter import ttk
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-APP_PORT = 8456  # keep in sync with CODEX_SENTINEL_APP_PORT default in src/codex_sentinel/api/main.py
+APP_PORT = 8456  # keep in sync with DOCSLIDES_APP_PORT default in src/docslides/api/main.py
 APP_HEALTH_URL = f"http://localhost:{APP_PORT}/health"
 APP_UI_URL = f"http://localhost:{APP_PORT}/ui"
 VLLM_HEALTH_URL = "http://localhost:8000/health"
@@ -72,7 +72,7 @@ def read_env_local() -> dict[str, str]:
 
 
 def detected_backend() -> str:
-    return read_env_local().get("CODEX_SENTINEL_LLM_BACKEND", "vllm")
+    return read_env_local().get("DOCSLIDES_LLM_BACKEND", "vllm")
 
 
 def docker_compose_cmd() -> list[str] | None:
@@ -159,7 +159,7 @@ class ProcessRunner:
 class Launcher(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Codex Sentinel launcher")
+        self.title("docslides launcher")
         self.geometry("860x560")
         self.minsize(700, 440)
 
@@ -320,7 +320,7 @@ class Launcher(tk.Tk):
             self._append_log("[info] local app is already running.\n")
             return
         py = venv_python()
-        cmd = [str(py), "-m", "uvicorn", "codex_sentinel.api.main:app", "--host", "0.0.0.0", "--port", str(APP_PORT)]
+        cmd = [str(py), "-m", "uvicorn", "docslides.api.main:app", "--host", "0.0.0.0", "--port", str(APP_PORT)]
         env_overrides = read_env_local()
         self._append_log(f"$ {' '.join(cmd)}\n")
         if env_overrides:

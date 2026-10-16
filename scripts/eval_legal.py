@@ -12,7 +12,7 @@
 BEFORE: the orchestrator model answers each question with no context.
 AFTER: the full Legal pipeline answers over the index. Every answer is graded
 by the same model as an LLM judge against the gold answer. Scoring rules:
-src/codex_sentinel/legal/evaluation.py. Results are saved after every question
+src/docslides/legal/evaluation.py. Results are saved after every question
 (before.json / after.json in the run directory) and summarized in report.md.
 """
 
@@ -29,9 +29,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from codex_sentinel.legal import evaluation as ev
-from codex_sentinel.legal.citations import strip_citations
-from codex_sentinel.llm.client import aclose_all_clients, get_legal_orchestrator_client
+from docslides.legal import evaluation as ev
+from docslides.legal.citations import strip_citations
+from docslides.llm.client import aclose_all_clients, get_legal_orchestrator_client
 
 DEFAULT_SET = Path(__file__).resolve().parent.parent / "evals" / "legal" / "elections_2026_he.json"
 
@@ -100,8 +100,8 @@ async def run_before(questions, out: Path) -> dict:
 
 
 async def run_after(questions, out: Path) -> dict:
-    from codex_sentinel.legal import retrieval
-    from codex_sentinel.legal.pipeline import run_legal_turn
+    from docslides.legal import retrieval
+    from docslides.legal.pipeline import run_legal_turn
 
     if retrieval.collection_count() == 0:
         raise SystemExit("The Legal index is empty -- run with --ingest, or scripts/ingest_legal_txt.py first.")
@@ -188,14 +188,14 @@ async def main_async(args) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     _log(f"Run directory: {run_dir}")
 
-    from codex_sentinel.config import get_config
+    from docslides.config import get_config
 
     legal = get_config().legal
     meta = _load(run_dir / "meta.json") or {
         "eval_set": meta_set["name"],
         "started": datetime.now().isoformat(timespec="seconds"),
         "model (before RAG, pipeline, judge)": legal.orchestrator.model,
-        "judge": os.environ.get("CODEX_SENTINEL_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
+        "judge": os.environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
         "retrieval": f"{legal.retrieval.embedding_model}, top_k={legal.retrieval.top_k}, "
                      f"keyword={legal.retrieval.keyword_search}, reranker={legal.retrieval.reranker_model}, "
                      f"evidence budget={legal.retrieval.max_evidence_tokens}",
@@ -212,7 +212,7 @@ async def main_async(args) -> int:
     try:
         before = await run_before(questions, run_dir / "before.json") if args.phase in ("before", "both") else _load(run_dir / "before.json")
         if args.ingest and args.phase in ("after", "both"):
-            from codex_sentinel.legal import folder_ingest
+            from docslides.legal import folder_ingest
 
             _log("Indexing legal_txt/ (the RAG step)")
             for r in folder_ingest.run():

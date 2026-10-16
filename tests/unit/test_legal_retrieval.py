@@ -8,10 +8,10 @@ import math
 import numpy as np
 import pytest
 
-from codex_sentinel.config import get_config
-from codex_sentinel.legal import prompts, retrieval
-from codex_sentinel.legal.models import ChunkMetadata, content_hash
-from codex_sentinel.legal.retrieval import RetrievedLegalChunk
+from docslides.config import get_config
+from docslides.legal import prompts, retrieval
+from docslides.legal.models import ChunkMetadata, content_hash
+from docslides.legal.retrieval import RetrievedLegalChunk
 
 
 def _vector(distance: float) -> np.ndarray:

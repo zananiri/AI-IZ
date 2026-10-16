@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
-from codex_sentinel.cleaning.chunking import Chunk
-from codex_sentinel.config import reload_config
-from codex_sentinel.llm.prompts import translategemma_prompt
-from codex_sentinel.llm.schemas import GlossaryTerm, TranslationRevision
-from codex_sentinel.translation import translator as tr
-from codex_sentinel.translation.glossary import Glossary
+from docslides.cleaning.chunking import Chunk
+from docslides.config import reload_config
+from docslides.llm.prompts import translategemma_prompt
+from docslides.llm.schemas import GlossaryTerm, TranslationRevision
+from docslides.translation import translator as tr
+from docslides.translation.glossary import Glossary
 
 
 class FakeTranslator:
@@ -89,10 +89,10 @@ def test_terms_not_in_the_source_are_not_checked():
 
 def test_translator_env_overrides_build_a_non_thinking_deployment(monkeypatch):
     for name in ("MAX_MODEL_LEN", "REQUEST_TIMEOUT_S"):
-        monkeypatch.delenv(f"CODEX_SENTINEL_TRANSLATOR_{name}", raising=False)
-    monkeypatch.setenv("CODEX_SENTINEL_TRANSLATOR_BACKEND", "ollama")
-    monkeypatch.setenv("CODEX_SENTINEL_TRANSLATOR_BASE_URL", "http://localhost:11434")
-    monkeypatch.setenv("CODEX_SENTINEL_TRANSLATOR_MODEL", "translategemma:12b")
+        monkeypatch.delenv(f"DOCSLIDES_TRANSLATOR_{name}", raising=False)
+    monkeypatch.setenv("DOCSLIDES_TRANSLATOR_BACKEND", "ollama")
+    monkeypatch.setenv("DOCSLIDES_TRANSLATOR_BASE_URL", "http://localhost:11434")
+    monkeypatch.setenv("DOCSLIDES_TRANSLATOR_MODEL", "translategemma:12b")
     try:
         translator = reload_config().translation.translator
         assert translator is not None

@@ -2,8 +2,8 @@
 
 import json
 
-from codex_sentinel.legal.corpus_lexical import lexical_index
-from codex_sentinel.legal_data.hebrew import normalize_for_index
+from docslides.legal.corpus_lexical import lexical_index
+from docslides.legal_data.hebrew import normalize_for_index
 
 
 def _write_lexical(directory, rows):

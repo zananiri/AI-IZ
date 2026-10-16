@@ -1,4 +1,4 @@
-from codex_sentinel.cleaning.text_cleaning import (
+from docslides.cleaning.text_cleaning import (
     dehyphenate,
     detect_repeated_headers_footers,
     normalize_unicode_and_strip_control,

@@ -9,13 +9,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from codex_sentinel.config import get_config
-from codex_sentinel.legal import pipeline
-from codex_sentinel.legal.chunking import normalize_hebrew_quotes
-from codex_sentinel.legal.citations import format_citation
-from codex_sentinel.legal.models import ChunkMetadata
-from codex_sentinel.legal.retrieval import RetrievalResult, RetrievedLegalChunk
-from codex_sentinel.llm import schemas
+from docslides.config import get_config
+from docslides.legal import pipeline
+from docslides.legal.chunking import normalize_hebrew_quotes
+from docslides.legal.citations import format_citation
+from docslides.legal.models import ChunkMetadata
+from docslides.legal.retrieval import RetrievalResult, RetrievedLegalChunk
+from docslides.llm import schemas
 
 LAW = 'חוק החוזים (חלק כללי), תשל"ג-1973'
 SOURCE = "contracts@1973-06-01:14"

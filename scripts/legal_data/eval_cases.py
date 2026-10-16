@@ -36,17 +36,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from eval_run import eval_sampling, plan_issues, render_context
 
-from codex_sentinel.config import get_config
-from codex_sentinel.legal import caselaw
-from codex_sentinel.legal.corpus_retrieval import retrieve_planned, warm_up_retrieval
-from codex_sentinel.legal.evaluation import get_judge_client
-from codex_sentinel.llm import trace
-from codex_sentinel.llm.client import (
+from docslides.config import get_config
+from docslides.legal import caselaw
+from docslides.legal.corpus_retrieval import retrieve_planned, warm_up_retrieval
+from docslides.legal.evaluation import get_judge_client
+from docslides.llm import trace
+from docslides.llm.client import (
     ChatMessage,
     LLMCallSite,
     get_legal_orchestrator_client,
 )
-from codex_sentinel.llm.schemas import CaseJudgement
+from docslides.llm.schemas import CaseJudgement
 
 DEFAULT_DIR = Path("legal_txt/Evals/israeli_legal_eval")
 RUBRIC_SECTIONS = ["facts_summary", "chronology", "legal_issues", "deadlines", "red_flags",
@@ -452,7 +452,7 @@ def main() -> None:
         cmd_report(a)
         return
 
-    from codex_sentinel.llm.client import aclose_all_clients
+    from docslides.llm.client import aclose_all_clients
 
     async def run() -> None:
         try:

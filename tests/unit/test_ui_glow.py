@@ -3,7 +3,7 @@
 import gradio as gr
 import pytest
 
-from codex_sentinel.ui.gradio_app import _glow_while_running
+from docslides.ui.gradio_app import _glow_while_running
 
 
 def test_message_box_glows_from_send_until_the_handler_finishes():
@@ -35,7 +35,7 @@ def test_message_box_stops_glowing_when_the_handler_fails():
 
 
 def test_case_folder_keeps_supported_documents_sorted_and_reports_the_rest(tmp_path):
-    from codex_sentinel.ui.gradio_app import _case_folder_documents
+    from docslides.ui.gradio_app import _case_folder_documents
 
     names = ["b.docx", "A.pdf", "notes.md", ".DS_Store", "~$draft.docx", "scan.JPG"]
     documents, skipped = _case_folder_documents([str(tmp_path / n) for n in names])

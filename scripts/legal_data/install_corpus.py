@@ -25,8 +25,8 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from codex_sentinel.config import get_config
-from codex_sentinel.legal_data.progress import Progress
+from docslides.config import get_config
+from docslides.legal_data.progress import Progress
 
 
 def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:

@@ -6,7 +6,7 @@
 # model weight the app needs (the chat model, fastText, spaCy, Stanza,
 # PaddleOCR, Surya, MinerU).
 #
-# This is the ONLY online step. Nothing under src/codex_sentinel/** calls out to
+# This is the ONLY online step. Nothing under src/docslides/** calls out to
 # the internet at request time -- see README.md.
 #
 # Usage:
@@ -89,7 +89,7 @@ if [ "${SKIP_MINERU:-0}" != "1" ]; then
   echo "NOTE: magic-pdf's own deps pin huggingface-hub<1.0, which conflicts with"
   echo "      gradio's huggingface-hub>=1.16 requirement. pip will install both"
   echo "      packages but print a dependency-conflict warning -- this is"
-  echo "      expected (see src/codex_sentinel/ingestion/parser.py adapter notes)."
+  echo "      expected (see src/docslides/ingestion/parser.py adapter notes)."
   echo "      Set SKIP_MINERU=1 to skip this extra entirely (PDF still works"
   echo "      via the PyMuPDF fallback; DOCX/PPTX/XLSX/image ingestion needs it)."
   pip install -e ".[ingestion-mineru]" || SKIPPED+=("magic-pdf (MinerU) package")
@@ -245,23 +245,23 @@ else
   # are overridden without editing it. docker-compose.
   # portable.yml sets the same vars itself, so it does not read this file.
   cat > .env.local <<EOF
-CODEX_SENTINEL_LLM_BACKEND=ollama
-CODEX_SENTINEL_LLM_BASE_URL=http://localhost:11434
-CODEX_SENTINEL_LLM_MODEL=$OLLAMA_MODEL
-CODEX_SENTINEL_LLM_SUPPORTS_THINKING=$SUPPORTS_THINKING
-CODEX_SENTINEL_LLM_MAX_MODEL_LEN=$CHAT_CONTEXT_LENGTH
-CODEX_SENTINEL_LLM_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
-CODEX_SENTINEL_LEGAL_ORCHESTRATOR_BACKEND=ollama
-CODEX_SENTINEL_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
-CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MODEL=$OLLAMA_MODEL
-CODEX_SENTINEL_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SUPPORTS_THINKING
-CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
-CODEX_SENTINEL_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
-CODEX_SENTINEL_TRANSLATOR_BACKEND=ollama
-CODEX_SENTINEL_TRANSLATOR_BASE_URL=http://localhost:11434
-CODEX_SENTINEL_TRANSLATOR_MODEL=$OLLAMA_TRANSLATE_MODEL
-CODEX_SENTINEL_TRANSLATOR_MAX_MODEL_LEN=8192
-CODEX_SENTINEL_TRANSLATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
+DOCSLIDES_LLM_BACKEND=ollama
+DOCSLIDES_LLM_BASE_URL=http://localhost:11434
+DOCSLIDES_LLM_MODEL=$OLLAMA_MODEL
+DOCSLIDES_LLM_SUPPORTS_THINKING=$SUPPORTS_THINKING
+DOCSLIDES_LLM_MAX_MODEL_LEN=$CHAT_CONTEXT_LENGTH
+DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
+DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
+DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
+DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OLLAMA_MODEL
+DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SUPPORTS_THINKING
+DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LEGAL_CONTEXT_LENGTH
+DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
+DOCSLIDES_TRANSLATOR_BACKEND=ollama
+DOCSLIDES_TRANSLATOR_BASE_URL=http://localhost:11434
+DOCSLIDES_TRANSLATOR_MODEL=$OLLAMA_TRANSLATE_MODEL
+DOCSLIDES_TRANSLATOR_MAX_MODEL_LEN=8192
+DOCSLIDES_TRANSLATOR_REQUEST_TIMEOUT_S=$REQUEST_TIMEOUT_S
 EOF
   echo "wrote $REPO_ROOT/.env.local (backend=ollama, chat + legal model=$OLLAMA_MODEL, translation model=$OLLAMA_TRANSLATE_MODEL, chat context=$CHAT_CONTEXT_LENGTH, legal context=$LEGAL_CONTEXT_LENGTH)"
 fi
@@ -330,9 +330,9 @@ echo
 echo "Next steps ($BACKEND backend selected):"
 if [ "$BACKEND" = "vllm" ]; then
   echo "  1. GPU host: docker compose up -d          # starts vllm + app"
-  echo "  2. Or dev-run the app only:  uvicorn codex_sentinel.api.main:run --factory"
+  echo "  2. Or dev-run the app only:  uvicorn docslides.api.main:run --factory"
 else
   echo "  1. Docker:      docker compose -f docker-compose.portable.yml up -d"
-  echo "  2. Or locally:  set -a; source .env.local; set +a; .venv/bin/python -m uvicorn codex_sentinel.api.main:app --host 0.0.0.0 --port 8456"
-  echo "  3. Or just use gui/CodexSentinel.command -- it reads .env.local automatically."
+  echo "  2. Or locally:  set -a; source .env.local; set +a; .venv/bin/python -m uvicorn docslides.api.main:app --host 0.0.0.0 --port 8456"
+  echo "  3. Or just use gui/DocSlides.command -- it reads .env.local automatically."
 fi

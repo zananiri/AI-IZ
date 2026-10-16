@@ -10,11 +10,11 @@ import pytest
 from openpyxl import load_workbook
 from pptx import Presentation
 
-from codex_sentinel.api import routes_chat as rc
-from codex_sentinel.documents.generator import build_document
-from codex_sentinel.documents.pdf_builder import build_pdf
-from codex_sentinel.documents.xlsx_builder import build_xlsx
-from codex_sentinel.llm.schemas import (
+from docslides.api import routes_chat as rc
+from docslides.documents.generator import build_document
+from docslides.documents.pdf_builder import build_pdf
+from docslides.documents.xlsx_builder import build_xlsx
+from docslides.llm.schemas import (
     ChatIntent,
     PdfSection,
     PdfSpec,
@@ -90,7 +90,7 @@ def test_a_long_hebrew_pdf_flows_onto_more_pages(tmp_path):
 
 def test_a_presentation_gets_a_title_slide_before_its_slides(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "codex_sentinel.documents.generator.get_config",
+        "docslides.documents.generator.get_config",
         lambda: type("C", (), {"paths": type("P", (), {"output_dir": str(tmp_path)})()})(),
     )
     spec = PresentationSpec(
@@ -182,7 +182,7 @@ def test_a_chat_request_for_a_spreadsheet_returns_a_download(tmp_path, monkeypat
 
 
 def test_an_rtl_table_puts_its_first_column_on_the_right():
-    from codex_sentinel.documents.pdf_builder import _html
+    from docslides.documents.pdf_builder import _html
 
     spec = PdfSpec(
         title="t",

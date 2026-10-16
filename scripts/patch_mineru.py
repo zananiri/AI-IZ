@@ -18,7 +18,7 @@ safely any time after (re)installing the `ingestion-mineru` extra.
    their v5 rec weights need v5-vocabulary dict files this magic-pdf
    release doesn't bundle, so remapping them risks silently wrong OCR text
    instead of a clean failure. This project's own OCR routing
-   (src/codex_sentinel/ocr/router.py) handles those languages instead; MinerU is
+   (src/docslides/ocr/router.py) handles those languages instead; MinerU is
    only ever used here for layout-aware native-text extraction (ocr=False),
    never to actually OCR non-Chinese text.
 

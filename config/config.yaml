@@ -1,11 +1,11 @@
-# Codex Sentinel configuration
+# docslides configuration
 # All model paths, thresholds, and language settings live here so the rest of
 # the codebase never hardcodes environment- or language-specific assumptions.
 
 llm:
   # "vllm" (NVIDIA GPU only, fastest) or "ollama" (CPU/CUDA/ROCm/Metal,
   # portable). Override per-environment without editing this file via the
-  # CODEX_SENTINEL_LLM_BACKEND / CODEX_SENTINEL_LLM_BASE_URL / CODEX_SENTINEL_LLM_MODEL env
+  # DOCSLIDES_LLM_BACKEND / DOCSLIDES_LLM_BASE_URL / DOCSLIDES_LLM_MODEL env
   # vars -- see docker-compose.portable.yml and scripts/setup.*.
   backend: "vllm"
   base_url: "http://vllm:8000/v1"        # OpenAI-compatible endpoint served by vLLM
@@ -54,7 +54,7 @@ model_sizes:
 default_model_size: "12B"
 
 legal:
-  # Legal tab: grounded RAG over Israeli law (src/codex_sentinel/legal/). Gemma 4
+  # Legal tab: grounded RAG over Israeli law (src/docslides/legal/). Gemma 4
   # researches (Pass A memorandum), drafts (Pass B), runs every
   # verification step and answers in the question's language. Sources are
   # staged, human-reviewed and signed into the index offline with
@@ -73,7 +73,7 @@ legal:
     request_timeout_s: 900
     # Must not exceed the served --max-model-len (docker-compose.yml:
     # VLLM_MAX_MODEL_LEN, default 16384). Under Ollama it is the num_ctx sent
-    # with every request (CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN overrides
+    # with every request (DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN overrides
     # it). Output budgets are capped to fit it (llm/client.py): 16384 holds
     # the full evidence budget below plus the thinking analysis pass's
     # pipeline.analysis_max_tokens; at 8192 both get squeezed.
@@ -123,7 +123,7 @@ legal:
     legal_txt_dir: "./legal_txt"               # drop-in law PDFs, indexed by scripts/ingest_legal_txt.py
     uploads_dir: "./uploads"                   # memos / firm / client documents (always need sign-off)
     staging_dir: "./data/legal/staging"
-    bundle_manifest: "./data/legal/signed_bundle.json"   # HMAC key: CODEX_SENTINEL_LEGAL_BUNDLE_KEY env var
+    bundle_manifest: "./data/legal/signed_bundle.json"   # HMAC key: DOCSLIDES_LEGAL_BUNDLE_KEY env var
     chunk_max_tokens: 500                      # soft; structural boundaries always win
   pipeline:
     max_memo_revisions: 2
@@ -143,7 +143,7 @@ legal:
         max_draft_revisions: 0
   audit_dir: "./data/legal/audit"
   # Evals only: the grading model (legal/evaluation.get_judge_client), on the orchestrator's Ollama.
-  # The family under test (gemma) never grades itself. CODEX_SENTINEL_LEGAL_JUDGE_MODEL overrides it;
+  # The family under test (gemma) never grades itself. DOCSLIDES_LEGAL_JUDGE_MODEL overrides it;
   # null = the orchestrator grades its own answers.
   judge_model: "gpt-oss:20b"
   # Bulk corpus built from legal_txt/ JSONL by scripts/legal_data/vectorize.py: its own Chroma
@@ -157,14 +157,14 @@ legal:
     fold_final_letters_for_embedding: false
     categories: ["laws", "procedural_rules"]   # searched by the Legal tab when retrieval.source is "corpus"
     top_k: 12                                  # chunks kept after reranking, then cut to max_evidence_tokens
-    # Supreme Court case law (caselaw/, src/codex_sentinel/legal/caselaw.py): path to a built index's
+    # Supreme Court case law (caselaw/, src/docslides/legal/caselaw.py): path to a built index's
     # folder (holds lancedb/, state/embed.done.json, optionally bm25/). null = off. See README's
     # "Legal tab: Supreme Court case law".
     caselaw_dir: 'C:\Users\iB\Projects\CaseDatabase\israeli_caselaw'   # single quotes: backslashes are literal
 
   # The attorney's own case files: drop them into legal_data/ at the project root (one subfolder
   # per matter), index with `python scripts/ingest_case_files.py`, then chat with
-  # `python scripts/ingest_case_files.py chat`. Chunking strategy: src/codex_sentinel/legal/case_files.py.
+  # `python scripts/ingest_case_files.py chat`. Chunking strategy: src/docslides/legal/case_files.py.
   case_files:
     folder: "./legal_data"
     vectordb_dir: "./data/legal_case_files_vectordb"
@@ -177,7 +177,7 @@ legal:
 # Corpus acquisition: scripts/legal_data/fetch_*.py (see scripts/legal_data/README.md). Only the
 # hosts below are contacted, robots.txt is honoured, at most one request per second per host.
 legal_data:
-  contact_email: ""              # REQUIRED -- goes in the User-Agent (or CODEX_SENTINEL_LEGAL_DATA_CONTACT_EMAIL)
+  contact_email: ""              # REQUIRED -- goes in the User-Agent (or DOCSLIDES_LEGAL_DATA_CONTACT_EMAIL)
   output_dir: "./legal_txt"
   min_interval_s: 1.0
   max_retries: 6
@@ -382,7 +382,7 @@ translation:
   glossary_max_terms: 200
   # TranslateGemma translates each chunk; Gemma 4 (llm: above) builds the glossary first and
   # fixes any glossary term a chunk's translation missed (translation/translator.py). Under
-  # Ollama, scripts/setup.* set it (CODEX_SENTINEL_TRANSLATOR_*) to the size matching the Legal tab's
+  # Ollama, scripts/setup.* set it (DOCSLIDES_TRANSLATOR_*) to the size matching the Legal tab's
   # Gemma: translategemma:27b with gemma4:31b, :12b with gemma4:12b, :4b with gemma3:4b-it-qat.
   # null (the vLLM default) = Gemma 4 translates on its own.
   translator: null
@@ -413,6 +413,6 @@ logging:
   # One JSON line per LLM call: call site, the model's reasoning ("thinking"),
   # its output, stop reason, token counts, and (llm_trace_prompts) the full
   # prompt. Holds questions and evidence verbatim. null disables the file;
-  # override with CODEX_SENTINEL_LLM_TRACE_DIR. Render with scripts/llm_trace_report.py.
+  # override with DOCSLIDES_LLM_TRACE_DIR. Render with scripts/llm_trace_report.py.
   llm_trace_dir: "./data/llm_trace"
   llm_trace_prompts: true

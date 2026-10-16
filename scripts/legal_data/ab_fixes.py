@@ -100,7 +100,7 @@ def base_section(value) -> str | None:
 
 def governing_retrieved(gold: dict, row: dict) -> bool | None:
     sys.path.insert(0, str(ROOT / "src"))
-    from codex_sentinel.legal.corpus_retrieval import same_law
+    from docslides.legal.corpus_retrieval import same_law
 
     cites = [c for c in gold.get("citations", []) if c.get("law")]
     if not cites:
@@ -179,20 +179,20 @@ def main() -> None:
     write_jsonl(gold_subset, [gold[i] for i in ids])
 
     env = {**os.environ,
-           "CODEX_SENTINEL_LEGAL_ORCHESTRATOR_BACKEND": "ollama",
-           "CODEX_SENTINEL_LEGAL_ORCHESTRATOR_BASE_URL": a.base_url,
-           "CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MODEL": a.model,
-           "CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN": str(a.context_length),
-           "CODEX_SENTINEL_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING": str(a.thinking).lower(),
-           "CODEX_SENTINEL_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S": str(a.timeout_s),
+           "DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND": "ollama",
+           "DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL": a.base_url,
+           "DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL": a.model,
+           "DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN": str(a.context_length),
+           "DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING": str(a.thinking).lower(),
+           "DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S": str(a.timeout_s),
            "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8",  # Windows: Hebrew in logs and files
            "PYTHONPATH": str(ROOT / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")}
     if a.judge_model:
-        env["CODEX_SENTINEL_LEGAL_JUDGE_MODEL"] = a.judge_model
+        env["DOCSLIDES_LEGAL_JUDGE_MODEL"] = a.judge_model
     if a.device:
         # eval_run.py reads legal.retrieval.device from the config; a one-line override file does it.
         cfg = out / "device_config.yaml"
-        base = (ROOT / os.environ.get("CODEX_SENTINEL_CONFIG", "config/config.yaml")).read_text(encoding="utf-8")
+        base = (ROOT / os.environ.get("DOCSLIDES_CONFIG", "config/config.yaml")).read_text(encoding="utf-8")
         cfg.write_text(base, encoding="utf-8")
         try:
             import yaml
@@ -200,7 +200,7 @@ def main() -> None:
             data = yaml.safe_load(base)
             data.setdefault("legal", {}).setdefault("retrieval", {})["device"] = a.device
             cfg.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
-            env["CODEX_SENTINEL_CONFIG"] = str(cfg)
+            env["DOCSLIDES_CONFIG"] = str(cfg)
         except ImportError:
             print("warning: PyYAML missing, --device ignored", file=sys.stderr)
 

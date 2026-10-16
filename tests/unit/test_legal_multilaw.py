@@ -3,10 +3,10 @@ is not an amendment, subsection replacements are insertions, scan artifacts are
 repaired, multi-part questions are split, and the pipeline knows when a question
 names a law or matches several."""
 
-from codex_sentinel.legal import amendments, retrieval
-from codex_sentinel.legal.insertions import find_insertion
-from codex_sentinel.legal.pdf_text import _normalize_line
-from codex_sentinel.legal.prompts import format_evidence
+from docslides.legal import amendments, retrieval
+from docslides.legal.insertions import find_insertion
+from docslides.legal.pdf_text import _normalize_line
+from docslides.legal.prompts import format_evidence
 
 APPLIES = """הוראות חוק המעצרים יחולו על נאשם שהוגש נגדו כתב אישום לפי חוק זה, בשינויים המחויבים ובשינויים אלה:
 (5) בסעיף 62(א), במקום "90 ימים" יקראו "150 ימים"."""
@@ -58,8 +58,8 @@ def test_a_law_the_question_names_is_recognized(monkeypatch):
 
 
 def test_evidence_says_when_an_amended_law_is_not_in_the_index():
-    from codex_sentinel.legal.models import ChunkMetadata
-    from codex_sentinel.legal.retrieval import RetrievedLegalChunk
+    from docslides.legal.models import ChunkMetadata
+    from docslides.legal.retrieval import RetrievedLegalChunk
 
     ref = amendments.AmendmentRef('חוק החוזים (חלק כללי), התשל"ג-1973', "חוק החוזים חלק כללי", "3", ["25"], False)
     meta = ChunkMetadata(
@@ -74,7 +74,7 @@ def test_evidence_says_when_an_amended_law_is_not_in_the_index():
 
 
 def test_inner_lists_of_the_same_marker_kind_stay_inside_their_subsection():
-    from codex_sentinel.legal.structure import parse_sections
+    from docslides.legal.structure import parse_sections
 
     text = ("1. מטרת החוק." + chr(10) + "25. (א) דיון יתקיים באופן שיבטיח את כל אלה:\n(1) ראשון;\n(2) (א) לפני הדיון תתקיים שיחה.\n"
             "(ב) במהלך הדיון תתאפשר שיחה.\n(3) שלישי;\n(7) פרוטוקול לא יאוחר מ־24 שעות;\n"
@@ -87,7 +87,7 @@ def test_inner_lists_of_the_same_marker_kind_stay_inside_their_subsection():
 def test_several_laws_flag_counts_named_sections_lower_and_ignores_repealed_laws():
     from types import SimpleNamespace
 
-    from codex_sentinel.legal.retrieval import _laws_in_play
+    from docslides.legal.retrieval import _laws_in_play
 
     cfg = SimpleNamespace(ambiguity_min_score=0.5, ambiguity_margin=0.3, ambiguity_lookup_floor=0.2)
 

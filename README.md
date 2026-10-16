@@ -1,4 +1,4 @@
-# Codex Sentinel
+# docslides
 
 An offline, multilingual document-to-PowerPoint generation system with a
 chat interface, powered by locally-hosted Gemma 4 and TranslateGemma. **Nothing in the runtime
@@ -38,7 +38,7 @@ docs/images/PDFs  --> ingestion (MinerU / PyMuPDF fallback, per-page scan detect
 All of the above is driven by `config/config.yaml` -- no language, engine,
 or threshold is hardcoded in application code.
 
-Module layout (`src/codex_sentinel/`):
+Module layout (`src/docslides/`):
 
 | Module | Responsibility |
 |---|---|
@@ -68,7 +68,7 @@ they run on; override with `FORCE_BACKEND`/`-ForceBackend`):
 | Speed | Fastest -- purpose-built for concurrent GPU serving | Slower, especially CPU-only; scales with whatever acceleration the host has |
 | Structured JSON / thinking toggle | `guided_json` extra_body / `chat_template_kwargs` | top-level `format` JSON Schema / `think` field |
 
-Both are driven through the same `src/codex_sentinel/llm/client.py` interface --
+Both are driven through the same `src/docslides/llm/client.py` interface --
 nothing above the LLM client needs to know which backend is active.
 
 The general chat (chat, rewrite, slides) runs on the same Gemma as the Legal tab, picked by
@@ -76,24 +76,24 @@ the same rule. Under Ollama that is Gemma 4 31B dense (`gemma4:31b`, 4-bit; ~25G
 with the 16k context); `scripts/setup.*` fall back to Gemma 4 12B (`gemma4:12b`) under 32GB of
 RAM or without an NVIDIA/AMD GPU, and to `gemma3:4b-it-qat` under 12GB. `OLLAMA_MODEL` /
 `-OllamaModel` picks another tag for both. Both get a 16384-token context
-(`CODEX_SENTINEL_LLM_MAX_MODEL_LEN` / `CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`, Ollama's
+(`DOCSLIDES_LLM_MAX_MODEL_LEN` / `DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`, Ollama's
 `num_ctx`). Gemma runs with thinking off (Gemma 3 has no thinking mode, and Gemma 4's stays
-off), so the setup scripts write `CODEX_SENTINEL_LLM_SUPPORTS_THINKING=false` and
-`CODEX_SENTINEL_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (every call then goes
+off), so the setup scripts write `DOCSLIDES_LLM_SUPPORTS_THINKING=false` and
+`DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false` to `.env.local` (every call then goes
 out with an explicit `"think": false`: Gemma 4 thinks by default when the field is missing; a
 server that rejects the field, as some do for Gemma 3, is asked again without it). Under vLLM
 both run on `google/gemma-4-31B-it`.
 
-**Translation** pairs two models (`src/codex_sentinel/translation/translator.py`): Gemma 4 reads
+**Translation** pairs two models (`src/docslides/translation/translator.py`): Gemma 4 reads
 the document once and builds a glossary of terms to render consistently, TranslateGemma
 translates each chunk with its own prompt, and any glossary term a chunk's translation missed
 goes back to Gemma 4 to fix. Every chat request that wants text in another language goes through
 TranslateGemma: translating an attached document or pasted text, and any other reply asked for in
 another language (a summary, an answer), which Gemma 4 writes in the material's own language and
-TranslateGemma then translates (`src/codex_sentinel/api/routes_chat.py`). Under Ollama the setup scripts pull the TranslateGemma size that
+TranslateGemma then translates (`src/docslides/api/routes_chat.py`). Under Ollama the setup scripts pull the TranslateGemma size that
 matches the Gemma above -- `translategemma:27b` with `gemma4:31b`, `:12b` with `gemma4:12b`,
 `:4b` with `gemma3:4b-it-qat` (`OLLAMA_TRANSLATE_MODEL` / `-OllamaTranslateModel` override) --
-and write it as `CODEX_SENTINEL_TRANSLATOR_*` (config `translation.translator`). Under vLLM it is
+and write it as `DOCSLIDES_TRANSLATOR_*` (config `translation.translator`). Under vLLM it is
 unset and Gemma 4 translates on its own. The glossary is saved per document and target
 language under `paths.glossary_dir`.
 
@@ -109,8 +109,8 @@ context's memory.
 (`legal.retrieval.max_evidence_tokens`) plus the thinking analysis pass and
 the memo/draft outputs. vLLM serves 16k (`VLLM_MAX_MODEL_LEN` in `docker-compose.yml`; set
 `VLLM_KV_CACHE_DTYPE=fp8` if it doesn't fit next to the ~33GB FP8 weights); under Ollama it is the
-`num_ctx` sent with every request. `CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`
-/ `CODEX_SENTINEL_LLM_MAX_MODEL_LEN` override it per host (`LEGAL_CONTEXT_LENGTH` /
+`num_ctx` sent with every request. `DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN`
+/ `DOCSLIDES_LLM_MAX_MODEL_LEN` override it per host (`LEGAL_CONTEXT_LENGTH` /
 `-LegalContextLength` in the setup scripts).
 The Legal tab uses one model, the Gemma 4 orchestrator, for every stage and
 answers in the question's language, Hebrew included.
@@ -118,7 +118,7 @@ answers in the question's language, Hebrew included.
 OCR runs on CPU by default (PaddleOCR PP-OCRv6, Tesseract). Only the
 low-confidence VLM-OCR fallback (PaddleOCR-VL / Surya) touches the GPU, and
 only opportunistically between vLLM generations -- see
-`src/codex_sentinel/ocr/gpu_arbiter.py`. That arbitration is vLLM-specific (it
+`src/docslides/ocr/gpu_arbiter.py`. That arbitration is vLLM-specific (it
 polls vLLM's Prometheus metrics) and is a no-op under the Ollama backend.
 If an OCR engine fails to load or crashes (e.g. surya-ocr missing or an incompatible
 version), the router logs `ocr_engine_failed` and moves on to the next engine for that
@@ -131,12 +131,12 @@ Ask the General tab's chat (Clara) for a file and it comes back as a download li
 "create an Excel budget for a 3-day trip to Rome", "make a presentation about solar energy",
 "write a PDF report summarizing this" (with a 📎 attachment, the file is built from the
 document). The chat's intent classifier (`ChatIntent.document_format`) decides which file was
-asked for; `src/codex_sentinel/documents/generator.py` does the rest:
+asked for; `src/docslides/documents/generator.py` does the rest:
 
 1. **Gemma 4 writes the content as structured JSON** -- `SpreadsheetSpec` (sheets, header row,
    numeric cells, `=SUM(...)`-style formulas), `PresentationSpec` (titled slides with bullets,
    speaker notes and layouts) or `PdfSpec` (sections with paragraphs, bullets and tables) in
-   `src/codex_sentinel/llm/schemas.py`. The schema is enforced by guided decoding -- xgrammar under
+   `src/docslides/llm/schemas.py`. The schema is enforced by guided decoding -- xgrammar under
    vLLM serving the Hugging Face checkpoint `google/gemma-4-31B-it`, a JSON Schema `format`
    under Ollama -- with the client's validate-and-retry on top.
 2. **A deterministic builder renders it**: openpyxl (`documents/xlsx_builder.py`: bold frozen
@@ -179,16 +179,16 @@ Re-running either script is safe -- already-downloaded files are left in place.
 ```
 
 When the Ollama backend is selected, the script writes `.env.local` with the
-`CODEX_SENTINEL_LLM_BACKEND`/`_BASE_URL`/`_MODEL` triple (general chat model) plus
-a matching `CODEX_SENTINEL_LEGAL_ORCHESTRATOR_*` set for the Legal tab's
+`DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` triple (general chat model) plus
+a matching `DOCSLIDES_LEGAL_ORCHESTRATOR_*` set for the Legal tab's
 independent orchestrator deployment (backend, URL, model and
-`_MAX_MODEL_LEN`, its context window) and a `CODEX_SENTINEL_TRANSLATOR_*` set for
+`_MAX_MODEL_LEN`, its context window) and a `DOCSLIDES_TRANSLATOR_*` set for
 TranslateGemma -- all overriding
 `config/config.yaml`'s vLLM defaults. Both scripts also install the
 `legal` and `legal-data` extras the Legal tab needs. See
 [Hardware requirements](#hardware-requirements).
 
-After setup, use **`gui/CodexSentinel.bat`** (Windows) or **`gui/CodexSentinel.command`**
+After setup, use **`gui/DocSlides.bat`** (Windows) or **`gui/DocSlides.command`**
 (macOS) to start/stop everything and watch live status (backend, app, Docker)
 from a desktop window -- see [gui/launcher.py](gui/launcher.py). It reads
 `.env.local` automatically.
@@ -208,7 +208,7 @@ level so core modules stay testable without them (see each extra in
 
 MinerU (`magic-pdf`) is not pinned as a hard dependency because its API has
 moved across releases; install the version matching your setup and see the
-adapter notes in `src/codex_sentinel/ingestion/parser.py`. Without it, PDF still
+adapter notes in `src/docslides/ingestion/parser.py`. Without it, PDF still
 works via the PyMuPDF fallback; DOCX/PPTX/XLSX/image inputs require MinerU.
 It also needs **LibreOffice** (`soffice`) on PATH, for its DOCX/PPTX/XLSX
 -> PDF conversion step -- `scripts/setup.*` install it automatically; see
@@ -303,8 +303,8 @@ Edit `config/config.yaml`:
 - Any per-language model paths under `languages.*`
 
 Or leave `config.yaml` as-is and override the LLM sections via env vars --
-`CODEX_SENTINEL_LLM_BACKEND`/`_BASE_URL`/`_MODEL` for the general model, and
-`CODEX_SENTINEL_LEGAL_ORCHESTRATOR_*` for the Legal tab's deployment, `CODEX_SENTINEL_TRANSLATOR_*` for
+`DOCSLIDES_LLM_BACKEND`/`_BASE_URL`/`_MODEL` for the general model, and
+`DOCSLIDES_LEGAL_ORCHESTRATOR_*` for the Legal tab's deployment, `DOCSLIDES_TRANSLATOR_*` for
 TranslateGemma --
 this is what
 `.env.local` (written by the setup scripts) and `docker-compose.portable.yml`
@@ -331,7 +331,7 @@ analyzed; at most 25 documents, by name). Each one is then read on the server: p
 cleaned. If they all fit the case file's budget (`legal.pipeline.case_material_max_tokens`) they
 go to the model whole. If not, the model first writes a factual digest of each document (parties,
 key facts, dates, deadlines, amounts) and the work file is written from the digests, so no
-document is dropped (`src/codex_sentinel/legal/pipeline.py`, `_case_documents_material`). A file that
+document is dropped (`src/docslides/legal/pipeline.py`, `_case_documents_material`). A file that
 can't be read is named in the work file's notes, and the audit log lists every document and
 digest.
 
@@ -348,7 +348,7 @@ The page shows only those labels, never model names. Each size is an entry under
 | 31B | LLM 31 Billion | `gemma4:31b` | `translategemma:27b` | January 2025 |
 
 The choice travels with each request (`model_size`) and is applied per job by
-`src/codex_sentinel/llm/client.py` (`model_size()`), so two users can run different sizes at the same
+`src/docslides/llm/client.py` (`model_size()`), so two users can run different sizes at the same
 time. It needs the Ollama backend: vLLM serves a single model, so under vLLM the selector is shown
 but disabled. `scripts/setup.*` pull the 12B tags when the host has 12GB+ of RAM and the 31B tags
 with 32GB+. A size whose model isn't pulled answers with Ollama's "model not found" error;
@@ -360,7 +360,7 @@ Refreshing or closing the page cancels everything that page still had running on
 chat turns, rewrites, slide and document generation, Legal questions and case analyses. The
 reloaded page then starts fresh. Each request carries the page's session id (the
 `X-Client-Session` header). Gradio's unload event then calls `POST /api/sessions/{session}/cancel`
-(`src/codex_sentinel/api/routes_session.py`), which cancels those jobs and with them their in-flight
+(`src/docslides/api/routes_session.py`), which cancels those jobs and with them their in-flight
 calls to the model server.
 
 ### Chatting with the attorney's case files (`legal_data/`)
@@ -390,7 +390,7 @@ with every statement cited to file, page and paragraph; parties' allegations are
 party, not stated as fact. Settings: `legal.case_files` in `config/config.yaml`. Everything in
 `legal_data/` except its README is git-ignored -- case files are privileged and must not be pushed.
 
-**Chunking strategy** (`src/codex_sentinel/legal/case_files.py`):
+**Chunking strategy** (`src/docslides/legal/case_files.py`):
 
 | Principle | What it does |
 |---|---|
@@ -409,7 +409,7 @@ Re-runs skip unchanged files (content hash); changing the chunk settings re-chun
 Alongside whichever source answers the question (bulk corpus or signed index), the Legal tab can
 also draw on Israeli Supreme Court judgments decided before 2022 (`caselaw/`, see
 `caselaw/README.md`), built on Kaggle or Colab from the `LevMuchnik/SupremeCourtOfIsrael` dataset
-and searched by `src/codex_sentinel/legal/caselaw.py`. It's off until you point the app at a built
+and searched by `src/docslides/legal/caselaw.py`. It's off until you point the app at a built
 index:
 
 ```bash
@@ -445,7 +445,7 @@ site's terms of use.
 
 ```bash
 pip install -e ".[legal]"
-export CODEX_SENTINEL_LEGAL_BUNDLE_KEY=<long random secret>   # same value for the API process
+export DOCSLIDES_LEGAL_BUNDLE_KEY=<long random secret>   # same value for the API process
 # Official texts: data/legal/sources/<file>.txt|.docx|.pdf + <file>.meta.json
 python scripts/ingest_legal.py stage data/legal/sources/<file>.txt --dry-run   # check the parsed structure
 python scripts/ingest_legal.py stage-sources
@@ -519,7 +519,7 @@ This starts only `app`, pointed at the host's Ollama via
 `host.docker.internal:11434` -- see that file's header comment for why
 Ollama runs on the host rather than in its own container (Docker on macOS
 can't pass Metal through to a container). Or skip Docker entirely and run
-the app directly -- see `gui/CodexSentinel.bat`/`.command` or
+the app directly -- see `gui/DocSlides.bat`/`.command` or
 `scripts/setup.*`'s printed "Next steps".
 
 Reference `vllm serve` command (also printed by
@@ -543,7 +543,7 @@ vllm serve google/gemma-4-31B-it \
 vllm serve google/gemma-4-31B-it --quantization fp8 --max-model-len 16384 --gpu-memory-utilization 0.90 --port 8000
 
 # terminal 2
-codex-sentinel-api   # FastAPI + Gradio UI on :8456 (UI at /ui)
+docslides-api   # FastAPI + Gradio UI on :8456 (UI at /ui)
 ```
 
 **Ollama (any machine):**
@@ -554,10 +554,10 @@ ollama serve
 
 # terminal 2
 set -a; source .env.local; set +a   # written by scripts/setup.sh; PowerShell: see scripts/setup.ps1's "Next steps"
-codex-sentinel-api
+docslides-api
 ```
 
-Or just use `gui/CodexSentinel.bat`/`.command`, which does both of the above
+Or just use `gui/DocSlides.bat`/`.command`, which does both of the above
 from one window and shows live status.
 
 ### Hosting on Kaggle with a public link
@@ -606,11 +606,11 @@ The Israeli legal eval set (`legal_txt/Evals/israeli_legal_eval.zip`) runs again
 |---|---|---|
 | `notebooks/colab_legal_eval_qwen_gemma.ipynb` | Google Colab, free T4 | qwen3:14b and gemma4:12b answer the same 100 questions + 5 cases. **No judging**: answers, full reasoning traces (`llm_trace/`, `reasoning_report*.md`), judge-free scores and a summary, written to Google Drive as it goes (resumable) |
 | `notebooks/kaggle_legal_eval_gemma27b.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases, with retrieval on the GPU and BM25; **no judging**. Prints a judge-free comparison with the 29 Sept gemma3:12b run (multiple choice, yes/no labels, governing section retrieved, out-of-scope sources, timing) |
-| `notebooks/kaggle_legal_eval_gemma4_caselaw.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases as the 29 Sept Gemma 3 27B run, in two arms: with the Supreme Court case-law index (`legal.corpus.caselaw_dir`, `src/codex_sentinel/legal/caselaw.py`) and without; **no judging**. Needs the Output of `notebooks/kaggle_caselaw_ingest.ipynb` as Input |
+| `notebooks/kaggle_legal_eval_gemma4_caselaw.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases as the 29 Sept Gemma 3 27B run, in two arms: with the Supreme Court case-law index (`legal.corpus.caselaw_dir`, `src/docslides/legal/caselaw.py`) and without; **no judging**. Needs the Output of `notebooks/kaggle_caselaw_ingest.ipynb` as Input |
 | `notebooks/kaggle_legal_eval_bulk500.ipynb` | Kaggle, 2× T4 | answer + judge + score; qwen3:14b by default (qwen3:32b for milestone runs) |
 | `notebooks/kaggle_legal_eval_dictalm.ipynb` | Kaggle, 2× T4 | the same test with DictaLM 3.0 answering |
 
-The judge is `legal.judge_model` (default `gpt-oss:20b`, overridden by `CODEX_SENTINEL_LEGAL_JUDGE_MODEL`): a
+The judge is `legal.judge_model` (default `gpt-oss:20b`, overridden by `DOCSLIDES_LEGAL_JUDGE_MODEL`): a
 family other than the models under test, so no model grades its own answers. Saved answers
 can be re-judged without re-answering: `score.py prepare`, then `scripts/legal_data/eval_run.py judge`,
 then `score.py report` (see `eval_run.py`'s docstring). `scripts/legal_data/check_corpus_coverage.py`

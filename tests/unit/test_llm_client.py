@@ -5,9 +5,9 @@ import asyncio
 
 import pytest
 
-from codex_sentinel.config import get_config
-from codex_sentinel.llm import trace
-from codex_sentinel.llm.client import (
+from docslides.config import get_config
+from docslides.llm import trace
+from docslides.llm.client import (
     ChatMessage,
     Completion,
     LLMCallSite,
@@ -15,7 +15,7 @@ from codex_sentinel.llm.client import (
     SamplingParams,
     SchemaValidationFailed,
 )
-from codex_sentinel.llm.schemas import EntailmentVerdict, EvalJudgement, LegalDraft
+from docslides.llm.schemas import EntailmentVerdict, EvalJudgement, LegalDraft
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def test_a_rejected_think_field_is_dropped_and_the_call_retried(ollama, monkeypa
 def test_a_timeout_names_the_model_the_step_and_the_setting(ollama, monkeypatch):
     import httpx
 
-    from codex_sentinel.llm.client import LLMTimeoutError
+    from docslides.llm.client import LLMTimeoutError
 
     async def slow(payload):
         raise httpx.ReadTimeout("")
@@ -98,11 +98,11 @@ def test_max_tokens_is_capped_to_fit_the_context(ollama):
 
 
 def test_context_window_can_be_set_per_host_from_the_environment(monkeypatch):
-    from codex_sentinel.config import _apply_env_overrides
+    from docslides.config import _apply_env_overrides
 
-    monkeypatch.setenv("CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN", "20480")
-    monkeypatch.setenv("CODEX_SENTINEL_LLM_MAX_MODEL_LEN", "12288")
-    monkeypatch.setenv("CODEX_SENTINEL_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S", "3600")
+    monkeypatch.setenv("DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN", "20480")
+    monkeypatch.setenv("DOCSLIDES_LLM_MAX_MODEL_LEN", "12288")
+    monkeypatch.setenv("DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S", "3600")
     raw = _apply_env_overrides({"llm": {"max_model_len": 8192}, "legal": {"orchestrator": {"max_model_len": 16384}}})
     assert raw["llm"]["max_model_len"] == "12288"
     assert raw["legal"]["orchestrator"]["request_timeout_s"] == "3600"
@@ -166,7 +166,7 @@ def test_the_judge_explains_before_its_verdict_and_the_verifier_after():
 
 
 def test_a_json_reply_wrapped_in_a_fence_or_prose_still_parses():
-    from codex_sentinel.llm.client import _parse_json_reply
+    from docslides.llm.client import _parse_json_reply
 
     assert _parse_json_reply('{"a": 1}') == {"a": 1}
     assert _parse_json_reply('Here it is:\n```json\n{"a": 2}\n```') == {"a": 2}
@@ -176,11 +176,11 @@ def test_a_json_reply_wrapped_in_a_fence_or_prose_still_parses():
 
 
 def test_the_judge_defaults_to_a_family_not_under_test(monkeypatch):
-    from codex_sentinel.legal.evaluation import get_judge_client
+    from docslides.legal.evaluation import get_judge_client
 
-    monkeypatch.delenv("CODEX_SENTINEL_LEGAL_JUDGE_MODEL", raising=False)
+    monkeypatch.delenv("DOCSLIDES_LEGAL_JUDGE_MODEL", raising=False)
     assert get_judge_client().model == get_config().legal.judge_model == "gpt-oss:20b"
-    monkeypatch.setenv("CODEX_SENTINEL_LEGAL_JUDGE_MODEL", "mistral-small3.2:24b")
+    monkeypatch.setenv("DOCSLIDES_LEGAL_JUDGE_MODEL", "mistral-small3.2:24b")
     assert get_judge_client().model == "mistral-small3.2:24b"
 
 
@@ -194,8 +194,8 @@ def test_output_room_is_what_the_cap_leaves(ollama):
 def test_the_picked_model_size_switches_every_ollama_deployment(monkeypatch):
     """The UI's 12B/31B selector (config.model_sizes): within model_size(...), and in tasks started
     inside it, the general, Legal and translator clients talk to that size's tags."""
-    from codex_sentinel.config import LLMConfig
-    from codex_sentinel.llm import client as llm_client
+    from docslides.config import LLMConfig
+    from docslides.llm import client as llm_client
 
     cfg = get_config()
     ollama_cfg = LLMConfig(backend="ollama", base_url="http://localhost:1", model="gemma4:31b")
@@ -231,7 +231,7 @@ def test_the_picked_model_size_switches_every_ollama_deployment(monkeypatch):
 
 
 def test_a_vllm_server_keeps_its_one_model_whatever_size_is_picked(monkeypatch):
-    from codex_sentinel.llm import client as llm_client
+    from docslides.llm import client as llm_client
 
     monkeypatch.setattr(get_config().llm, "backend", "vllm")
     monkeypatch.setattr(llm_client, "_clients", {})

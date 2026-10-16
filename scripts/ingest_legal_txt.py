@@ -6,14 +6,14 @@ Legal tab's index in one step (official source, auto-approved). An older
 version of the same law is superseded automatically: its end date is set
 and its status becomes "amended". PDFs without a <file>.meta.json get one
 derived from the title; check it, edit it and re-run to correct. See
-src/codex_sentinel/legal/folder_ingest.py for the rules.
+src/docslides/legal/folder_ingest.py for the rules.
 
     python scripts/ingest_legal_txt.py --dry-run     # preview metadata + chunking, write nothing
     python scripts/ingest_legal_txt.py               # index new/changed files
     python scripts/ingest_legal_txt.py --watch       # keep watching the folder (polls)
     python scripts/ingest_legal_txt.py --prune       # also retract laws whose PDF was deleted
 
-Needs CODEX_SENTINEL_LEGAL_BUNDLE_KEY (the key the index is signed with -- the API
+Needs DOCSLIDES_LEGAL_BUNDLE_KEY (the key the index is signed with -- the API
 process needs the same value) and the `legal` extra: pip install -e ".[legal]"
 """
 
@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from codex_sentinel.legal import bundle, folder_ingest
+from docslides.legal import bundle, folder_ingest
 
 
 def _report(results: list[folder_ingest.FileResult], verbose_unchanged: bool) -> int:

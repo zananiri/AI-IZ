@@ -6,8 +6,8 @@ import time
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from codex_sentinel.api import routes_legal
-from codex_sentinel.llm import client as llm_client
+from docslides.api import routes_legal
+from docslides.llm import client as llm_client
 
 
 def test_the_requested_size_reaches_the_legal_job(monkeypatch):
@@ -32,8 +32,8 @@ def test_the_requested_size_reaches_the_legal_job(monkeypatch):
 
 
 def test_the_selector_is_on_top_of_both_tabs_and_defaults_to_12b(monkeypatch):
-    from codex_sentinel.config import get_config
-    from codex_sentinel.ui import gradio_app
+    from docslides.config import get_config
+    from docslides.ui import gradio_app
 
     monkeypatch.setattr(get_config().llm, "backend", "ollama")
     demo = gradio_app.build_app()

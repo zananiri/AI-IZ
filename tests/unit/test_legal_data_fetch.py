@@ -12,10 +12,10 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from codex_sentinel.config import LegalDataConfig, get_config
-from codex_sentinel.legal_data import legislation, supreme_court, wikisource
-from codex_sentinel.legal_data.hebrew import normalize_for_embedding, normalize_for_index, repair_text
-from codex_sentinel.legal_data.http import (
+from docslides.config import LegalDataConfig, get_config
+from docslides.legal_data import legislation, supreme_court, wikisource
+from docslides.legal_data.hebrew import normalize_for_embedding, normalize_for_index, repair_text
+from docslides.legal_data.http import (
     AccessDenied,
     DownloadLedger,
     HostUnavailable,
@@ -23,9 +23,9 @@ from codex_sentinel.legal_data.http import (
     PoliteClient,
     RobotsDisallowed,
 )
-from codex_sentinel.legal_data.knesset_odata import ForbiddenQuery, KnessetOData, guard, odata_datetime
-from codex_sentinel.legal_data.law_names import NameIndex, has_prefix, name_key
-from codex_sentinel.legal_data.records import JsonlWriter, read_jsonl, record_hash
+from docslides.legal_data.knesset_odata import ForbiddenQuery, KnessetOData, guard, odata_datetime
+from docslides.legal_data.law_names import NameIndex, has_prefix, name_key
+from docslides.legal_data.records import JsonlWriter, read_jsonl, record_hash
 
 # --- polite HTTP ------------------------------------------------------------------------------------
 
@@ -63,7 +63,7 @@ def test_refuses_to_run_without_a_contact_email():
 
 def test_user_agent_names_the_project_and_contact():
     client, _ = make_client(lambda r: httpx.Response(200))
-    assert "Codex-Sentinel-legal-corpus" in client.user_agent and "corpus@example.org" in client.user_agent
+    assert "AI-IZ-legal-corpus" in client.user_agent and "corpus@example.org" in client.user_agent
 
 
 def test_at_most_one_request_per_second_per_host():
@@ -385,7 +385,7 @@ def test_jsonl_shards_are_swapped_in_whole_and_stale_shards_removed(tmp_path):
 
 
 def test_a_run_without_contact_email_stops_and_writes_a_manifest(tmp_path, monkeypatch):
-    from codex_sentinel.legal_data import cli
+    from docslides.legal_data import cli
 
     monkeypatch.setattr(get_config().legal_data, "contact_email", "")
     args = SimpleNamespace(dry_run=True, sample=None, output=str(tmp_path))
@@ -396,7 +396,7 @@ def test_a_run_without_contact_email_stops_and_writes_a_manifest(tmp_path, monke
 
 
 def test_ingest_legal_txt_skips_the_corpus_folders(tmp_path, monkeypatch):
-    from codex_sentinel.legal import folder_ingest
+    from docslides.legal import folder_ingest
 
     monkeypatch.setattr(get_config().legal.ingestion, "legal_txt_dir", str(tmp_path))
     monkeypatch.setattr(get_config().legal.ingestion, "staging_dir", str(tmp_path / "staging"))
@@ -407,7 +407,7 @@ def test_ingest_legal_txt_skips_the_corpus_folders(tmp_path, monkeypatch):
 
 
 def test_progress_lines_show_percent_rate_and_eta_at_most_every_few_seconds():
-    from codex_sentinel.legal_data.progress import Progress
+    from docslides.legal_data.progress import Progress
 
     lines, now = [], [0.0]
     progress = Progress("rows", total=100, unit="rows", log=lines.append, every=5, clock=lambda: now[0])

@@ -146,7 +146,7 @@ if require_module surya; then
   # (surya.detection.DetectionPredictor / surya.recognition.
   # RecognitionPredictor); the old surya.model.* module path is gone.
   # Since 0.16 RecognitionPredictor wraps a shared FoundationPredictor
-  # (same construction as src/codex_sentinel/ocr/engines.py's SuryaEngine).
+  # (same construction as src/docslides/ocr/engines.py's SuryaEngine).
   # Predictor.__init__ loads (and thus downloads) weights eagerly.
   python - <<'EOF' || true
 from surya.detection import DetectionPredictor
@@ -233,4 +233,4 @@ else
   echo "Install the missing extras (see messages above) and re-run this script"
   echo "-- it's safe to re-run; already-downloaded files are left in place."
 fi
-echo "Nothing in the runtime path (src/codex_sentinel/**) makes network calls at inference time."
+echo "Nothing in the runtime path (src/docslides/**) makes network calls at inference time."

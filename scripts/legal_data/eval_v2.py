@@ -141,7 +141,7 @@ def verify_item(g: dict, corpus: Corpus) -> dict:
 
 
 def cmd_verify(a) -> int:
-    from codex_sentinel.config import get_config
+    from docslides.config import get_config
 
     cfg = get_config().legal.corpus
     gold = load(a.gold)
@@ -207,7 +207,7 @@ def retrieval_recall(gold: list[dict], answers: list[dict]) -> dict:
     """Share of items (with verified gold chunks) whose retrieved context holds a cited section of a
     cited law. eval_run.py records each hit's title and section, not its chunk id, so the match is by
     law name and section number."""
-    from codex_sentinel.legal.corpus_retrieval import same_law
+    from docslides.legal.corpus_retrieval import same_law
 
     by_id = {a["id"]: a for a in answers}
     hit = total = 0

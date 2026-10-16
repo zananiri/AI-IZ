@@ -4,12 +4,12 @@ keyword terms used by legal/keyword.py."""
 
 import pytest
 
-from codex_sentinel.config import get_config
-from codex_sentinel.legal import chunking
-from codex_sentinel.legal.chunking import SourceMeta, chunk_sections
-from codex_sentinel.legal.insertions import find_insertion, join_spaced_section_numbers
-from codex_sentinel.legal.keyword import KeywordIndex, terms
-from codex_sentinel.legal.structure import parse_sections
+from docslides.config import get_config
+from docslides.legal import chunking
+from docslides.legal.chunking import SourceMeta, chunk_sections
+from docslides.legal.insertions import find_insertion, join_spaced_section_numbers
+from docslides.legal.keyword import KeywordIndex, terms
+from docslides.legal.structure import parse_sections
 
 LAW = """\
 תיקונים עקיפים:

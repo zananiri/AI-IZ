@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from codex_sentinel.config import get_config
+from docslides.config import get_config
 
 CATEGORIES = ("laws", "procedural_rules", "supreme_court")
 

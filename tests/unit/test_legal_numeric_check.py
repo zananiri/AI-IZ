@@ -1,4 +1,4 @@
-from codex_sentinel.legal.numeric_check import unsupported_numbers
+from docslides.legal.numeric_check import unsupported_numbers
 
 EVIDENCE = [
     'ובלבד שהתקשרות כאמור ששווייה עולה על 2.5 מיליון שקלים חדשים תיעשה באישור ועדת הפטור',

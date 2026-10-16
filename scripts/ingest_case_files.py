@@ -18,7 +18,7 @@ images. Convert .doc/.rtf/.msg first. Unchanged files are skipped on re-runs, so
 whenever files are added or edited.
 
 The chunking strategy (structure-aware, per document type, with a context header on every chunk)
-is described in src/codex_sentinel/legal/case_files.py. Answers come from the Legal tab's model
+is described in src/docslides/legal/case_files.py. Answers come from the Legal tab's model
 (legal.orchestrator) and cite the excerpts they use: file, page and paragraph.
 
 Needs the `legal` extra (chromadb, sentence-transformers): pip install -e ".[legal]"
@@ -37,7 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 os.chdir(ROOT)  # config paths (./legal_data, ./data/...) are relative to the project root
 
-from codex_sentinel.legal import case_files  # noqa: E402
+from docslides.legal import case_files  # noqa: E402
 
 
 def _print_report(reports: list[case_files.FileReport], verbose: bool) -> int:

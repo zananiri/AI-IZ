@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stage 0 for the Legal tab: stage, review, approve and sign Israeli legal
-sources into the local index (src/codex_sentinel/legal/).
+sources into the local index (src/docslides/legal/).
 
 Nothing reaches the index without going through a staged batch:
 
@@ -25,7 +25,7 @@ Nothing reaches the index without going through a staged batch:
     python scripts/ingest_legal.py dups              # near-duplicate chunks, to tune dedupe
     python scripts/ingest_legal.py retag             # add amendment links to laws indexed before they existed
 
-Approving needs CODEX_SENTINEL_LEGAL_BUNDLE_KEY set (the HMAC key the bundle is
+Approving needs DOCSLIDES_LEGAL_BUNDLE_KEY set (the HMAC key the bundle is
 signed with). Set the same value for the API process so it can verify it.
 
 Needs the optional `legal` dependency group: pip install -e ".[legal]"
@@ -41,9 +41,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from codex_sentinel.config import get_config
-from codex_sentinel.legal import bundle, staging
-from codex_sentinel.legal.sources import is_source_file, load_official_source
+from docslides.config import get_config
+from docslides.legal import bundle, staging
+from docslides.legal.sources import is_source_file, load_official_source
 
 
 def _print_batch_summary(batch: staging.Batch) -> None:
@@ -145,7 +145,7 @@ def cmd_retag(args) -> int:
     signed hashes, so nothing is re-embedded or re-signed."""
     from collections import defaultdict
 
-    from codex_sentinel.legal import amendments, retrieval
+    from docslides.legal import amendments, retrieval
 
     by_version: dict[tuple[str, str], list] = defaultdict(list)
     for chunk_id, text, meta in retrieval.all_chunks():
@@ -179,7 +179,7 @@ def cmd_dups(args) -> int:
     twice with a margin note moved) or legitimately similar provisions."""
     import numpy as np
 
-    from codex_sentinel.legal.retrieval import _get_collection
+    from docslides.legal.retrieval import _get_collection
 
     data = _get_collection().get(include=["embeddings", "metadatas", "documents"])
     ids, metas, docs = data["ids"], data["metadatas"], data["documents"]
@@ -204,8 +204,8 @@ def cmd_dups(args) -> int:
 
 
 def cmd_verify(args) -> int:
-    from codex_sentinel.legal import retrieval
-    from codex_sentinel.legal.models import content_hash
+    from docslides.legal import retrieval
+    from docslides.legal.models import content_hash
 
     entries, level = bundle.verify()
     print(f"Bundle: {len(entries)} approved chunks, signature check: {level}")

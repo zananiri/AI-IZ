@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Readable report of the LLM trace (src/codex_sentinel/llm/trace.py): per question, every
+"""Readable report of the LLM trace (src/docslides/llm/trace.py): per question, every
 model call in order -- its reasoning, what it returned, why it stopped, how long it took.
 
     python scripts/llm_trace_report.py data/llm_trace/2026-09-25.jsonl > trace.md

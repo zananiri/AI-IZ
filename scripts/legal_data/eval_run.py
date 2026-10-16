@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Answer, then judge, legal_txt/Evals/israeli_legal_eval/questions.jsonl (the 500-question
 set) against the bulk legal corpus (data/legal_corpus_vectordb, scripts/legal_data/vectorize.py)
--- a separate, much broader index from the Legal tab's own signed bundle (src/codex_sentinel/legal/),
+-- a separate, much broader index from the Legal tab's own signed bundle (src/docslides/legal/),
 which this eval set is too broad to run against (five curated laws vs. the eval's eleven areas
 of law).
 
@@ -56,7 +56,7 @@ amendment timelines, labelled as notes, not statute text).
 
 Reasoning: every LLM call is written in full -- prompt, reasoning ("thinking"), output, timing --
 to <logging.llm_trace_dir>/<date>.jsonl (llm/trace.py), with job_id set to the question id, as
-long as CODEX_SENTINEL_CONFIG's logging.llm_trace_dir is set (see notebooks/kaggle_legal_eval_bulk500.ipynb).
+long as DOCSLIDES_CONFIG's logging.llm_trace_dir is set (see notebooks/kaggle_legal_eval_bulk500.ipynb).
 scripts/llm_trace_report.py renders that file to Markdown, one section per question.
 """
 
@@ -76,27 +76,27 @@ from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from codex_sentinel.cleaning.tokens import count_tokens
-from codex_sentinel.config import get_config
-from codex_sentinel.legal import caselaw, corpus_navigation
-from codex_sentinel.legal.corpus_retrieval import (  # shared with the Legal tab's corpus path
+from docslides.cleaning.tokens import count_tokens
+from docslides.config import get_config
+from docslides.legal import caselaw, corpus_navigation
+from docslides.legal.corpus_retrieval import (  # shared with the Legal tab's corpus path
     PLAN_MAX_TOKENS,
     PLAN_PROMPT,
     in_scope,
     retrieve_planned,
     warm_up_retrieval,
 )
-from codex_sentinel.legal.evaluation import get_judge_client
-from codex_sentinel.legal_data.hebrew import normalize_for_embedding
-from codex_sentinel.llm import trace
-from codex_sentinel.llm.client import (
+from docslides.legal.evaluation import get_judge_client
+from docslides.legal_data.hebrew import normalize_for_embedding
+from docslides.llm import trace
+from docslides.llm.client import (
     ChatMessage,
     LLMCallSite,
     SamplingParams,
     get_legal_orchestrator_client,
 )
-from codex_sentinel.llm.schemas import BulkEvalJudgement, EvalIssue, EvalRetrievalPlan
-from codex_sentinel.rag.embedding import embed_texts
+from docslides.llm.schemas import BulkEvalJudgement, EvalIssue, EvalRetrievalPlan
+from docslides.rag.embedding import embed_texts
 
 ANSWER_SYSTEM = """You are a legal assistant answering questions about ISRAELI law, in Hebrew.
 
@@ -515,7 +515,7 @@ def retrieve(query_text: str, categories: list[str], top_k: int) -> list[dict]:
     at config.legal.corpus.vectordb_dir. Each category is queried for `top_k` first, so a
     category with the single best hits isn't starved by one that returns weaker ones. Records
     corpus_retrieval.in_scope rules out (West Bank orders, drafts, repealed law) are skipped."""
-    from codex_sentinel.legal_data.corpus_index import CorpusCollection
+    from docslides.legal_data.corpus_index import CorpusCollection
 
     legal_cfg = get_config().legal
     corpus_cfg = legal_cfg.corpus
@@ -848,7 +848,7 @@ def main() -> None:
                     help="output budget per judgement, reasoning included")
 
     a = p.parse_args()
-    from codex_sentinel.llm.client import aclose_all_clients
+    from docslides.llm.client import aclose_all_clients
 
     async def run() -> None:
         try:

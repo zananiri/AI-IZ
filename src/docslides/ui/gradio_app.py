@@ -972,8 +972,8 @@ def build_status_tab(tab: gr.Tab) -> None:
 
 
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title="AI Workbench - Ibrahim Z.") as demo:
-        gr.Markdown("# AI Workbench - Ibrahim Z.")
+    with gr.Blocks(title="Codex Sentinel - By Ibrahim Zananiri") as demo:
+        gr.Markdown("# Codex Sentinel - By Ibrahim Zananiri")
         model_size_selector = build_model_size_selector()
         with gr.Tabs():
             with gr.Tab("General GPT"):

@@ -52,7 +52,49 @@ authorization. Details: [`scripts/legal_data/README.md`](scripts/legal_data/READ
 
 ## Spanish pipeline choices
 
-SPANISH_PIPELINE_PLACEHOLDER
+Each component was checked against the published Spanish evidence, and where it mattered,
+measured on the real corpus: `scripts/legal_data/benchmark_embeddings.py` over the 4,816 articles
+of the CE, CC, CP, LEC, ET and LAU as the BOE publishes them today, with the 30 questions of
+`legal_txt/Evals/es_retrieval_seed.jsonl` (each gold article checked against the BOE text).
+
+| | top-1 | recall@5 | recall@10 | MRR@10 |
+|---|---|---|---|---|
+| BM25 alone (accent-folded, stemmed) | 60.0% | 80.0% | 83.3% | 0.697 |
+| BM25 + reranker | 80.0% | 83.3% | 83.3% | 0.811 |
+| **bge-m3** dense | **86.7%** | 93.3% | **100%** | **0.901** |
+| Qwen3-Embedding-0.6B dense | 73.3% | 93.3% | 96.7% | 0.814 |
+| **bge-m3 + BM25 + bge-reranker-v2-m3** (the Legal tab's path) | **86.7%** | **100%** | **100%** | **0.919** |
+| Qwen3-Embedding-0.6B + BM25 + bge-reranker-v2-m3 | 86.7% | 96.7% | 96.7% | 0.903 |
+
+(Documents truncated to 384 tokens, reranker over the fused top 20, CPU run on 16 Oct 2026. 30
+questions is a small set: treat differences of one question, 3.3 points, as noise.)
+
+- **Embeddings: bge-m3 stays.** Third-party Spanish results (SINAI's legal-embedding evaluation)
+  put Qwen3-Embedding-0.6B ahead of bge-m3 on most Spanish sets, so it was the candidate to switch
+  to -- but on Spanish statute text it ranked the governing article first 4 times fewer in 30, and
+  was slower to encode on a CPU (64 min for the corpus, against under 50 min for bge-m3 including its reranking). The embedding layer now supports instruction-tuned
+  and prompt-based models (`src/aicodex/rag/embedding.py`: Qwen3's task instruction, e5's
+  "query:/passage:", a model's own "query" prompt), so a model can be swapped by config and
+  re-measured with the benchmark; `legal.retrieval.query_instruction` overrides the instruction.
+  A Spanish legal-domain model (SINAI/ALIA-MrBERT-es-legal-administrative-embeddings, Apache 2.0)
+  wins on in-domain pairs in its own card but loses on QA; it doesn't load with the
+  transformers < 5 pin this project needs for MinerU, so it is left for a later test.
+- **Reranker: bge-reranker-v2-m3 stays.** An independent Spanish evaluation (LAMAR, 2026) scores it
+  86.8 MRR@10 on Spanish against 60.2 for Qwen3-Reranker-0.6B; here it lifts BM25's top-1 from 60%
+  to 80% and brings the full path to 100% recall@5.
+- **Keyword search: rebuilt for Spanish** (`legal/keyword.py`): lowercased and accent-folded
+  ("artículo" = "articulo"), a light plural/gender stemmer (light stemming matches or beats
+  aggressive Snowball stemming for Spanish retrieval), law numbers ("29/1994") and "14 bis" kept as
+  single tokens, Spanish stopwords. It is the safety net for exact identifiers; the reranker, not
+  the fusion, decides the order (equal-weight fusion alone lowers MRR; the fusion weight is being measured).
+- **LLM: Gemma 4 stays.** The Spanish public models (BSC's ALIA-40b, Apache 2.0, trained with
+  Spanish and co-official languages oversampled; the Salamandra family) are worth watching, but
+  ALIA-40b has no instruction-tuned release yet and publishes no legal or Gemma comparison. Any
+  Ollama tag can be tried through `model_sizes` in `config/config.yaml`.
+- **Anonymization:** the TC already pseudonymizes minors and victims; the remaining "don/doña"
+  party names are replaced by a deterministic rule that keeps the magistrates. Open Spanish judicial
+  NER models exist (AymurAI's Flair models) but their licences and evaluations aren't published, so
+  they weren't adopted.
 
 ## Architecture
 

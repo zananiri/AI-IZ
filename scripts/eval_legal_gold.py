@@ -155,7 +155,7 @@ def coverage(source_ids: list[str], expected: list[dict], gazettes: dict[str, st
 
 def _gazette_map() -> dict[str, str]:
     """law_id in the index -> gazette number ("3546")."""
-    from docslides.legal import retrieval
+    from codex_sentinel.legal import retrieval
 
     out = {}
     for _, _, meta in retrieval.all_chunks():
@@ -171,11 +171,11 @@ def _gold_gazettes(gold: dict) -> dict[str, str]:
 # --- phases ----------------------------------------------------------------------------------
 
 async def answer_phase(questions: list[dict], run_dir: Path) -> None:
-    from docslides.legal import retrieval
-    from docslides.legal.citations import strip_citations
-    from docslides.legal.evaluation import reasoning_record
-    from docslides.legal.pipeline import run_legal_turn
-    from docslides.llm.client import aclose_all_clients
+    from codex_sentinel.legal import retrieval
+    from codex_sentinel.legal.citations import strip_citations
+    from codex_sentinel.legal.evaluation import reasoning_record
+    from codex_sentinel.legal.pipeline import run_legal_turn
+    from codex_sentinel.llm.client import aclose_all_clients
 
     if retrieval.collection_count() == 0:
         raise SystemExit("The Legal index is empty.")
@@ -219,15 +219,15 @@ async def answer_phase(questions: list[dict], run_dir: Path) -> None:
 
 
 async def grade_phase(questions: list[dict], run_dir: Path) -> None:
-    from docslides.legal.chunking import normalize_hebrew_quotes
-    from docslides.legal.evaluation import (
+    from codex_sentinel.legal.chunking import normalize_hebrew_quotes
+    from codex_sentinel.legal.evaluation import (
         JUDGE_MAX_TOKENS,
         contradiction,
         get_judge_client,
         with_citations,
     )
-    from docslides.llm.client import ChatMessage, LLMCallSite, SamplingParams, aclose_all_clients
-    from docslides.llm.schemas import EvalJudgement
+    from codex_sentinel.llm.client import ChatMessage, LLMCallSite, SamplingParams, aclose_all_clients
+    from codex_sentinel.llm.schemas import EvalJudgement
 
     gold = _load(GOLD)  # opened only here, never in the answer phase
     items = {item["id"]: item for item in gold["items"]}
@@ -328,7 +328,7 @@ def summarize(records: list[dict]) -> dict:
 
 
 def retrieval_only(questions: list[dict]) -> None:
-    from docslides.legal import retrieval
+    from codex_sentinel.legal import retrieval
 
     gold = _load(GOLD)
     items = {item["id"]: item for item in gold["items"]}
@@ -368,7 +368,7 @@ def main() -> int:
         retrieval_only(questions)
         return 0
 
-    from docslides.config import get_config
+    from codex_sentinel.config import get_config
 
     run_dir = Path(args.run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -377,7 +377,7 @@ def main() -> int:
         _save(run_dir / "meta.json", {
             "eval_set": "multi-law-24-he", "started": datetime.now().isoformat(timespec="seconds"),
             "model (pipeline)": legal.orchestrator.model,
-            "judge": __import__("os").environ.get("DOCSLIDES_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
+            "judge": __import__("os").environ.get("CODEX_SENTINEL_LEGAL_JUDGE_MODEL") or legal.orchestrator.model,
             "retrieval": f"{legal.retrieval.embedding_model}, reranker={legal.retrieval.reranker_model}, "
                          f"keyword={legal.retrieval.keyword_search}, evidence budget={legal.retrieval.max_evidence_tokens}",
         })

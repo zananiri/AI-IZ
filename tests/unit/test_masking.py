@@ -1,4 +1,4 @@
-from docslides.cleaning.masking import mask_non_translatable_spans, restore_masks
+from codex_sentinel.cleaning.masking import mask_non_translatable_spans, restore_masks
 
 
 def test_masks_and_restores_numbers_and_units():

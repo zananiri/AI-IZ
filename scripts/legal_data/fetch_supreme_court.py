@@ -11,7 +11,7 @@ Output: legal_txt/supreme_court/supreme_court-00001.jsonl ... (50,000 records pe
 filter_report.json: how many documents each keep rule and each privacy rule removed, plus the
 distinct case types (meta_inyan_nm) and departments (meta_mador_nm) with their counts -- check them
 against legal_data.privacy.family_case_prefixes / family_subject_values. Rules:
-src/docslides/legal_data/supreme_court.py.
+src/codex_sentinel/legal_data/supreme_court.py.
 """
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from docslides.legal_data import cli
-from docslides.legal_data import supreme_court as sc
-from docslides.legal_data.progress import Progress
-from docslides.legal_data.records import JsonlWriter
+from codex_sentinel.legal_data import cli
+from codex_sentinel.legal_data import supreme_court as sc
+from codex_sentinel.legal_data.progress import Progress
+from codex_sentinel.legal_data.records import JsonlWriter
 
 SHARD_SIZE = 50_000
 

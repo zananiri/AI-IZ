@@ -31,33 +31,33 @@ services:
       - ./paddleocr_cache:/root/.paddleocr
       - ./stanza_cache:/root/stanza_resources
     environment:
-      - DOCSLIDES_CONFIG=/app/config/config.yaml
+      - CODEX_SENTINEL_CONFIG=/app/config/config.yaml
       - HF_HUB_OFFLINE=1
-      - DOCSLIDES_APP_PORT=8456
-      - DOCSLIDES_LLM_BACKEND=ollama
-      - DOCSLIDES_LLM_BASE_URL=http://host.docker.internal:11434
+      - CODEX_SENTINEL_APP_PORT=8456
+      - CODEX_SENTINEL_LLM_BACKEND=ollama
+      - CODEX_SENTINEL_LLM_BASE_URL=http://host.docker.internal:11434
       # General chat (chat, rewrite, slides, the glossary work around translation): the same Gemma
       # as the Legal tab below, thinking off. scripts/setup.* pick OLLAMA_MODEL for this host.
-      - DOCSLIDES_LLM_MODEL=${OLLAMA_MODEL:-gemma4:31b}
-      - DOCSLIDES_LLM_SUPPORTS_THINKING=false
+      - CODEX_SENTINEL_LLM_MODEL=${OLLAMA_MODEL:-gemma4:31b}
+      - CODEX_SENTINEL_LLM_SUPPORTS_THINKING=false
       # General chat context window (Ollama num_ctx).
-      - DOCSLIDES_LLM_MAX_MODEL_LEN=16384
+      - CODEX_SENTINEL_LLM_MAX_MODEL_LEN=16384
       # Legal tab: an independent deployment (see config/config.yaml's `legal:`
       # section) -- also routed to the same host Ollama instance rather than
       # config.yaml's vLLM-only default (http://vllm:8000). Gemma runs with
       # thinking off.
-      - DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
-      - DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://host.docker.internal:11434
-      - DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=${OLLAMA_MODEL:-gemma4:31b}
-      - DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false
+      - CODEX_SENTINEL_LEGAL_ORCHESTRATOR_BACKEND=ollama
+      - CODEX_SENTINEL_LEGAL_ORCHESTRATOR_BASE_URL=http://host.docker.internal:11434
+      - CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MODEL=${OLLAMA_MODEL:-gemma4:31b}
+      - CODEX_SENTINEL_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=false
       # Context window (Ollama num_ctx) for the Legal tab: evidence + thinking pass. scripts/setup.*
       # write the value picked for this host's memory to .env.local; 16384 is the config default.
-      - DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=${LEGAL_CONTEXT_LENGTH:-16384}
+      - CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=${LEGAL_CONTEXT_LENGTH:-16384}
       # Translation: TranslateGemma translates each chunk, sized to match OLLAMA_MODEL
       # (translategemma:27b with gemma4:31b, :12b with gemma4:12b, :4b with gemma3:4b-it-qat).
-      - DOCSLIDES_TRANSLATOR_BACKEND=ollama
-      - DOCSLIDES_TRANSLATOR_BASE_URL=http://host.docker.internal:11434
-      - DOCSLIDES_TRANSLATOR_MODEL=${OLLAMA_TRANSLATE_MODEL:-translategemma:27b}
-      - DOCSLIDES_TRANSLATOR_MAX_MODEL_LEN=8192
+      - CODEX_SENTINEL_TRANSLATOR_BACKEND=ollama
+      - CODEX_SENTINEL_TRANSLATOR_BASE_URL=http://host.docker.internal:11434
+      - CODEX_SENTINEL_TRANSLATOR_MODEL=${OLLAMA_TRANSLATE_MODEL:-translategemma:27b}
+      - CODEX_SENTINEL_TRANSLATOR_MAX_MODEL_LEN=8192
     extra_hosts:
       - "host.docker.internal:host-gateway"  # Linux needs this; Docker Desktop (Win/Mac) provides it natively

@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from docslides.config import get_config  # noqa: E402
+from codex_sentinel.config import get_config  # noqa: E402
 
 
 def build_launch_command(cfg) -> str:

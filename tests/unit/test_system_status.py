@@ -3,9 +3,9 @@ and one failing check never takes the report down."""
 
 from __future__ import annotations
 
-from docslides import system_status
-from docslides.config import get_config
-from docslides.system_status import (
+from codex_sentinel import system_status
+from codex_sentinel.config import get_config
+from codex_sentinel.system_status import (
     FAIL,
     OK,
     Check,

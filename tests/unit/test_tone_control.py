@@ -1,4 +1,4 @@
-from docslides.tone.tone_control import ToneSettings, resolve_sampling_params
+from codex_sentinel.tone.tone_control import ToneSettings, resolve_sampling_params
 
 
 def test_creativity_drives_sampling_within_professionalism_cap():

@@ -1,4 +1,4 @@
-from docslides.legal.citations import (
+from codex_sentinel.legal.citations import (
     expand_citations,
     format_citation,
     normalize_positional,
@@ -6,15 +6,15 @@ from docslides.legal.citations import (
     render_with_footnotes,
     sentence_before,
 )
-from docslides.legal.models import ChunkMetadata
-from docslides.legal.validation import (
+from codex_sentinel.legal.models import ChunkMetadata
+from codex_sentinel.legal.validation import (
     AUTO_NOTE_MARK,
     check_draft_citations,
     clean_memorandum,
     record_contrary_search_notes,
     validate_memorandum,
 )
-from docslides.llm.schemas import ResearchMemorandum
+from codex_sentinel.llm.schemas import ResearchMemorandum
 
 LAW = 'חוק החוזים (חלק כללי), תשל"ג-1973'  # contains an ASCII double quote on purpose
 

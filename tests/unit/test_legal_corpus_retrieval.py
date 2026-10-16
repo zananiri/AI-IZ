@@ -1,8 +1,8 @@
 """The Legal tab's corpus path (legal/corpus_retrieval.py): bulk-corpus hits become the
 RetrievalResult the pipeline runs on."""
 
-from docslides.config import get_config
-from docslides.legal import corpus_retrieval
+from codex_sentinel.config import get_config
+from codex_sentinel.legal import corpus_retrieval
 
 LAW = 'חוק החוזים (חלק כללי), תשל"ג-1973'
 
@@ -110,7 +110,7 @@ class _Reranker:
 
 
 def _warm_up(monkeypatch, free_gpus, short=(), reranker=None):
-    from docslides.legal import retrieval as legal_retrieval
+    from codex_sentinel.legal import retrieval as legal_retrieval
 
     cfg = get_config().legal.retrieval
     monkeypatch.setattr(cfg, "device", "cuda")
@@ -145,7 +145,7 @@ def test_a_gpu_without_headroom_sends_only_that_model_to_the_cpu(monkeypatch):
 
 
 def test_an_oom_mid_run_moves_both_models_to_the_cpu(monkeypatch):
-    from docslides.legal.retrieval import cpu_on_gpu_oom
+    from codex_sentinel.legal.retrieval import cpu_on_gpu_oom
 
     cfg = get_config().legal.retrieval
     monkeypatch.setattr(cfg, "device", "cuda:1")

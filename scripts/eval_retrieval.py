@@ -40,9 +40,9 @@ SANDBOX = Path("data/legal/eval/retrieval-sandbox")
 
 
 def _build_sandbox(folders: list[str]) -> None:
-    from docslides.config import get_config
+    from codex_sentinel.config import get_config
 
-    os.environ.setdefault("DOCSLIDES_LEGAL_BUNDLE_KEY", "retrieval-sandbox-only")
+    os.environ.setdefault("CODEX_SENTINEL_LEGAL_BUNDLE_KEY", "retrieval-sandbox-only")
     shutil.rmtree(SANDBOX, ignore_errors=True)
     cfg = get_config().legal
     for sub in ("vdb", "staging", "sources", "uploads", "audit"):
@@ -54,7 +54,7 @@ def _build_sandbox(folders: list[str]) -> None:
     cfg.ingestion.uploads_dir = str(SANDBOX / "uploads")
     cfg.audit_dir = str(SANDBOX / "audit")
 
-    from docslides.legal import folder_ingest
+    from codex_sentinel.legal import folder_ingest
 
     for folder in folders:
         cfg.ingestion.legal_txt_dir = folder
@@ -76,8 +76,8 @@ def main() -> int:
     if args.sandbox:
         _build_sandbox(args.sandbox)
 
-    from docslides.cleaning.tokens import count_tokens
-    from docslides.legal import prompts, retrieval
+    from codex_sentinel.cleaning.tokens import count_tokens
+    from codex_sentinel.legal import prompts, retrieval
 
     questions = json.loads(Path(args.eval_set).read_text(encoding="utf-8"))["questions"]
     rows = []

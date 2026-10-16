@@ -7,8 +7,8 @@ import asyncio
 
 import pytest
 
-from docslides.api import routes_chat as rc
-from docslides.llm.schemas import ChatIntent
+from codex_sentinel.api import routes_chat as rc
+from codex_sentinel.llm.schemas import ChatIntent
 
 
 class FakeGemma:

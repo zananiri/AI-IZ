@@ -6,8 +6,8 @@ import json
 import sys
 from pathlib import Path
 
-from docslides.config import get_config
-from docslides.legal import corpus_navigation as nav
+from codex_sentinel.config import get_config
+from codex_sentinel.legal import corpus_navigation as nav
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "legal_data"))
 
@@ -129,7 +129,7 @@ def test_context_groups_a_law_together_in_section_order():
 
 
 def test_trim_keeps_the_first_hit_and_what_fits():
-    from docslides.cleaning.tokens import count_tokens
+    from codex_sentinel.cleaning.tokens import count_tokens
 
     hits = [_hit("a", "מילה " * 50), _hit("b", "מילה " * 50), _hit("c", "מילה")]
     budget = count_tokens(hits[0]["text"]) + count_tokens("מילה")

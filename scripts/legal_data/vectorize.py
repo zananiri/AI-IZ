@@ -20,7 +20,7 @@ after every batch, so an interrupted run (e.g. Kaggle's 12-hour limit) resumes w
 --shard i/n indexes a fixed 1/n of the records (by id hash) -- for splitting a category across
 sessions; don't combine it with --prune.
 
-Chunking and metadata: src/docslides/legal_data/corpus_chunking.py. Metadata filters available at
+Chunking and metadata: src/codex_sentinel/legal_data/corpus_chunking.py. Metadata filters available at
 query time: category, authority_level, status, effective_ymd / decision_ymd (integers YYYYMMDD),
 law_id, court, case_number, doc_type, record_id, section_number.
 """
@@ -37,11 +37,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from docslides.config import get_config
-from docslides.legal_data.corpus_chunking import CorpusChunk, chunk_record
-from docslides.legal_data.hebrew import normalize_for_embedding
-from docslides.legal_data.progress import Progress
-from docslides.legal_data.records import read_jsonl, record_hash
+from codex_sentinel.config import get_config
+from codex_sentinel.legal_data.corpus_chunking import CorpusChunk, chunk_record
+from codex_sentinel.legal_data.hebrew import normalize_for_embedding
+from codex_sentinel.legal_data.progress import Progress
+from codex_sentinel.legal_data.records import read_jsonl, record_hash
 
 CATEGORIES = ("laws", "procedural_rules", "supreme_court")
 FLUSH_CHUNKS = 2048  # embed + write + commit state every this many chunks
@@ -70,7 +70,7 @@ def check_devices(devices: list[str]) -> None:
 
 class Embedder:
     def __init__(self, model_name: str, devices: list[str], batch_size: int) -> None:
-        from docslides.rag.embedding import get_embedder
+        from codex_sentinel.rag.embedding import get_embedder
 
         self.model_name = model_name
         self.device = devices[0] if devices else None
@@ -91,7 +91,7 @@ class Embedder:
         bad = np.flatnonzero(~np.isfinite(vectors).all(axis=1))
         if bad.size:
             # fp16 can overflow on a rare text; Chroma rejects the whole batch if one vector has NaN/Inf.
-            from docslides.rag.embedding import get_embedder
+            from codex_sentinel.rag.embedding import get_embedder
 
             log(f"{bad.size} of {len(texts)} vectors had NaN/Inf; re-encoding them in fp32")
             full = get_embedder(self.model_name, self.device, full_precision=True)
@@ -130,7 +130,7 @@ def in_shard(record_id: str, shard: tuple[int, int] | None) -> bool:
 
 
 def index_category(category: str, args, corpus_cfg, model_name: str, embedder_factory) -> dict:
-    from docslides.legal_data.corpus_index import CorpusCollection, CorpusState
+    from codex_sentinel.legal_data.corpus_index import CorpusCollection, CorpusState
 
     files = input_files(Path(args.input), category)
     stats: Counter = Counter()
@@ -221,7 +221,7 @@ def index_category(category: str, args, corpus_cfg, model_name: str, embedder_fa
 
 
 def probe(args, corpus_cfg, model_name: str) -> None:
-    from docslides.legal_data.corpus_index import CorpusCollection
+    from codex_sentinel.legal_data.corpus_index import CorpusCollection
 
     embedder = Embedder(model_name, parse_devices(args), args.batch_size)
     vector = embedder.encode([normalize_for_embedding(args.probe, corpus_cfg.fold_final_letters_for_embedding)])[0]
@@ -239,7 +239,7 @@ def probe(args, corpus_cfg, model_name: str) -> None:
 
 
 def export_lexical(args) -> None:
-    from docslides.legal_data.corpus_index import CorpusState
+    from codex_sentinel.legal_data.corpus_index import CorpusState
 
     for category in args.categories:
         directory = Path(args.vectordb) / category
@@ -262,7 +262,7 @@ def merge(args, corpus_cfg) -> None:
     how the shards of a category indexed in separate Kaggle sessions become one store."""
     import sqlite3
 
-    from docslides.legal_data.corpus_index import CorpusCollection, CorpusState
+    from codex_sentinel.legal_data.corpus_index import CorpusCollection, CorpusState
 
     for category in args.categories:
         source_dir, target_dir = Path(args.merge_from) / category, Path(args.vectordb) / category

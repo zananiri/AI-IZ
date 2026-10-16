@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from docslides.ingestion.models import PageKind
-from docslides.ingestion.parser import _parse_pdf_with_pymupdf
+from codex_sentinel.ingestion.models import PageKind
+from codex_sentinel.ingestion.parser import _parse_pdf_with_pymupdf
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 

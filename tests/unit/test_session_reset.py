@@ -3,7 +3,7 @@
 
 import asyncio
 
-from docslides.api.events import CANCELLED_MESSAGE, EventBus
+from codex_sentinel.api.events import CANCELLED_MESSAGE, EventBus
 
 
 async def _events(bus, job_id):
@@ -61,7 +61,7 @@ def test_a_job_a_closed_page_was_still_starting_is_refused():
 def test_the_page_registers_the_reset_on_unload(monkeypatch):
     import gradio as gr
 
-    from docslides.ui import gradio_app
+    from codex_sentinel.ui import gradio_app
 
     posted = []
 

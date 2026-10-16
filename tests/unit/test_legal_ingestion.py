@@ -4,11 +4,11 @@ import json
 
 import pytest
 
-from docslides.config import get_config
-from docslides.legal import bundle, chunking
-from docslides.legal.chunking import SourceMeta, chunk_sections
-from docslides.legal.models import ChunkMetadata, content_hash
-from docslides.legal.structure import extract_cross_references, parse_sections
+from codex_sentinel.config import get_config
+from codex_sentinel.legal import bundle, chunking
+from codex_sentinel.legal.chunking import SourceMeta, chunk_sections
+from codex_sentinel.legal.models import ChunkMetadata, content_hash
+from codex_sentinel.legal.structure import extract_cross_references, parse_sections
 
 STATUTE = """\
 חוק החוזים (חלק כללי), תשל"ג-1973

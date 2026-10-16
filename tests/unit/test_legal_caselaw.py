@@ -13,8 +13,8 @@ CASELAW = Path(__file__).resolve().parents[2] / "caselaw"
 sys.path.insert(0, str(CASELAW))
 sys.path.insert(0, str(CASELAW / "tests"))
 
-from docslides.config import get_config  # noqa: E402
-from docslides.legal import caselaw  # noqa: E402
+from codex_sentinel.config import get_config  # noqa: E402
+from codex_sentinel.legal import caselaw  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +49,7 @@ def configured(index_root, monkeypatch):
     monkeypatch.setattr(legal.retrieval, "embedding_model", "hashing-test:64")
     monkeypatch.setattr(legal.retrieval, "reranker_model", None)
     encoder = HashEncoder(64)
-    monkeypatch.setattr("docslides.rag.embedding.embed_texts",
+    monkeypatch.setattr("codex_sentinel.rag.embedding.embed_texts",
                         lambda model, texts, **kw: encoder.encode(list(texts)).astype("float32").tolist())
     caselaw.open_index.cache_clear()
     yield legal

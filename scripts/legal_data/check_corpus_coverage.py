@@ -26,8 +26,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from docslides.config import get_config  # noqa: E402
-from docslides.legal.corpus_retrieval import law_key, section_numbers  # noqa: E402
+from codex_sentinel.config import get_config  # noqa: E402
+from codex_sentinel.legal.corpus_retrieval import law_key, section_numbers  # noqa: E402
 
 _YEAR_RE = re.compile(r"(1[89]\d\d|20\d\d)")
 _AMENDMENT_RE = re.compile(r"\s*\(תיקון[^)]*\)")

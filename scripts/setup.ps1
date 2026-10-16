@@ -7,7 +7,7 @@
     weight the app needs (the chat model, fastText, spaCy, Stanza, PaddleOCR,
     Surya, MinerU).
 
-    This is the ONLY online step. Nothing under src/docslides/** calls out to
+    This is the ONLY online step. Nothing under src/codex_sentinel/** calls out to
     the internet at request time -- see README.md.
 
 .PARAMETER ModelsDir
@@ -147,7 +147,7 @@ if (-not $SkipMineru) {
     Write-Host "      with gradio's huggingface-hub>=1.16 requirement. pip will" -ForegroundColor Yellow
     Write-Host "      install both packages but print a dependency-conflict" -ForegroundColor Yellow
     Write-Host "      warning -- this is expected (see" -ForegroundColor Yellow
-    Write-Host "      src/docslides/ingestion/parser.py adapter notes). Pass" -ForegroundColor Yellow
+    Write-Host "      src/codex_sentinel/ingestion/parser.py adapter notes). Pass" -ForegroundColor Yellow
     Write-Host "      -SkipMineru to skip it (PDF still works via the PyMuPDF" -ForegroundColor Yellow
     Write-Host "      fallback; DOCX/PPTX/XLSX/image ingestion needs it)." -ForegroundColor Yellow
     if (-not (Invoke-Pip install -e ".[ingestion-mineru]")) {
@@ -363,26 +363,26 @@ if ($Backend -eq "vllm") {
     # portable.yml sets the same vars itself, so it does not read this file.
     # Written without a BOM: Windows PowerShell 5.1's `Set-Content -Encoding
     # utf8` prepends one, which glues onto the first key
-    # ("﻿DOCSLIDES_LLM_BACKEND") so the backend silently falls back to
+    # ("﻿CODEX_SENTINEL_LLM_BACKEND") so the backend silently falls back to
     # vllm while the Ollama base URL still applies -> 404 on /chat/completions.
     $EnvLocal = @"
-DOCSLIDES_LLM_BACKEND=ollama
-DOCSLIDES_LLM_BASE_URL=http://localhost:11434
-DOCSLIDES_LLM_MODEL=$OllamaModel
-DOCSLIDES_LLM_SUPPORTS_THINKING=$SupportsThinking
-DOCSLIDES_LLM_MAX_MODEL_LEN=$ChatContextLength
-DOCSLIDES_LLM_REQUEST_TIMEOUT_S=$RequestTimeoutS
-DOCSLIDES_LEGAL_ORCHESTRATOR_BACKEND=ollama
-DOCSLIDES_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
-DOCSLIDES_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
-DOCSLIDES_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SupportsThinking
-DOCSLIDES_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LegalContextLength
-DOCSLIDES_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
-DOCSLIDES_TRANSLATOR_BACKEND=ollama
-DOCSLIDES_TRANSLATOR_BASE_URL=http://localhost:11434
-DOCSLIDES_TRANSLATOR_MODEL=$OllamaTranslateModel
-DOCSLIDES_TRANSLATOR_MAX_MODEL_LEN=8192
-DOCSLIDES_TRANSLATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
+CODEX_SENTINEL_LLM_BACKEND=ollama
+CODEX_SENTINEL_LLM_BASE_URL=http://localhost:11434
+CODEX_SENTINEL_LLM_MODEL=$OllamaModel
+CODEX_SENTINEL_LLM_SUPPORTS_THINKING=$SupportsThinking
+CODEX_SENTINEL_LLM_MAX_MODEL_LEN=$ChatContextLength
+CODEX_SENTINEL_LLM_REQUEST_TIMEOUT_S=$RequestTimeoutS
+CODEX_SENTINEL_LEGAL_ORCHESTRATOR_BACKEND=ollama
+CODEX_SENTINEL_LEGAL_ORCHESTRATOR_BASE_URL=http://localhost:11434
+CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MODEL=$OllamaModel
+CODEX_SENTINEL_LEGAL_ORCHESTRATOR_SUPPORTS_THINKING=$SupportsThinking
+CODEX_SENTINEL_LEGAL_ORCHESTRATOR_MAX_MODEL_LEN=$LegalContextLength
+CODEX_SENTINEL_LEGAL_ORCHESTRATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
+CODEX_SENTINEL_TRANSLATOR_BACKEND=ollama
+CODEX_SENTINEL_TRANSLATOR_BASE_URL=http://localhost:11434
+CODEX_SENTINEL_TRANSLATOR_MODEL=$OllamaTranslateModel
+CODEX_SENTINEL_TRANSLATOR_MAX_MODEL_LEN=8192
+CODEX_SENTINEL_TRANSLATOR_REQUEST_TIMEOUT_S=$RequestTimeoutS
 
 "@
     [System.IO.File]::WriteAllText((Join-Path $RepoRoot ".env.local"), $EnvLocal, (New-Object System.Text.UTF8Encoding $false))
@@ -470,7 +470,7 @@ except Exception as exc:
         # (surya.detection.DetectionPredictor / surya.recognition.
         # RecognitionPredictor); the old surya.model.* module path is gone.
         # Since 0.16 RecognitionPredictor wraps a shared FoundationPredictor
-        # (same construction as src/docslides/ocr/engines.py's SuryaEngine).
+        # (same construction as src/codex_sentinel/ocr/engines.py's SuryaEngine).
         # Predictor.__init__ loads (and thus downloads) weights eagerly.
         $suryaScript = @"
 from surya.detection import DetectionPredictor
@@ -564,7 +564,7 @@ except OSError as exc:
         print(f"[warn] MinerU model download hit a Windows path-length limit: {exc}")
         print("       Re-run this script as Administrator so it can enable long-path")
         print("       support (HKLM...FileSystem LongPathsEnabled), or move this repo")
-        print("       to a shorter path (e.g. C:\\docslides) and re-run.")
+        print("       to a shorter path (e.g. C:\\CodexSentinel) and re-run.")
     else:
         print(f"[warn] MinerU model download failed: {exc}")
         print("       Repo IDs drift across magic-pdf releases -- check the current")
@@ -625,9 +625,9 @@ Write-Host ""
 Write-Host "Next steps ($Backend backend selected):"
 if ($Backend -eq "vllm") {
     Write-Host "  1. GPU host: docker compose up -d          # starts vllm + app"
-    Write-Host "  2. Or dev-run the app only:  .venv\Scripts\python.exe -m uvicorn docslides.api.main:run --factory"
+    Write-Host "  2. Or dev-run the app only:  .venv\Scripts\python.exe -m uvicorn codex_sentinel.api.main:run --factory"
 } else {
     Write-Host "  1. Docker:   docker compose -f docker-compose.portable.yml up -d"
-    Write-Host "  2. Or locally: Get-Content .env.local | ForEach-Object { if (`$_ -match '^([^=]+)=(.*)$') { Set-Item -Path Env:`$(`$Matches[1]) -Value `$Matches[2] } }; .venv\Scripts\python.exe -m uvicorn docslides.api.main:app --host 0.0.0.0 --port 8456"
-    Write-Host "  3. Or just use gui\DocSlides.bat -- it reads .env.local automatically."
+    Write-Host "  2. Or locally: Get-Content .env.local | ForEach-Object { if (`$_ -match '^([^=]+)=(.*)$') { Set-Item -Path Env:`$(`$Matches[1]) -Value `$Matches[2] } }; .venv\Scripts\python.exe -m uvicorn codex_sentinel.api.main:app --host 0.0.0.0 --port 8456"
+    Write-Host "  3. Or just use gui\CodexSentinel.bat -- it reads .env.local automatically."
 }

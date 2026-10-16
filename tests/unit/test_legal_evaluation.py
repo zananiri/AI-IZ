@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from docslides.legal import evaluation as ev
+from codex_sentinel.legal import evaluation as ev
 
 EVAL_SET = Path(__file__).resolve().parents[2] / "evals" / "legal" / "elections_2026_he.json"
 
@@ -72,7 +72,7 @@ def test_rescore_after_reuses_stored_coverage():
 
 
 def test_judge_input_uses_gershayim_so_the_judge_cannot_truncate_on_a_quote():
-    from docslides.legal import evaluation as ev
+    from codex_sentinel.legal import evaluation as ev
 
     q = ev.EvalQuestion(id="A1", group="A", question='מה הסכום בש"ח?', gold='2.5 מיליון ש"ח', key_facts=["2[.,]5"])
     text = ev._judge_input(q, 'מעל 2.5 מיליון ש"ח')
@@ -80,7 +80,7 @@ def test_judge_input_uses_gershayim_so_the_judge_cannot_truncate_on_a_quote():
 
 
 def test_only_answers_holding_every_key_fact_get_the_contradiction_check():
-    from docslides.legal import evaluation as ev
+    from codex_sentinel.legal import evaluation as ev
 
     q = ev.EvalQuestion(id="B8", group="B", question="?", gold="!", key_facts=["a", "b"])
     c = ev.EvalQuestion(id="C1", group="C", question="?", gold="!", traps=["x"])
@@ -92,7 +92,7 @@ def test_only_answers_holding_every_key_fact_get_the_contradiction_check():
 
 
 def test_the_question_shown_to_the_model_uses_gershayim():
-    from docslides.legal import pipeline
+    from codex_sentinel.legal import pipeline
 
     assert "יו״ר" in pipeline._question_block('האם סמכויות יו"ר הוועדה חלות?')
     assert '"' in pipeline._question_block('Does "section 5" apply?')  # not Hebrew: untouched

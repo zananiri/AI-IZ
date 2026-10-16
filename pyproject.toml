@@ -1,7 +1,7 @@
 [project]
-name = "docslides"
+name = "codex-sentinel"
 version = "0.1.0"
-description = "Offline, multilingual document-to-PowerPoint generation system powered by locally-hosted Gemma 4 and TranslateGemma"
+description = "Codex Sentinel: offline, multilingual document-to-PowerPoint generation system powered by locally-hosted Gemma 4 and TranslateGemma"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { text = "Proprietary" }
@@ -82,7 +82,7 @@ dev = [
     "reportlab>=4.2",
 ]
 # Legal tab: local RAG over reviewed Israeli legal sources (see
-# scripts/ingest_legal.py, src/docslides/legal/).
+# scripts/ingest_legal.py, src/codex_sentinel/legal/).
 legal = [
     "chromadb>=0.5",
     # Capped at <6.0: 6.x requires transformers>=5.0, incompatible with
@@ -100,7 +100,7 @@ legal = [
     "lancedb==0.39.0",
     "bm25s==0.3.11",
 ]
-# Bulk legal corpus: fetchers + vectorize.py in scripts/legal_data/ (src/docslides/legal_data/).
+# Bulk legal corpus: fetchers + vectorize.py in scripts/legal_data/ (src/codex_sentinel/legal_data/).
 # Use together with `legal` (chromadb, sentence-transformers). Also: requirements-legal-data.txt.
 legal-data = [
     "pyarrow>=15",
@@ -108,8 +108,8 @@ legal-data = [
 ]
 
 [project.scripts]
-docslides-api = "docslides.api.main:run"
-docslides-ui = "docslides.ui.gradio_app:run"
+codex-sentinel-api = "codex_sentinel.api.main:run"
+codex-sentinel-ui = "codex_sentinel.ui.gradio_app:run"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

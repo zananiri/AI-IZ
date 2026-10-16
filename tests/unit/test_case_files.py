@@ -7,9 +7,9 @@ import hashlib
 import numpy as np
 import pytest
 
-from docslides.config import get_config
-from docslides.legal import case_files
-from docslides.legal.case_files import CaseDocument, PageText, build_units, chunk_document, classify, find_date
+from codex_sentinel.config import get_config
+from codex_sentinel.legal import case_files
+from codex_sentinel.legal.case_files import CaseDocument, PageText, build_units, chunk_document, classify, find_date
 
 
 def _doc(text_pages, doc_type, rel_path="Cohen v. Levi/claim.pdf", title="כתב תביעה", wrapped=True, doc_date="2024-03-01"):
@@ -185,7 +185,7 @@ def test_index_search_and_answer_end_to_end(case_folder, monkeypatch):
             assert "<excerpts>" in messages[-1].content
             return "The defendant attributes the delay to a strike at Haifa port [1]."
 
-    import docslides.llm.client as client
+    import codex_sentinel.llm.client as client
 
     monkeypatch.setattr(client, "get_legal_orchestrator_client", lambda: FakeLLM())
     reply, excerpts = asyncio.run(case_files.answer("Why were the beams late? strike", matter="Cohen v. Levi"))
@@ -209,8 +209,8 @@ class _FakeLLM:
 
 
 def test_chat_turn_for_the_legal_tab_cites_files_and_follows_up(case_folder, monkeypatch, tmp_path):
-    import docslides.llm.client as client
-    from docslides.api import routes_legal
+    import codex_sentinel.llm.client as client
+    from codex_sentinel.api import routes_legal
 
     llm = _FakeLLM()
     monkeypatch.setattr(client, "get_legal_orchestrator_client", lambda: llm)
@@ -257,7 +257,7 @@ os.utime(state, ns=(state.stat().st_atime_ns, state.stat().st_mtime_ns + 10**9))
 
 
 def test_legal_tab_case_files_history_and_footnotes():
-    from docslides.ui import gradio_app as ui
+    from codex_sentinel.ui import gradio_app as ui
 
     history = [
         {"role": "user", "content": "⚖️ a question in Question mode"},

@@ -1,7 +1,7 @@
 from pptx import Presentation
 from pptx.enum.text import PP_ALIGN
 
-from docslides.slides.rtl import apply_rtl_to_slide, set_textframe_rtl
+from codex_sentinel.slides.rtl import apply_rtl_to_slide, set_textframe_rtl
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 

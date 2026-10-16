@@ -9,7 +9,7 @@
 
 Needs legal_txt/metadata/knesset/ from fetch_metadata.py for law_id, status (in force / repealed),
 Basic Law flag and dates. Also writes legal_txt/laws/unmatched_registry_laws.json: registry laws
-with no Open Law Book page. Rules: src/docslides/legal_data/legislation.py.
+with no Open Law Book page. Rules: src/codex_sentinel/legal_data/legislation.py.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from docslides.legal_data import cli
-from docslides.legal_data.legislation import run_legislation
+from codex_sentinel.legal_data import cli
+from codex_sentinel.legal_data.legislation import run_legislation
 
 
 def main() -> int:

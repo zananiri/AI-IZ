@@ -2,11 +2,11 @@
 citations failed, a garbled source_id, words in the wrong script, sections the
 index doesn't hold, and what the eval judge is shown."""
 
-from docslides.legal.citations import expand_citations, parse_citations, remove_cited_sentences
-from docslides.legal.evaluation import with_citations
-from docslides.legal.models import ChunkMetadata
-from docslides.legal.retrieval import _holds
-from docslides.legal.script_check import allowed_words, foreign_words, replace_words
+from codex_sentinel.legal.citations import expand_citations, parse_citations, remove_cited_sentences
+from codex_sentinel.legal.evaluation import with_citations
+from codex_sentinel.legal.models import ChunkMetadata
+from codex_sentinel.legal.retrieval import _holds
+from codex_sentinel.legal.script_check import allowed_words, foreign_words, replace_words
 
 
 def _cite(n: int, source: str = "law-a@2026-05-11:3") -> str:

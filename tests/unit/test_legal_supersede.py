@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from docslides.legal import staging
-from docslides.legal.folder_ingest import derive_sidecar
-from docslides.legal.models import content_hash
-from docslides.legal.sources import looks_visual_order
+from codex_sentinel.legal import staging
+from codex_sentinel.legal.folder_ingest import derive_sidecar
+from codex_sentinel.legal.models import content_hash
+from codex_sentinel.legal.sources import looks_visual_order
 
 
 def _row(start, status="current", end=""):

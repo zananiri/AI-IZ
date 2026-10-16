@@ -24,10 +24,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from docslides.legal_data import cli
-from docslides.legal_data.knesset_odata import KnessetOData
-from docslides.legal_data.progress import Progress
-from docslides.legal_data.records import now_iso, read_jsonl
+from codex_sentinel.legal_data import cli
+from codex_sentinel.legal_data.knesset_odata import KnessetOData
+from codex_sentinel.legal_data.progress import Progress
+from codex_sentinel.legal_data.records import now_iso, read_jsonl
 
 KNESSET_LICENSE = "Knesset open parliamentary data (OData); terms of use per knesset.gov.il"
 

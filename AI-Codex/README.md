@@ -1,6 +1,14 @@
-# aicodex
+# AI-Codex
 
-An offline, multilingual document-to-PowerPoint generation system with a
+**AI-Codex is the Spanish-market edition of the AI-IZ legal assistant**: the same offline system --
+grounded legal research and drafting (Legal GPT), case-file chat, and a general chat that writes
+Excel, PowerPoint and PDF files -- retargeted from Israeli to **Spanish law**. The Legal tab answers
+only from Spanish and EU law and Tribunal Constitucional case law fetched from the official
+open-data sources (BOE, EUR-Lex/CELLAR, the TC's own search system), in the question's language,
+with every claim cited and verified against its source. See
+[Spanish legal corpus](#spanish-legal-corpus) and [Spanish pipeline choices](#spanish-pipeline-choices).
+
+It is an offline, multilingual document-to-PowerPoint generation system with a
 chat interface, powered by locally-hosted Gemma 4 and TranslateGemma. **Nothing in the runtime
 path calls out to the internet** -- model/package downloads are the only
 online step, done once ahead of time.
@@ -12,8 +20,39 @@ acceleration the host has -- CUDA/ROCm/Metal), so the app runs on any
 computer, not just NVIDIA-GPU machines. `scripts/setup.sh`/`setup.ps1`
 auto-detect which one to use.
 
-Supported languages: English, French, Spanish, Italian, German, Arabic,
-Hebrew (Arabic/Hebrew get explicit RTL handling throughout).
+Supported languages: Spanish first, Catalan, Galician, Basque, English, French, Portuguese,
+Italian, German, Arabic and Hebrew (Arabic/Hebrew keep their explicit RTL handling).
+
+## Spanish legal corpus
+
+```bash
+pip install -e ".[legal,legal-data]"
+export AICODEX_LEGAL_DATA_CONTACT_EMAIL=you@example.com    # goes in the fetchers' User-Agent
+python scripts/legal_data/fetch_all.py --dry-run            # what each source would fetch, and how long
+python scripts/legal_data/fetch_laws.py                     # BOE: laws, regulations, regional law (~3.5 h first run)
+python scripts/legal_data/fetch_eu_law.py                   # EU law in Spanish
+python scripts/legal_data/fetch_constitutional_court.py     # TC sentencias (~9 h first run, resumable)
+python scripts/legal_data/check_corpus_coverage.py          # CE, CC, CP, LEC, ET, LAU ... present and parsed
+python scripts/legal_data/vectorize.py --export-lexical     # embeddings + BM25 copy (GPU, or Kaggle)
+```
+
+| Category | Source | What |
+|---|---|---|
+| `laws` | BOE open-data API (`legislacion-consolidada`) | Constitución, leyes orgánicas, leyes, RDLeg, RDL, the codes (CC, CCom, LECrim ...), treaties -- consolidated, current wording, article by article |
+| `regulations` | same | reales decretos, órdenes, resoluciones, circulares |
+| `regional_laws` | same | the autonomous communities' laws, decree-laws and regulations (derecho foral included) |
+| `eu_law` | CELLAR + SPARQL (Publications Office) | RGPD, AI Act, DSA/DMA, Bruselas I bis, Roma I/II, consumer directives, the Charter and Treaties ... in Spanish, newest consolidated version |
+| `constitutional_court` | hj.tribunalconstitucional.es | sentencias (autos optional) with ECLI, chamber, judges; private parties anonymized |
+
+All fetchers honour robots.txt (with wildcards: the BOE withdraws documents that way), stop on any
+block, run at one request per second, and are incremental: re-runs fetch only what changed. CENDOJ
+(Tribunal Supremo) is deliberately not crawled -- its terms forbid bulk downloads without CGPJ
+authorization. Details: [`scripts/legal_data/README.md`](scripts/legal_data/README.md).
+`notebooks/kaggle_spanish_corpus_build.ipynb` builds the whole store on a Kaggle GPU.
+
+## Spanish pipeline choices
+
+SPANISH_PIPELINE_PLACEHOLDER
 
 ## Architecture
 
@@ -113,7 +152,7 @@ the memo/draft outputs. vLLM serves 16k (`VLLM_MAX_MODEL_LEN` in `docker-compose
 / `AICODEX_LLM_MAX_MODEL_LEN` override it per host (`LEGAL_CONTEXT_LENGTH` /
 `-LegalContextLength` in the setup scripts).
 The Legal tab uses one model, the Gemma 4 orchestrator, for every stage and
-answers in the question's language, Hebrew included.
+answers in the question's language (Spanish by default; Catalan, Galician, Basque and English too).
 
 OCR runs on CPU by default (PaddleOCR PP-OCRv6, Tesseract). Only the
 low-confidence VLM-OCR fallback (PaddleOCR-VL / Surya) touches the GPU, and
@@ -122,7 +161,7 @@ only opportunistically between vLLM generations -- see
 polls vLLM's Prometheus metrics) and is a no-op under the Ollama backend.
 If an OCR engine fails to load or crashes (e.g. surya-ocr missing or an incompatible
 version), the router logs `ocr_engine_failed` and moves on to the next engine for that
-language (Hebrew: Surya -> Tesseract `heb` -> PaddleOCR-VL); a page only fails when every
+language (Spanish: PaddleOCR -> Tesseract `spa` -> PaddleOCR-VL); a page only fails when every
 engine in its chain does.
 
 ## Generating Excel, PowerPoint and PDF files
@@ -313,12 +352,13 @@ do.
 ### Legal tab: where it searches
 
 By default (`legal.retrieval.source: "corpus"` in `config/config.yaml`) the
-Legal tab runs its full pipeline over the bulk legal corpus: the laws and
-procedural regulations built on Kaggle and installed with
+Legal tab runs its full pipeline over the bulk Spanish legal corpus: the BOE laws and
+regulations and EU law (`legal.corpus.categories`; add `regional_laws` for autonomous-community
+law), built on Kaggle or locally and installed with
 `python scripts/legal_data/install_corpus.py legal_corpus_vectordb.zip` into
 `data/legal_corpus_vectordb`. Each question is first planned (issues, governing
-laws and sections), then searched and reranked the same way as the bulk eval
-(`scripts/legal_data/eval_run.py`). The law PDFs in `legal_txt/` are not used.
+laws -- by rank and number or abbreviation, "LAU", "art. 1902 CC" -- and articles), then searched
+(dense + BM25), reranked and answered. The law PDFs in `legal_txt/` are not used.
 Set `source: "signed_index"` to answer from the signed index below instead.
 
 ### Legal tab: analyzing a case folder
@@ -363,9 +403,9 @@ reloaded page then starts fresh. Each request carries the page's session id (the
 (`src/aicodex/api/routes_session.py`), which cancels those jobs and with them their in-flight
 calls to the model server.
 
-### Chatting with the attorney's case files (`legal_data/`)
+### Chatting with the lawyer's case files (`legal_data/`)
 
-The attorney's own files -- pleadings, judgments, affidavits, contracts, hearing protocols,
+The lawyer's own files -- demandas, contestaciones, sentencias, contracts, actas de la vista,
 e-mails, letters, exhibits -- go in `legal_data/` at the project root, one subfolder per matter.
 They are chunked and indexed into their own store (`data/legal_case_files_vectordb`), separate from
 the law corpus, and then the user can chat with them:
@@ -395,7 +435,7 @@ party, not stated as fact. Settings: `legal.case_files` in `config/config.yaml`.
 | Principle | What it does |
 |---|---|
 | Structure before size | The unit is the numbered paragraph / clause / speaker turn / e-mail -- what a lawyer cites ("para. 14 of the claim", "clause 7.2"). Units are never split unless one alone exceeds the budget (then by sentence); chunks are packed from whole units up to ~450 tokens |
-| Per document type | Each file is classified (pleading, judgment/decision, affidavit, contract, transcript, e-mail, letter, exhibit, memo, other) from its name and opening, Hebrew and English. Pleadings/judgments/affidavits split on numbered paragraphs and headings (a heading starts a new chunk); contracts on clauses and sub-clauses; transcripts on speaker turns with each question kept with its answer (ש:/ת:, Q/A); e-mail threads one message at a time, each chunk repeating its sender, recipients, date and subject; everything else by paragraph |
+| Per document type | Each file is classified (pleading, judgment/decision, affidavit, contract, transcript, e-mail, letter, exhibit, memo, other) from its name and opening, Spanish and English. Pleadings/judgments/affidavits split on numbered paragraphs ("1.", "PRIMERO.-", "a)") and headings (a heading starts a new chunk); contracts on clauses (cláusulas, estipulaciones) and sub-clauses; transcripts on speaker turns with each question kept with its answer (P:/R:, Pregunta/Respuesta, Q/A); e-mail threads one message at a time, each chunk repeating its sender, recipients, date and subject; everything else by paragraph |
 | Context header on every chunk | Matter, file, document type, document date, page range, section heading and paragraph numbers, embedded with the text -- the claim and the defence describe the same events in similar words, and the header is what tells them apart and what the answer cites |
 | Pages kept | PDF pages (OCRed scans too) per chunk, for "p. 4" citations. Word's auto-numbered paragraphs get their numbers back |
 | Small overlap | ~60 tokens of whole units between consecutive chunks of the same document (never across e-mails or sections) |
@@ -404,38 +444,17 @@ party, not stated as fact. Settings: `legal.case_files` in `config/config.yaml`.
 Re-runs skip unchanged files (content hash); changing the chunk settings re-chunks everything;
 `index --prune` removes files deleted from the folder.
 
-### Legal tab: Supreme Court case law
+### Legal tab: Tribunal Constitucional case law
 
-Alongside whichever source answers the question (bulk corpus or signed index), the Legal tab can
-also draw on Israeli Supreme Court judgments decided before 2022 (`caselaw/`, see
-`caselaw/README.md`), built on Kaggle or Colab from the `LevMuchnik/SupremeCourtOfIsrael` dataset
-and searched by `src/aicodex/legal/caselaw.py`. It's off until you point the app at a built
-index:
+Alongside whichever source answers the question, the Legal tab draws on the Tribunal
+Constitucional's sentencias: the `constitutional_court` category of the same corpus
+(`fetch_constitutional_court.py`, then `vectorize.py --categories constitutional_court
+--export-lexical`), searched by `src/aicodex/legal/caselaw.py` (dense + BM25, reranked, one excerpt
+per judgment, capped by `caselaw_top_k` / `caselaw_max_tokens`). The excerpts go into the prompt
+as their own `<case_law>` block, labelled as judgments the model may cite (STC number and ECLI)
+but not treat as statute text. `legal.corpus.caselaw_category: null` turns it off.
 
-```bash
-pip install -e ".[legal]"   # pulls in lancedb and bm25s, needed to read the index
-```
-
-Unzip the ingest's output (the Output of `notebooks/kaggle_caselaw_ingest.ipynb`, or
-`israeli_caselaw_ingest all --root ./out --embed` run locally -- see `caselaw/README.md`)
-somewhere on this machine, e.g. `data/legal_caselaw/`. It must contain `lancedb/` and
-`state/embed.done.json`; `bm25/` is optional (dense search alone still works without it). Then in
-`config/config.yaml`:
-
-```yaml
-legal:
-  corpus:
-    caselaw_dir: "./data/legal_caselaw"
-```
-
-and restart the app. The embedding model named in `state/embed.done.json` must match
-`legal.retrieval.embedding_model` (`BAAI/bge-m3` by default) -- a mismatch is logged
-(`caselaw_model_mismatch`) and case law is skipped for that run, statute answers are unaffected.
-When it's on, each question's best-matching judgment excerpts (reranked, one per judgment, capped
-by `caselaw_top_k` / `caselaw_max_tokens`) go into the prompt as their own `<case_law>` block,
-labelled as judgments the model may cite but not treat as the statute text itself.
-
-### Legal tab: building the signed Israeli-law index
+### Legal tab: building the signed Spanish-law index
 
 With `legal.retrieval.source: "signed_index"`, the Legal tab answers only from
 sources that were staged, reviewed and signed into its local index, so it has
@@ -460,10 +479,10 @@ python scripts/ingest_legal.py verify
 and run `python scripts/ingest_legal_txt.py` (add `--watch` to keep polling,
 `--dry-run` to preview, `--prune` to remove laws whose PDF you deleted). Each
 new or changed PDF is indexed straight away as an official source. A PDF
-without a `.meta.json` gets one derived from its title (law name, 1 January of
-the title's year, statute/Knesset or regulation/Reshumot). Check it, fix
-`effective_date_start` in particular, and re-run to re-index. Scanned PDFs, and
-PDFs whose Hebrew text layer is stored in reversed (visual) order, are refused.
+without a `.meta.json` gets one derived from its text (law name and number, the bulletin's
+date -- "BOE núm. 7, de 8 de enero de 2000" -- or the title's date, statute or regulation,
+BOE or regional bulletin). Check it, fix `effective_date_start` in particular, and re-run to
+re-index. Scanned PDFs are refused (OCR them first).
 
 **Superseding is automatic:** approving a newer version of a law (same law,
 later `effective_date_start`) sets the older version's end date to the day
@@ -471,9 +490,11 @@ before the new one takes effect and marks it `amended`. Both stay searchable
 for questions about past dates. `ingest_legal.py retract <law_id> <date>`
 removes a version and re-opens the one before it.
 
-**Amending laws are linked to the laws they amend.** Each section of an
-amending law is tagged with the law, amendment number and sections it changes
-(read from its title and the gazette's "תיקונים עקיפים" list). When an answer
+**Amending laws are linked to the laws they amend.** Each article or final
+disposition of an amending law ("Modificación de la Ley 29/1994 ...", "Se modifica
+el artículo 9 ..., que queda redactado como sigue: «...»") is tagged with the law
+(by rank and number) and the articles it changes, and each quoted article it
+inserts gets its own chunk under both numbers. When an answer
 draws on a provision that a later indexed law amended, the model is told the
 amendment and its effective date -- the old text isn't discarded, because a
 lawyer usually needs the version in force when the facts happened -- and an
@@ -484,7 +505,7 @@ answer citing a section the amendment itself changed escalates. Run
 whose cited source doesn't state it (or isn't a source the research memorandum
 established) is removed. If nothing cited is left, no answer is given and the
 question escalates. A partly supported citation stays, marked unverified.
-Words the model wrote in another script ('מ報導', 'октяבר') are replaced word
+Words the model wrote in another script ('報導', a Cyrillic 'о' in 'oктubre') are replaced word
 by word; the rest of the text is left as it is. When provisions of several
 indexed laws match a question that names none, the memorandum and the draft
 are sent back to cover each law, and an answer that still leaves one out says
@@ -560,21 +581,12 @@ aicodex-api
 Or just use `gui/AICodex.bat`/`.command`, which does both of the above
 from one window and shows live status.
 
-### Hosting on Kaggle with a public link
+### Hosting on Colab with a public link
 
-`notebooks/kaggle_host_app_ngrok.ipynb` runs the whole app (all tabs) on a
-Kaggle GPU T4 x2 session under Ollama, and puts it online through an ngrok
-tunnel. The ngrok authtoken goes in the `NGROK_AUTHTOKEN` Kaggle secret. Without
-`NGROK_DOMAIN` the link is a random `ngrok-free.app` URL each run; set it to your
-free static ngrok domain for a fixed link. The statute corpus and case-law index
-are picked up from attached Kaggle inputs. The link has no login, so share it
-with care. Setup steps are at the top of the notebook.
-`notebooks/kaggle_host_app_ngrok_2026-10-07.ipynb` is the same with every optional
-piece installed and checked before the link opens: MinerU with its weights,
-LibreOffice (with Hebrew fonts), Tesseract, PaddleOCR, Surya, the retrieval
-models, the 12B model pair for the size selector, and a system-status report;
-it expects the statute corpus zip and the `case_law22` case-law dataset as inputs.
-`notebooks/colab_host_app.ipynb` does the same on Colab.
+`notebooks/colab_host_app.ipynb` runs the whole app (all tabs) on a free Colab T4 under Ollama and
+puts it online through an ngrok tunnel (`NGROK_AUTHTOKEN` secret). Put `legal_corpus_vectordb.zip`
+(from `notebooks/kaggle_spanish_corpus_build.ipynb`) on Google Drive and set `CORPUS_ZIP` to use the
+Legal tab. The link has no login, so share it with care. Setup steps are at the top of the notebook.
 
 ## Tests
 
@@ -589,8 +601,8 @@ OOXML manipulation, and PDF scan-detection. Fixtures live in
 
 - `scanned_arabic.pdf` -- image-only PDF (no text layer) to validate
   scan-detection and Arabic OCR routing
-- `native_hebrew.docx` -- native-text Hebrew document to validate Hebrew
-  language detection and RTL handling without OCR
+- `native_hebrew.docx` -- native-text Hebrew document to validate RTL
+  language detection and handling without OCR (kept: the general tabs still support RTL)
 - `mixed_language.docx` -- English/French/Arabic paragraphs in one document,
   to validate per-segment (not per-document) language detection
 
@@ -598,23 +610,19 @@ End-to-end OCR/translation/generation behavior requires the models from
 step 2 and a running vLLM instance, and is exercised manually via the
 Gradio UI rather than in the unit test suite.
 
-### Legal evals (100 questions + paralegal cases)
+### Legal evals (Spanish)
 
-The Israeli legal eval set (`legal_txt/Evals/israeli_legal_eval.zip`) runs against the bulk corpus:
-
-| Notebook | Where | What |
-|---|---|---|
-| `notebooks/colab_legal_eval_qwen_gemma.ipynb` | Google Colab, free T4 | qwen3:14b and gemma4:12b answer the same 100 questions + 5 cases. **No judging**: answers, full reasoning traces (`llm_trace/`, `reasoning_report*.md`), judge-free scores and a summary, written to Google Drive as it goes (resumable) |
-| `notebooks/kaggle_legal_eval_gemma27b.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases, with retrieval on the GPU and BM25; **no judging**. Prints a judge-free comparison with the 29 Sept gemma3:12b run (multiple choice, yes/no labels, governing section retrieved, out-of-scope sources, timing) |
-| `notebooks/kaggle_legal_eval_gemma4_caselaw.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases as the 29 Sept Gemma 3 27B run, in two arms: with the Supreme Court case-law index (`legal.corpus.caselaw_dir`, `src/aicodex/legal/caselaw.py`) and without; **no judging**. Needs the Output of `notebooks/kaggle_caselaw_ingest.ipynb` as Input |
-| `notebooks/kaggle_legal_eval_bulk500.ipynb` | Kaggle, 2× T4 | answer + judge + score; qwen3:14b by default (qwen3:32b for milestone runs) |
-| `notebooks/kaggle_legal_eval_dictalm.ipynb` | Kaggle, 2× T4 | the same test with DictaLM 3.0 answering |
+- `evals/legal/lau_2026_es.json` -- 16 questions on the Ley de Arrendamientos Urbanos (exact periods and
+  amounts, exceptions, two unanswerable), gold answers taken from the current consolidated BOE text, with
+  key-fact, evidence and trap patterns. `scripts/eval_retrieval.py` (retrieval only, seconds) and
+  `scripts/eval_legal.py` (before/after RAG, judged) use it by default.
+- `legal_txt/Evals/es_retrieval_seed.jsonl` -- 30 questions across CE, CC, CP, LEC, ET and LAU with their
+  governing article, checked against the BOE text; `scripts/legal_data/benchmark_embeddings.py` scores
+  embedding models (alone and with BM25) on it.
 
 The judge is `legal.judge_model` (default `gpt-oss:20b`, overridden by `AICODEX_LEGAL_JUDGE_MODEL`): a
-family other than the models under test, so no model grades its own answers. Saved answers
-can be re-judged without re-answering: `score.py prepare`, then `scripts/legal_data/eval_run.py judge`,
-then `score.py report` (see `eval_run.py`'s docstring). `scripts/legal_data/check_corpus_coverage.py`
-checks every law and section the gold answers cite against the installed corpus.
+family other than the models under test, so no model grades its own answers. Have a Spanish lawyer review
+and extend these sets before relying on scores from them.
 
 ## Non-goals
 

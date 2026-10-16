@@ -174,7 +174,9 @@ def parse_resolution(html: bytes | str, url: str, source_id: int, anonymize: boo
             summary, n = anonymizer(summary)
             replaced += n
     decision_date = _iso(ficha.get("Fecha de resolución")) or None
-    headline = (identifier.splitlines() or [""])[0].strip() or f"{doc_type} {number}"
+    headline_match = re.search(r"(?:SENTENCIA|AUTO|DECLARACI[ÓO]N)\s+\d+/\d{4}(?:,\s*de\s+\d{1,2}\s+de\s+[a-záéíóú]+)?",
+                               identifier, re.IGNORECASE)
+    headline = headline_match.group(0) if headline_match else f"{doc_type} {number}"
     return {
         "doc_type": doc_type,
         "resolution_number": number,

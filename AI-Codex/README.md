@@ -86,7 +86,7 @@ questions is a small set: treat differences of one question, 3.3 points, as nois
   ("artículo" = "articulo"), a light plural/gender stemmer (light stemming matches or beats
   aggressive Snowball stemming for Spanish retrieval), law numbers ("29/1994") and "14 bis" kept as
   single tokens, Spanish stopwords. It is the safety net for exact identifiers; the reranker, not
-  the fusion, decides the order (equal-weight fusion alone lowers MRR; the fusion weight is being measured).
+  the fusion, decides the order (equal-weight fusion alone lowers MRR from 0.901 to 0.784, but after reranking the top 16 -- the CPU setting -- every BM25 weight from 0 to 1 gives the same 0.919, so fusion is left as is).
 - **LLM: Gemma 4 stays.** The Spanish public models (BSC's ALIA-40b, Apache 2.0, trained with
   Spanish and co-official languages oversampled; the Salamandra family) are worth watching, but
   ALIA-40b has no instruction-tuned release yet and publishes no legal or Gemma comparison. Any

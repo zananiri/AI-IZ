@@ -49,11 +49,12 @@ def _is_rtl_lang(lang: str | None) -> bool:
 APP_THEME = brand.build_theme()
 
 APP_CSS = """
-/* The Codex Sentinel header: the line lockup on the page's dark ink. */
+/* The Codex Sentinel header: the line lockup on the page's dark ink, at the left edge (ltr so an
+   rtl page doesn't flip it to the right). */
 .brand-header {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; direction: ltr;
   padding: 18px 12px 14px; margin-bottom: 4px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(24, 228, 255, .10), transparent 65%);
+  background: radial-gradient(ellipse at 0% 0%, rgba(24, 228, 255, .10), transparent 65%);
   border-bottom: 1px solid #22304F;
 }
 .brand-header .brand-logo { width: min(560px, 100%); }

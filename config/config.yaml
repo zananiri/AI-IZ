@@ -158,9 +158,10 @@ legal:
     categories: ["laws", "procedural_rules"]   # searched by the Legal tab when retrieval.source is "corpus"
     top_k: 12                                  # chunks kept after reranking, then cut to max_evidence_tokens
     # Supreme Court case law (caselaw/, src/docslides/legal/caselaw.py): path to a built index's
-    # folder (holds lancedb/, state/embed.done.json, optionally bm25/). null = off. See README's
+    # folder (holds lancedb/, state/embed.done.json, optionally bm25/), kept at
+    # data/israeli_case_law/ in the project. null = off. See README's
     # "Legal tab: Supreme Court case law".
-    caselaw_dir: 'C:\Users\iB\Projects\CaseDatabase\israeli_caselaw'   # single quotes: backslashes are literal
+    caselaw_dir: "./data/israeli_case_law"
 
   # The attorney's own case files: drop them into legal_data/ at the project root (one subfolder
   # per matter), index with `python scripts/ingest_case_files.py`, then chat with

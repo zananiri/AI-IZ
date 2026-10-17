@@ -418,14 +418,14 @@ pip install -e ".[legal]"   # pulls in lancedb and bm25s, needed to read the ind
 
 Unzip the ingest's output (the Output of `notebooks/kaggle_caselaw_ingest.ipynb`, or
 `israeli_caselaw_ingest all --root ./out --embed` run locally -- see `caselaw/README.md`)
-into `data/israeli_case_law/`, where `config/config.yaml` already points. It must contain `lancedb/` and
+into `data/israeli_caselaw/`, where `config/config.yaml` already points. It must contain `lancedb/` and
 `state/embed.done.json`; `bm25/` is optional (dense search alone still works without it). The
 setting in `config/config.yaml` (change it only to keep the index elsewhere):
 
 ```yaml
 legal:
   corpus:
-    caselaw_dir: "./data/israeli_case_law"
+    caselaw_dir: "./data/israeli_caselaw"
 ```
 
 and restart the app. The embedding model named in `state/embed.done.json` must match

@@ -39,7 +39,7 @@ def _is_rtl_lang(lang: str | None) -> bool:
     return bool(lang) and get_config().languages.is_rtl(lang)
 
 
-# While a tab's request runs, its message box pulses with the theme's accent
+# While a tab's request runs, its chat box takes the theme's accent
 # border -- the same look as Gradio's own "generating" border, which only
 # plain Textbox outputs get, only once the first update arrives, and never the
 # General tab's MultimodalTextbox (its progress tracker is switched off).
@@ -49,49 +49,56 @@ def _is_rtl_lang(lang: str | None) -> bool:
 APP_THEME = brand.build_theme()
 
 APP_CSS = """
-/* The Codex Sentinel header: the line lockup on the page's dark ink, at the left edge (ltr so an
-   rtl page doesn't flip it to the right). */
+/* The Codex Sentinel header: the single-ink logo at the left edge (ltr so an rtl page doesn't
+   flip it to the right), over a plain rule. The --cs-* variables colour the logo per mode. */
 .brand-header {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; direction: ltr;
-  padding: 18px 12px 14px; margin-bottom: 4px;
-  background: radial-gradient(ellipse at 0% 0%, rgba(24, 228, 255, .10), transparent 65%);
-  border-bottom: 1px solid #22304F;
+  --cs-ink: #1F3A5F; --cs-accent: #A8874A; --cs-page: var(--body-background-fill);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; direction: ltr;
+  padding: 16px 4px 12px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-color-primary);
 }
-.brand-header .brand-logo { width: min(560px, 100%); }
+.dark .brand-header { --cs-ink: #E6EBF2; --cs-accent: #C9A86A; }
+.brand-header .brand-logo { width: min(400px, 100%); }
 .brand-header .brand-logo svg { display: block; width: 100%; height: auto; }
-.brand-header .brand-byline {
-  color: #8FA3C4; font-size: var(--text-sm, 12px); letter-spacing: .18em; text-transform: uppercase;
+.brand-header .brand-byline { color: var(--body-text-color-subdued); font-size: var(--text-sm, 12px); }
+.brand-header h1 { color: var(--color-accent); margin: 0; }
+/* Headings in answers: a serif with Hebrew, for a document's voice. */
+.chat-log .message-content :is(h1, h2, h3) {
+  font-family: "Frank Ruhl Libre", Georgia, "Times New Roman", serif; font-weight: 600;
 }
-.brand-header h1 { color: #18E4FF; margin: 0; }
-/* Selected tab: the logo's cyan-to-violet edge. */
-.tab-wrapper button[role="tab"].selected, button[role="tab"][aria-selected="true"] { color: #18E4FF !important; }
+/* Selected tab: navy text over a thin gold rule. */
+.tab-wrapper button[role="tab"].selected, button[role="tab"][aria-selected="true"] {
+  color: var(--color-accent) !important; font-weight: 600;
+}
 .tab-wrapper button[role="tab"].selected::after, button[role="tab"][aria-selected="true"]::after {
-  background: linear-gradient(90deg, #18E4FF, #7C5CFF) !important;
+  background: #A8874A !important;
 }
-/* While a tab's request runs, its chat box glows (the status shows in the chat itself). */
+.dark .tab-wrapper button[role="tab"].selected, .dark button[role="tab"][aria-selected="true"] { color: #9DB8DC !important; }
+.dark .tab-wrapper button[role="tab"].selected::after, .dark button[role="tab"][aria-selected="true"]::after {
+  background: #C9A86A !important;
+}
+/* While a tab's request runs, its chat box takes a steady accent border (the status shows in the
+   chat itself). */
 .block.llm-status-general, .block.llm-status-legal { position: relative; }
 .gradio-container:has(#general-msg.ai-working) .block.llm-status-general::after,
 .gradio-container:has(#legal-msg.ai-working) .block.llm-status-legal::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  border: 2px solid var(--color-accent); border-radius: inherit;
-  box-shadow: 0 0 14px 2px rgba(24, 228, 255, .45), 0 0 28px 4px rgba(124, 92, 255, .25);
+  border: 2px solid var(--border-color-accent); border-radius: inherit;
   z-index: var(--layer-1, 1);
-  animation: ai-working-pulse 2s cubic-bezier(.4, 0, .6, 1) infinite;
-}
-@keyframes ai-working-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-@media (prefers-reduced-motion: reduce) {
-  .block.llm-status-general::after, .block.llm-status-legal::after { animation: none !important; }
 }
 /* The General tab's LLM cutoff line above the chat: one point bigger. */
 .llm-cutoff, .llm-cutoff * { font-size: calc(var(--text-md, 14px) + 1pt) !important; }
-/* The Legal tab's sources summary above the chat history: violet italics. */
-.legal-sources, .legal-sources * { color: #A891FF !important; font-style: italic !important; }
-/* Both chat tabs' send arrow: the logo's cyan-to-violet edge, and two text rows taller (growing
+/* The Legal tab's sources summary above the chat history: small and muted. */
+.legal-sources, .legal-sources * {
+  color: var(--body-text-color-subdued) !important; font-size: var(--text-sm, 12px) !important;
+}
+/* Both chat tabs' send arrow: the primary navy, and two text rows taller (growing
    downward from the top of the box). A fixed size in every state -- idle,
    disabled while a request runs, after the box is cleared -- so it never
    changes size once a message is sent. */
 .chat-input button.submit-button {
-  background: linear-gradient(160deg, #18E4FF, #7C5CFF) !important; color: #04060C !important;
+  background: var(--button-primary-background-fill) !important;
+  color: var(--button-primary-text-color) !important;
   box-sizing: border-box !important; flex: 0 0 auto !important;
   width: var(--size-9, 36px) !important; min-width: var(--size-9, 36px) !important;
   max-width: var(--size-9, 36px) !important; padding: 0 !important;
@@ -100,7 +107,7 @@ APP_CSS = """
   max-height: calc(var(--size-9, 36px) + 42px) !important;
   align-self: flex-start;
 }
-.chat-input button.submit-button:hover { background: linear-gradient(160deg, #5AEBFF, #9275FF) !important; }
+.chat-input button.submit-button:hover { background: var(--button-primary-background-fill-hover) !important; }
 /* Right-to-left text (Hebrew, Arabic) in the chats: each paragraph, list
    item and the message box take their direction from their own text, so a
    Hebrew line reads right-to-left (punctuation and numbers in place) next to
@@ -115,6 +122,7 @@ APP_CSS = """
 # multi-line MultimodalTextboxes otherwise only insert a newline on Enter.
 # Passed as `head=` next to APP_CSS; it also carries the SVG favicon.
 APP_HEAD = brand.favicon_head() + """
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;600&display=swap">
 <script>
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;

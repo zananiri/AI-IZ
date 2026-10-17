@@ -30,6 +30,7 @@ from docslides.ingestion.language_detect import detect_language
 from docslides.legal.caselaw import caselaw_stats
 from docslides.legal.corpus_retrieval import corpus_stats
 from docslides.system_status import status_report
+from docslides.ui import brand
 
 API_BASE_URL = os.environ.get("DOCSLIDES_API_URL", "http://localhost:8456")
 
@@ -44,15 +45,35 @@ def _is_rtl_lang(lang: str | None) -> bool:
 # General tab's MultimodalTextbox (its progress tracker is switched off).
 # Toggled from Python through elem_classes, so every tab glows the same way
 # from Send until the answer is done. Passed as `css=` wherever the app is
-# served (run() below, and api/main.py's mount).
+# served (run() below, and api/main.py's mount), together with APP_THEME.
+APP_THEME = brand.build_theme()
+
 APP_CSS = """
+/* The Codex Sentinel header: the line lockup on the page's dark ink. */
+.brand-header {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 18px 12px 14px; margin-bottom: 4px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(24, 228, 255, .10), transparent 65%);
+  border-bottom: 1px solid #22304F;
+}
+.brand-header .brand-logo { width: min(560px, 100%); }
+.brand-header .brand-logo svg { display: block; width: 100%; height: auto; }
+.brand-header .brand-byline {
+  color: #8FA3C4; font-size: var(--text-sm, 12px); letter-spacing: .18em; text-transform: uppercase;
+}
+.brand-header h1 { color: #18E4FF; margin: 0; }
+/* Selected tab: the logo's cyan-to-violet edge. */
+.tab-wrapper button[role="tab"].selected, button[role="tab"][aria-selected="true"] { color: #18E4FF !important; }
+.tab-wrapper button[role="tab"].selected::after, button[role="tab"][aria-selected="true"]::after {
+  background: linear-gradient(90deg, #18E4FF, #7C5CFF) !important;
+}
 /* While a tab's request runs, its chat box glows (the status shows in the chat itself). */
 .block.llm-status-general, .block.llm-status-legal { position: relative; }
 .gradio-container:has(#general-msg.ai-working) .block.llm-status-general::after,
 .gradio-container:has(#legal-msg.ai-working) .block.llm-status-legal::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   border: 2px solid var(--color-accent); border-radius: inherit;
-  box-shadow: 0 0 12px 2px rgba(249, 115, 22, .5);
+  box-shadow: 0 0 14px 2px rgba(24, 228, 255, .45), 0 0 28px 4px rgba(124, 92, 255, .25);
   z-index: var(--layer-1, 1);
   animation: ai-working-pulse 2s cubic-bezier(.4, 0, .6, 1) infinite;
 }
@@ -62,14 +83,14 @@ APP_CSS = """
 }
 /* The General tab's LLM cutoff line above the chat: one point bigger. */
 .llm-cutoff, .llm-cutoff * { font-size: calc(var(--text-md, 14px) + 1pt) !important; }
-/* The Legal tab's sources summary above the chat history: orange italics. */
-.legal-sources, .legal-sources * { color: #f97316 !important; font-style: italic !important; }
-/* Both chat tabs' send arrow: orange, and two text rows taller (growing
+/* The Legal tab's sources summary above the chat history: violet italics. */
+.legal-sources, .legal-sources * { color: #A891FF !important; font-style: italic !important; }
+/* Both chat tabs' send arrow: the logo's cyan-to-violet edge, and two text rows taller (growing
    downward from the top of the box). A fixed size in every state -- idle,
    disabled while a request runs, after the box is cleared -- so it never
    changes size once a message is sent. */
 .chat-input button.submit-button {
-  background: #f97316 !important; color: #fff !important;
+  background: linear-gradient(160deg, #18E4FF, #7C5CFF) !important; color: #04060C !important;
   box-sizing: border-box !important; flex: 0 0 auto !important;
   width: var(--size-9, 36px) !important; min-width: var(--size-9, 36px) !important;
   max-width: var(--size-9, 36px) !important; padding: 0 !important;
@@ -78,7 +99,7 @@ APP_CSS = """
   max-height: calc(var(--size-9, 36px) + 42px) !important;
   align-self: flex-start;
 }
-.chat-input button.submit-button:hover { background: #ea580c !important; }
+.chat-input button.submit-button:hover { background: linear-gradient(160deg, #5AEBFF, #9275FF) !important; }
 /* Right-to-left text (Hebrew, Arabic) in the chats: each paragraph, list
    item and the message box take their direction from their own text, so a
    Hebrew line reads right-to-left (punctuation and numbers in place) next to
@@ -91,8 +112,8 @@ APP_CSS = """
 
 # Enter sends the prompt in both chat tabs (Shift+Enter still adds a line):
 # multi-line MultimodalTextboxes otherwise only insert a newline on Enter.
-# Passed as `head=` next to APP_CSS.
-APP_HEAD = """
+# Passed as `head=` next to APP_CSS; it also carries the SVG favicon.
+APP_HEAD = brand.favicon_head() + """
 <script>
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
@@ -126,7 +147,7 @@ document.addEventListener("keydown", (e) => {
 </script>
 """
 
-# The message boxes' own class stays on while they glow: dropping it would lose the orange send
+# The message boxes' own class stays on while they glow: dropping it would lose the branded send
 # arrow and Enter-to-send after the first message.
 _IDLE_CLASSES = ["chat-input"]
 _WORKING_CLASSES = ["chat-input", "ai-working"]
@@ -973,7 +994,7 @@ def build_status_tab(tab: gr.Tab) -> None:
 
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="Codex Sentinel - By Ibrahim Zananiri") as demo:
-        gr.Markdown("# Codex Sentinel - By Ibrahim Zananiri")
+        gr.HTML(brand.header_html("Codex Sentinel - By Ibrahim Zananiri"))
         model_size_selector = build_model_size_selector()
         with gr.Tabs():
             with gr.Tab("General GPT"):
@@ -989,7 +1010,14 @@ def build_app() -> gr.Blocks:
 
 def run() -> None:
     demo = build_app()
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS, head=APP_HEAD)
+    demo.queue().launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        theme=APP_THEME,
+        css=APP_CSS,
+        head=APP_HEAD,
+        favicon_path=brand.favicon_path(),
+    )
 
 
 if __name__ == "__main__":

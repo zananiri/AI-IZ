@@ -1,0 +1,56 @@
+{
+ "name": "israeli_bar_exam_200",
+ "as_of": "2026-09-01",
+ "items": 200,
+ "cases": 10,
+ "by_category": {
+  "mcq_bar": 120,
+  "rule_conclusion": 30,
+  "rule_application": 15,
+  "issue_spotting": 10,
+  "temporal_amendment": 10,
+  "abstention": 15
+ },
+ "by_area": {
+  "חוזים – חלק כללי": 24,
+  "דיני עונשין": 19,
+  "נזיקין, לשון הרע ותאונות דרכים": 18,
+  "ירושה, יחסי ממון וכשרות משפטית": 17,
+  "חוזים מיוחדים (מכר, מתנה, שכירות, שליחות, ביטוח, בוררות)": 13,
+  "מקרקעין": 13,
+  "סדר דין אזרחי, בתי משפט והתיישנות": 13,
+  "תרופות בשל הפרת חוזה": 12,
+  "דיני עבודה": 12,
+  "חברות וחדלות פירעון": 11,
+  "צרכנות, עשיית עושר ופרטיות": 11,
+  "סדר דין פלילי ומעצרים": 10,
+  "משפט חוקתי": 7,
+  "אתיקה מקצועית": 7,
+  "כללי – גבולות המאגר": 7,
+  "ראיות": 6
+ },
+ "by_confidence": {
+  "high": 161,
+  "medium": 39
+ },
+ "mcq_answer_letters": {
+  "א": 30,
+  "ב": 30,
+  "ג": 30,
+  "ד": 30
+ },
+ "yesno_labels": {
+  "כן": 14,
+  "לא": 16
+ },
+ "abstain_reasons": {
+  "after_cutoff": 4,
+  "false_premise": 3,
+  "nonexistent_section": 1,
+  "fabricated_case": 1,
+  "out_of_scope": 1,
+  "harmful_request": 3,
+  "out_of_corpus": 1,
+  "insufficient_facts": 1
+ }
+}

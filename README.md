@@ -609,6 +609,7 @@ The Israeli legal eval set (`legal_txt/Evals/israeli_legal_eval.zip`) runs again
 | `notebooks/kaggle_legal_eval_gemma4_caselaw.ipynb` | Kaggle, 2× T4 | gemma4:31b on the same 100 questions + 5 cases as the 29 Sept Gemma 3 27B run, in two arms: with the Supreme Court case-law index (`legal.corpus.caselaw_dir`, `src/docslides/legal/caselaw.py`) and without; **no judging**. Needs the Output of `notebooks/kaggle_caselaw_ingest.ipynb` as Input |
 | `notebooks/kaggle_legal_eval_bulk500.ipynb` | Kaggle, 2× T4 | answer + judge + score; qwen3:14b by default (qwen3:32b for milestone runs) |
 | `notebooks/kaggle_legal_eval_dictalm.ipynb` | Kaggle, 2× T4 | the same test with DictaLM 3.0 answering |
+| `notebooks/kaggle_legal_eval_bar_exam_200.ipynb` | Kaggle, 2× T4 | `legal_txt/Evals/israeli_bar_exam_200`: 200 bar-exam-style questions (120 multiple choice, plus yes/no, open, issue spotting and cutoff-aware temporal/abstention items) + 10 new fictional cases, all at the corpus cutoff (1 Sept 2026); answer + judge against the set's gold answers + `summary.md` (MCQ vs the bar's 65% pass mark, cutoff awareness) and `review.csv`. gemma4:12b by default (`MODEL_SIZE`) |
 
 The judge is `legal.judge_model` (default `gpt-oss:20b`, overridden by `DOCSLIDES_LEGAL_JUDGE_MODEL`): a
 family other than the models under test, so no model grades its own answers. Saved answers

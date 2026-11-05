@@ -435,6 +435,61 @@ When it's on, each question's best-matching judgment excerpts (reranked, one per
 by `caselaw_top_k` / `caselaw_max_tokens`) go into the prompt as their own `<case_law>` block,
 labelled as judgments the model may cite but not treat as the statute text itself.
 
+### Agentic RAG tab: chatting with the LPJ project files
+
+The **Agentic RAG** tab answers questions about the Latin Patriarchate's project archive (ACN
+applications, approvals, budgets, invoices, reports), citing file and page. The archive, its index
+and the retrieval code live outside this repo, in `C:\Users\iB\Projects\RAG_LPJ` (`pipeline/`,
+package `lpj_rag`, its own `.venv`; see `pipeline/README.md` there). The tab talks to it through a
+small local service; everything -- OCR, embeddings (bge-m3), reranking, and the answer (the model
+picked in the size selector, via Ollama) -- runs on this machine.
+
+1. **Build the index** (once, and again after adding files; only new files are processed):
+
+   ```bash
+   cd C:\Users\iB\Projects\RAG_LPJ\pipeline
+   .venv\Scripts\python -m lpj_rag all
+   ```
+
+   The first run takes about 1-2 hours on CPU (OCR of the scanned pages, then embeddings). Check
+   `RAG_LPJ\work\reports\build_report.md` afterwards: projects found, low-confidence OCR, errors.
+
+2. **Start the service** and leave that window open:
+
+   ```bash
+   cd C:\Users\iB\Projects\RAG_LPJ\pipeline
+   .venv\Scripts\python -m lpj_rag serve
+   ```
+
+   It listens on `127.0.0.1:8765` only (`serve:` in `pipeline/config.yaml`). Ollama must be running.
+
+3. **Start the app** as usual (`docslides-api`, or `gui/DocSlides.bat`) and open the **Agentic RAG** tab.
+   **🔄 Check index** shows the project / document / chunk counts; a "not running" message means
+   step 2 isn't up. The first question takes a minute or more while the models load.
+   **💾 Save chat as Word** downloads the whole conversation as a `.docx` (questions as headings);
+   **📊 Make PowerPoint from chat** has the selected model turn the answers into a `.pptx` deck
+   (the app's slide template, right-to-left for Hebrew/Arabic) -- one slide per answer if the
+   model can't plan one.
+
+Ask by project, ACN number (`YY/NNNNN`, any spelling: `23 00061`, `23_00061`, `2300061`) or GA
+number (`GA NNN YY`), in English or Arabic. Amount and count questions also get the registry's
+parsed figures. Sources are listed beside the chat and the `[S1]` tags in the answer are links:
+clicking one opens the original file in a new tab through `GET /api/lpj-file` (PDFs at the cited
+page; Word/Excel files download). The service serves only files in its inventory.
+
+On a CPU-only machine an answer takes several minutes (the first one longer, while Gemma loads;
+it then stays loaded for `llm.keep_alive`). Before answering, the service asks Ollama to unload
+other models (`llm.unload_other_models`) so Gemma 4 has room; the embedding model and reranker load
+in bfloat16 for the same reason. An out-of-memory failure is shown in the chat as "Not enough free
+memory to load ..." -- close other programs or pick the smaller model size.
+
+- **Not reachable from Docker:** the service is bound to `127.0.0.1`, so run the app outside Docker
+  for this tab, or set `LPJ_RAG_URL` for the app and `serve.allow_remote: true` for the service.
+- **LAN access:** the app serves the UI on all interfaces, so anyone who can reach this PC can open
+  the tab and read the archive through it. Stop the `serve` window to take it offline.
+- Command-line use without the app: `python -m lpj_rag ask "..."`, `search "..."`, or
+  `sql "select title, acn_ref, amount_approved_eur from projects"`.
+
 ### Legal tab: building the signed Israeli-law index
 
 With `legal.retrieval.source: "signed_index"`, the Legal tab answers only from

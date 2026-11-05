@@ -19,7 +19,9 @@ import os
 import re
 import tempfile
 from datetime import datetime
+from html import escape
 from pathlib import Path
+from urllib.parse import quote
 
 import gradio as gr
 import httpx
@@ -237,7 +239,7 @@ def build_model_size_selector() -> gr.Radio:
         [(choice.label or key, key) for key, choice in cfg.model_sizes.items()],
         value=default,
         label="Model size",
-        info="Used by General GPT and Legal GPT. The smaller model answers faster and needs less memory; "
+        info="Used by General GPT, Legal GPT and Agentic RAG. The smaller model answers faster and needs less memory; "
         "the larger one is more capable." if selectable else "Fixed: the server runs a single model.",
         interactive=selectable,
         elem_id="model-size",
@@ -761,23 +763,14 @@ def _add_markdown_runs(paragraph, text: str) -> None:
             paragraph.add_run(part).bold = i % 2 == 1
 
 
-def save_case_analysis_docx(history: list):
-    """Saves the latest assistant reply in the Legal tab (the case analysis work file) as a Word
-    document and returns it for download. Markdown headings, bullet/numbered lists and bold are
-    kept; a right-to-left reply (Hebrew, Arabic) is laid out right-to-left."""
-    from docx import Document
+def _add_markdown_to_docx(doc, text: str) -> None:
+    """Appends Markdown `text` to the Word document `doc`: headings, bullet/numbered lists and bold
+    are kept; right-to-left text (Hebrew, Arabic) is laid out right-to-left."""
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
 
-    reply = next(
-        (_message_text(m.get("content")) for m in reversed(history or []) if m.get("role") == "assistant"), ""
-    ).strip()
-    if not reply:
-        raise gr.Error("There is no analysis to save yet.")
-
-    rtl = _is_rtl_lang(detect_language(reply[:500]))
-    doc = Document()
-    for line in reply.splitlines():
+    rtl = _is_rtl_lang(detect_language(text[:500]))
+    for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
@@ -799,6 +792,20 @@ def save_case_analysis_docx(history: list):
             for run in paragraph.runs:
                 run._r.get_or_add_rPr().append(run._r.makeelement(qn("w:rtl"), {}))
 
+
+def save_case_analysis_docx(history: list):
+    """Saves the latest assistant reply in the Legal tab (the case analysis work file) as a Word
+    document and returns it for download."""
+    from docx import Document
+
+    reply = next(
+        (_message_text(m.get("content")) for m in reversed(history or []) if m.get("role") == "assistant"), ""
+    ).strip()
+    if not reply:
+        raise gr.Error("There is no analysis to save yet.")
+
+    doc = Document()
+    _add_markdown_to_docx(doc, reply)
     path = Path(tempfile.mkdtemp()) / f"case_analysis_{datetime.now():%Y%m%d_%H%M%S}.docx"
     doc.save(path)
     return gr.update(value=str(path), visible=True)
@@ -982,6 +989,252 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
     save_docx_button.click(fn=save_case_analysis_docx, inputs=legal_chatbot, outputs=docx_file)
 
 
+# ---------------------------------------------------------------------------
+# Agentic RAG tab -- chat with the LPJ projects archive (ACN pastoral projects).
+# The index and its retrieval live in a separate project (RAG_LPJ/pipeline,
+# package lpj_rag, its own venv) served on this machine by
+# `python -m lpj_rag serve`; this tab only talks to that service over
+# loopback. Answers come from the local Ollama model picked in the size selector.
+# ---------------------------------------------------------------------------
+
+LPJ_RAG_URL = os.environ.get("LPJ_RAG_URL", "http://127.0.0.1:8765")
+_LPJ_START_HINT = (
+    "Start it in a terminal: `cd C:\\Users\\iB\\Projects\\RAG_LPJ\\pipeline` then "
+    "`.venv\\Scripts\\python -m lpj_rag serve`"
+)
+
+
+def _lpj_status() -> str:
+    try:
+        with httpx.Client(timeout=5) as client:
+            health = client.get(f"{LPJ_RAG_URL}/health").json()
+    except (httpx.HTTPError, ValueError):
+        return f"⚠️ The Agentic RAG service is not running at {LPJ_RAG_URL}. {_LPJ_START_HINT}"
+    if not health.get("ok"):
+        return f"⚠️ {health.get('error', 'The LPJ index is not ready.')}"
+    vectors = "" if health.get("vectors") else " · ⚠️ keyword search only (vectors not built)"
+    return (f"LPJ project files -- index built {health['built_at'][:16].replace('T', ' ')} UTC"
+            f" · projects: {health['projects']:,} · documents: {health['documents']:,}"
+            f" · chunks: {health['chunks']:,}{vectors}")
+
+
+_LPJ_NO_SOURCES = "<p><em>No sources yet.</em></p>"
+
+
+def _lpj_file_url(source: dict) -> str:
+    """The app's relay for a cited file (api/routes_lpj.py); PDFs open at the cited page."""
+    url = "/api/lpj-file?path=" + quote(source["path"], safe="")
+    return url + (f"#page={source['page']}" if source["path"].lower().endswith(".pdf") and source.get("page") else "")
+
+
+def _format_lpj_sources(sources: list[dict]) -> str:
+    """Each source as a link that opens the original file in a new browser tab. PDFs and images
+    open in the browser; Word and Excel files download."""
+    if not sources:
+        return _LPJ_NO_SOURCES
+    items = []
+    for s in sources:
+        name = s["path"].rsplit("/", 1)[-1]
+        folder = s["path"].rsplit("/", 1)[0] if "/" in s["path"] else ""
+        items.append(
+            f'<li><b>[{escape(s["tag"])}]</b> <a href="{escape(_lpj_file_url(s))}" target="_blank" '
+            f'rel="noopener">{escape(name)}</a> -- p.{s["page"]} · {escape(s["doc_type"].replace("_", " "))}'
+            f'<br><small>{escape(folder)}</small></li>'
+        )
+    return "<ul class='lpj-sources'>" + "".join(items) + "</ul>"
+
+
+def _link_lpj_citations(answer: str, sources: list[dict]) -> str:
+    """[S3] in the answer -> a link to that source's file."""
+    urls = {s["tag"]: _lpj_file_url(s) for s in sources}
+    return re.sub(r"\[(S\d+)\]", lambda m: f"[[{m[1]}]]({urls[m[1]]})" if m[1] in urls else m[0], answer)
+
+
+def send_lpj_message(text: str, history: list, size: str | None = None):
+    """Streams the service's events (lpj_rag/serve.py: status, sources, delta, done, error) into the
+    chat. Outputs: chatbot, message box, sources panel, status line."""
+    text = (text or "").strip()
+    if not text:
+        yield history, gr.update(), gr.update(), gr.update()
+        return
+    choice = get_config().model_sizes.get(size or "") if _sizes_selectable() else None
+    history = history + [{"role": "user", "content": text}, {"role": "assistant", "content": ""}]
+    answer, sources_md, sources = "", _LPJ_NO_SOURCES, []
+    yield history, "", sources_md, "🔌 Connecting..."
+    try:
+        with httpx.Client(timeout=httpx.Timeout(10, read=None)) as client:
+            with client.stream("POST", f"{LPJ_RAG_URL}/ask",
+                               json={"question": text, "model": choice.model if choice else None}) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    event = json.loads(line)
+                    kind = event.get("event")
+                    if kind == "status":
+                        yield history, gr.update(), sources_md, f"⏳ {event['message']}..."
+                    elif kind == "sources":
+                        sources = event["sources"]
+                        sources_md = _format_lpj_sources(sources)
+                        yield history, gr.update(), sources_md, gr.update()
+                    elif kind == "delta":
+                        answer += event["text"]
+                        history[-1] = {"role": "assistant", "content": answer}
+                        yield history, gr.update(), sources_md, "✍️ Writing the answer..."
+                    elif kind == "error":
+                        history[-1] = {"role": "assistant", "content": f"{answer}\n\n⚠️ {event['message']}".strip()}
+                        yield history, gr.update(), sources_md, "⚠️ Failed"
+                        return
+    except httpx.ConnectError:
+        history[-1] = {"role": "assistant",
+                       "content": f"⚠️ The Agentic RAG service is not running at {LPJ_RAG_URL}. {_LPJ_START_HINT}"}
+        yield history, gr.update(), sources_md, "⚠️ Service not running"
+        return
+    if answer:
+        history[-1] = {"role": "assistant", "content": _link_lpj_citations(answer, sources)}
+    yield history, gr.update(), sources_md, "_Idle_"
+
+
+def _chat_turns(history: list) -> list[tuple[str, str]]:
+    """(role, text) for each non-empty message, with citation links ([[S3]](/api/...)) back to [S3]."""
+    turns = []
+    for m in history or []:
+        text = re.sub(r"\[\[(S\d+)\]\]\([^)]*\)", r"[\1]", _message_text(m.get("content"))).strip()
+        if text and m.get("role") in ("user", "assistant"):
+            turns.append((m["role"], text))
+    return turns
+
+
+def save_rag_chat_docx(history: list):
+    """The whole Agentic RAG conversation as a Word document: each question as a heading, each
+    answer under it (Markdown kept, right-to-left text laid out right-to-left)."""
+    from docx import Document
+
+    turns = _chat_turns(history)
+    if not turns:
+        raise gr.Error("There is no conversation to save yet.")
+    doc = Document()
+    doc.add_heading("Agentic RAG conversation", level=0)
+    doc.add_paragraph(f"{datetime.now():%Y-%m-%d %H:%M}")
+    for role, text in turns:
+        if role == "user":
+            _add_markdown_to_docx(doc, "## " + " ".join(text.split()))
+        else:
+            _add_markdown_to_docx(doc, text)
+    path = Path(tempfile.mkdtemp()) / f"agentic_rag_chat_{datetime.now():%Y%m%d_%H%M%S}.docx"
+    doc.save(path)
+    return gr.update(value=str(path), visible=True)
+
+
+def _plain(text: str) -> str:
+    """Markdown inline marks and list/heading prefixes stripped, for a slide bullet."""
+    text = re.sub(r"^\s*(#{1,6}|[-*•]|\d+[.)])\s+", "", text)
+    return re.sub(r"\*\*(.+?)\*\*|__(.+?)__|`([^`]*)`", lambda m: next(g for g in m.groups() if g is not None), text).strip()
+
+
+def _fallback_deck(turns: list[tuple[str, str]]):
+    """One slide per question, its answer's lines as bullets -- used when the model can't plan a deck."""
+    from docslides.llm.schemas import SlideContent
+
+    slides, question = [], ""
+    for role, text in turns:
+        if role == "user":
+            question = " ".join(text.split())
+            continue
+        bullets = [_plain(line) for line in text.splitlines() if _plain(line)][:8]
+        slides.append(SlideContent(title=_plain(question)[:90] or "Answer", bullets=bullets,
+                                   notes=text, layout_type="title_bullets"))
+    return slides
+
+
+async def make_rag_chat_pptx(history: list, size: str | None = None):
+    """A PowerPoint deck built from the Agentic RAG conversation: the model (the size picked in the
+    selector) turns the questions and answers into a titled deck in the chat's language; if it
+    can't, each answer becomes a slide of its own. Built with the app's slide template and RTL
+    handling (slides/pptx_builder.py)."""
+    from pydantic import BaseModel
+
+    from docslides.llm.client import ChatMessage, LLMCallSite, get_client, model_size
+    from docslides.llm.schemas import SlideContent
+    from docslides.slides.pptx_builder import build_pptx
+
+    class ChatDeck(BaseModel):
+        title: str
+        slides: list[SlideContent]
+
+    turns = _chat_turns(history)
+    if not any(role == "assistant" for role, _ in turns):
+        raise gr.Error("There is no answer to turn into slides yet.")
+    transcript = "\n\n".join(f"{'QUESTION' if r == 'user' else 'ANSWER'}:\n{t}" for r, t in turns)
+    lang = detect_language(" ".join(t for r, t in turns if r == "assistant")[:1000]) or "en"
+    system = (
+        "Turn this question-and-answer conversation about project files into a concise presentation. "
+        "Return a deck title and 3 to 12 slides. Each slide: a short title, 2 to 6 short bullets that "
+        "state facts from the answers only (keep numbers, amounts, dates, project and ACN numbers and "
+        "source tags like [S3] exactly as written; invent nothing), speaker notes with any detail that "
+        "did not fit, and layout_type 'title_bullets' (or 'section_header' for a section divider with "
+        "no bullets). Write in the same language as the answers."
+    )
+    deck = None
+    try:
+        with model_size(size if _sizes_selectable() else None):
+            deck = await get_client().complete_json(
+                messages=[ChatMessage(role="system", content=system), ChatMessage(role="user", content=transcript)],
+                call_site=LLMCallSite("slide_fill"),
+                schema=ChatDeck,
+            )
+    except Exception as exc:  # the deck still gets made, from the answers as written
+        gr.Warning(f"The model couldn't plan the slides ({type(exc).__name__}); one slide per answer instead.")
+    if deck and deck.slides:
+        title, slides = deck.title, deck.slides
+    else:
+        title, slides = "Agentic RAG", _fallback_deck(turns)
+    cover = SlideContent(title=title, bullets=[f"{datetime.now():%Y-%m-%d}"], layout_type="section_header")
+    path = Path(tempfile.mkdtemp()) / f"agentic_rag_{datetime.now():%Y%m%d_%H%M%S}.pptx"
+    # Right-to-left is decided per slide, from its own text (a chat can mix English and Arabic).
+    build_pptx([(s, detect_language(" ".join([s.title, *s.bullets])[:500]) or lang) for s in [cover, *slides]], path)
+    return gr.update(value=str(path), visible=True)
+
+
+def build_lpj_tab(tab: gr.Tab, model_size_selector: gr.Radio) -> None:
+    gr.Markdown(
+        "_Ask about the LPJ project files: approvals, budgets, invoices, reports -- by project, ACN number "
+        "(YY/NNNNN) or GA number (GA NNN YY). Answers cite the file and page; everything runs on this machine._"
+    )
+    with gr.Row():
+        with gr.Column(scale=3):
+            status_line = gr.Markdown("_Checking the LPJ index..._", elem_classes=["legal-sources"])
+            chatbot = gr.Chatbot(label="Agentic RAG", height="75vh", min_height=560,
+                                 elem_classes=["chat-log", "llm-status-general"])
+            llm_status = gr.Markdown(value="_Idle_", label="LLM status", show_label=True, container=True)
+            msg_box = gr.Textbox(
+                label="Question",
+                placeholder="e.g. How much did ACN approve for project 23/00123? · "
+                "Which projects in Jordan are still awaiting a final report? · كم بلغت ميزانية المخيمات الصيفية؟",
+                lines=2,
+                max_lines=12,
+                submit_btn=True,
+                elem_id="lpj-msg",
+                elem_classes=_IDLE_CLASSES,
+            )
+        with gr.Column(scale=1):
+            refresh = gr.Button("🔄 Check index", variant="secondary")
+            save_docx_button = gr.Button("💾 Save chat as Word", variant="secondary")
+            docx_file = gr.File(label="Word document", visible=False, interactive=False)
+            pptx_button = gr.Button("📊 Make PowerPoint from chat", variant="secondary")
+            pptx_file = gr.File(label="PowerPoint deck", visible=False, interactive=False)
+            gr.Markdown("### Sources\n_Click a file to open it (PDFs open at the cited page)._")
+            sources_panel = gr.HTML(value=_LPJ_NO_SOURCES)
+
+    save_docx_button.click(fn=save_rag_chat_docx, inputs=chatbot, outputs=docx_file)
+    pptx_button.click(fn=make_rag_chat_pptx, inputs=[chatbot, model_size_selector], outputs=pptx_file)
+    outputs = [chatbot, msg_box, sources_panel, llm_status]
+    msg_box.submit(fn=_glow_while_running(send_lpj_message, outputs, msg_box),
+                   inputs=[msg_box, chatbot, model_size_selector], outputs=outputs)
+    tab.select(fn=_lpj_status, outputs=status_line)
+    refresh.click(fn=_lpj_status, outputs=status_line)
+
+
 def build_status_tab(tab: gr.Tab) -> None:
     """Health of every framework and model the app uses (system_status.py). Nothing runs until the
     tab is opened: each visit re-checks, and the buttons re-check on demand."""
@@ -1010,6 +1263,8 @@ def build_app() -> gr.Blocks:
                 build_chat_tab(model_size_selector)
             with gr.Tab("Legal GPT"):
                 build_legal_tab(model_size_selector)
+            with gr.Tab("Agentic RAG") as lpj_tab:
+                build_lpj_tab(lpj_tab, model_size_selector)
             with gr.Tab("System status") as status_tab:
                 build_status_tab(status_tab)
         # Refreshing or closing the page stops whatever it left running on the server.

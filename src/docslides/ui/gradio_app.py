@@ -428,7 +428,8 @@ def build_chat_tab(model_size_selector: gr.Radio) -> None:
     # Gemma 4's training-data cutoff, so users know how current its knowledge is.
     cutoff = gr.Markdown(_cutoff_markdown(model_size_selector.value), elem_classes=["llm-cutoff"])
     model_size_selector.change(fn=_cutoff_markdown, inputs=model_size_selector, outputs=cutoff)
-    chatbot = gr.Chatbot(label="Chat", elem_classes=["chat-log", "llm-status-general"])
+    chatbot = gr.Chatbot(label="Chat", height="75vh", min_height=560,
+                         elem_classes=["chat-log", "llm-status-general"])
     llm_status = gr.Markdown(
         value="_Idle_", label="LLM status", show_label=True, container=True, visible=False
     )
@@ -917,7 +918,8 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
     with gr.Row():
         with gr.Column(scale=3):
             gr.Markdown(_legal_sources_summary(), elem_classes=["legal-sources"])
-            legal_chatbot = gr.Chatbot(label="Legal Assistant", elem_classes=["chat-log", "llm-status-legal"])
+            legal_chatbot = gr.Chatbot(label="Legal Assistant", height="75vh", min_height=560,
+                                     elem_classes=["chat-log", "llm-status-legal"])
             legal_llm_status = gr.Markdown(
                 value="_Idle_", label="LLM status", show_label=True, container=True, visible=False
             )

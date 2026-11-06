@@ -444,6 +444,13 @@ package `lpj_rag`, its own `.venv`; see `pipeline/README.md` there). The tab tal
 small local service; everything -- OCR, embeddings (bge-m3), reranking, and the answer (the model
 picked in the size selector, via Ollama) -- runs on this machine.
 
+0. **Setup**: `scripts/setup.ps1` (or `setup.sh`) finds the pipeline at `..\RAG_LPJ\pipeline`
+   (override with `-LpjPipelineDir` / `LPJ_RAG_DIR`, skip with `-SkipAgenticRag` /
+   `SKIP_AGENTIC_RAG=1`), creates its `.venv`, installs `requirements-agentic-rag.txt` into it
+   (LanceDB, sentence-transformers, torch -- CPU wheel without an NVIDIA GPU -- PyMuPDF,
+   Tesseract bindings, ...), downloads `BAAI/bge-m3` and `BAAI/bge-reranker-v2-m3` into the
+   Hugging Face cache, and pulls the Ollama model from the pipeline's `config.yaml` (`llm.model`).
+
 1. **Build the index** (once, and again after adding files; only new files are processed):
 
    ```bash
@@ -454,7 +461,10 @@ picked in the size selector, via Ollama) -- runs on this machine.
    The first run takes about 1-2 hours on CPU (OCR of the scanned pages, then embeddings). Check
    `RAG_LPJ\work\reports\build_report.md` afterwards: projects found, low-confidence OCR, errors.
 
-2. **Start the service** and leave that window open:
+2. **Start the service.** The launcher (`gui/DocSlides.bat`) does this for you: **Start app
+   locally** also starts Ollama (if it isn't running) and `lpj_rag serve`, shows it on the
+   **Agentic RAG** status row, and stops both with the app or the window; there are also separate
+   Start/Stop Agentic RAG buttons. By hand, leave this window open:
 
    ```bash
    cd C:\Users\iB\Projects\RAG_LPJ\pipeline

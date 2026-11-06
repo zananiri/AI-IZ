@@ -40,6 +40,11 @@
 #                     DOCX/PPTX/XLSX/image ingestion will not.
 #   SKIP_HEAVY_OCR=1  skip paddleocr/paddlepaddle/surya-ocr (large, slow to
 #                     build on some platforms)
+#   LPJ_RAG_DIR       the Agentic RAG tab's LPJ pipeline (package lpj_rag).
+#                     default: ../RAG_LPJ/pipeline next to this repo. Setup creates
+#                     its .venv, installs requirements-agentic-rag.txt into it and
+#                     downloads its models; skipped if the folder is missing.
+#   SKIP_AGENTIC_RAG=1  skip that step
 
 set -uo pipefail  # no -e: one missing optional package must not kill every later step
 
@@ -313,6 +318,64 @@ else
     echo "[skip] Install via your distro's package manager, e.g.:"
     echo "       sudo apt-get install libreoffice"
     SKIPPED+=("libreoffice (apt)")
+  fi
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# Agentic RAG tab: the LPJ pipeline (package lpj_rag) is a separate project with its own venv,
+# served by `python -m lpj_rag serve` (gui/launcher.py starts it). Its frameworks come from
+# requirements-agentic-rag.txt; its models must already be in the Hugging Face cache because
+# lpj_rag runs with HF_HUB_OFFLINE=1. Vector store: LanceDB, under RAG_LPJ/work.
+echo "== [extra] Agentic RAG (LPJ pipeline: venv, frameworks, models) =="
+LPJ_DIR="${LPJ_RAG_DIR:-$(dirname "$REPO_ROOT")/RAG_LPJ/pipeline}"
+if [ "${SKIP_AGENTIC_RAG:-0}" = "1" ]; then
+  echo "[skip] SKIP_AGENTIC_RAG=1"
+  SKIPPED+=("Agentic RAG pipeline [skipped by request]")
+elif [ ! -d "$LPJ_DIR/lpj_rag" ]; then
+  echo "[skip] No LPJ pipeline at $LPJ_DIR (set LPJ_RAG_DIR)."
+  SKIPPED+=("Agentic RAG pipeline (not found at $LPJ_DIR)")
+else
+  echo "pipeline: $LPJ_DIR"
+  LPJ_PY="$LPJ_DIR/.venv/bin/python"
+  [ -x "$LPJ_PY" ] || "$PYTHON_BIN" -m venv "$LPJ_DIR/.venv"
+  "$LPJ_PY" -m ensurepip --upgrade >/dev/null 2>&1
+  LPJ_OK=1
+  # Linux without an NVIDIA GPU: the CPU torch wheel instead of the CUDA build (macOS wheels are CPU/MPS already).
+  if ! "$LPJ_PY" -c "import torch" 2>/dev/null && [ "$OS_NAME" = "Linux" ] && ! command -v nvidia-smi >/dev/null 2>&1; then
+    "$LPJ_PY" -m pip install torch --index-url https://download.pytorch.org/whl/cpu || LPJ_OK=0
+  fi
+  "$LPJ_PY" -m pip install -r "$REPO_ROOT/requirements-agentic-rag.txt" || LPJ_OK=0
+  if [ "$LPJ_OK" != "1" ]; then
+    SKIPPED+=("Agentic RAG frameworks: $LPJ_PY -m pip install -r requirements-agentic-rag.txt")
+  else
+    echo "-- Agentic RAG models (Hugging Face cache): bge-m3, bge-reranker-v2-m3 --"
+    if LPJ_LLM="$("$LPJ_PY" - "$LPJ_DIR" <<'EOF'
+import os, sys
+os.environ.pop("HF_HUB_OFFLINE", None)
+import yaml
+from huggingface_hub import snapshot_download
+cfg = yaml.safe_load(open(os.path.join(sys.argv[1], "config.yaml"), encoding="utf-8"))
+repos = {cfg["embed"]["model"], cfg["search"]["reranker"], cfg["chunk"]["tokenizer"]} - {"regex"}
+for repo in sorted(repos):
+    print("downloading", repo, file=sys.stderr, flush=True)
+    snapshot_download(repo, allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "sentencepiece*", "1_Pooling/*"])
+print(cfg["llm"]["model"])
+EOF
+)"; then
+      if command -v ollama >/dev/null 2>&1; then
+        echo "-- Agentic RAG answer model (Ollama): $LPJ_LLM --"
+        ollama pull "$LPJ_LLM" || SKIPPED+=("ollama pull $LPJ_LLM (Agentic RAG)")
+      else
+        echo "[skip] ollama not on PATH -- the Agentic RAG tab needs it (https://ollama.com, then: ollama pull $LPJ_LLM)"
+        SKIPPED+=("ollama + $LPJ_LLM (Agentic RAG)")
+      fi
+    else
+      SKIPPED+=("Agentic RAG models (bge-m3 / bge-reranker-v2-m3)")
+    fi
+  fi
+  if [ ! -d "$(dirname "$LPJ_DIR")/work/lancedb" ]; then
+    echo "[note] No index yet -- build it once: cd $LPJ_DIR && .venv/bin/python -m lpj_rag all"
   fi
 fi
 echo

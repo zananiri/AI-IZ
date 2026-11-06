@@ -52,6 +52,12 @@
 
 .EXAMPLE
     .\scripts\setup.ps1
+.PARAMETER LpjPipelineDir
+    The Agentic RAG tab's LPJ pipeline (package lpj_rag). Default: $env:LPJ_RAG_DIR, else
+    ..\RAG_LPJ\pipeline next to this repo. Setup creates its .venv, installs
+    requirements-agentic-rag.txt into it and downloads its models; skipped if the folder is missing.
+.PARAMETER SkipAgenticRag
+    Skip the Agentic RAG pipeline step.
 .EXAMPLE
     .\scripts\setup.ps1 -ModelsDir D:\models -SkipMineru
 .EXAMPLE
@@ -66,7 +72,9 @@ param(
     [string]$ForceBackend = "",
     [string]$OllamaModel = "gemma4:31b",
     [string]$OllamaTranslateModel = "",
-    [int]$LegalContextLength = 16384
+    [int]$LegalContextLength = 16384,
+    [string]$LpjPipelineDir = "",
+    [switch]$SkipAgenticRag
 )
 
 $ErrorActionPreference = "Continue"
@@ -610,6 +618,81 @@ print(f"wrote {config_path}")
 } else {
     Write-Host "[skip] magic_pdf not installed -- skipped MinerU extra above." -ForegroundColor Yellow
     $Skipped.Add("MinerU model weights [magic_pdf not installed]")
+}
+Write-Host ""
+
+# ---------------------------------------------------------------------------
+# Agentic RAG tab: the LPJ pipeline (package lpj_rag) is a separate project with its own venv,
+# served by `python -m lpj_rag serve` (gui/launcher.py starts it). Its frameworks come from
+# requirements-agentic-rag.txt; its models must already be in the Hugging Face cache because
+# lpj_rag runs with HF_HUB_OFFLINE=1. Vector store: LanceDB, under RAG_LPJ/work.
+Write-Host "== [extra] Agentic RAG (LPJ pipeline: venv, frameworks, models) ==" -ForegroundColor Cyan
+if (-not $LpjPipelineDir) {
+    $LpjPipelineDir = if ($env:LPJ_RAG_DIR) { $env:LPJ_RAG_DIR } else { Join-Path (Split-Path $RepoRoot -Parent) "RAG_LPJ\pipeline" }
+}
+if ($SkipAgenticRag) {
+    Write-Host "[skip] -SkipAgenticRag" -ForegroundColor Yellow
+    $Skipped.Add("Agentic RAG pipeline [skipped by request]")
+} elseif (-not (Test-Path (Join-Path $LpjPipelineDir "lpj_rag"))) {
+    Write-Host "[skip] No LPJ pipeline at $LpjPipelineDir (pass -LpjPipelineDir or set LPJ_RAG_DIR)." -ForegroundColor Yellow
+    $Skipped.Add("Agentic RAG pipeline (not found at $LpjPipelineDir)")
+} else {
+    Write-Host "pipeline: $LpjPipelineDir"
+    $LpjVenv = Join-Path $LpjPipelineDir ".venv"
+    $LpjPy = Join-Path $LpjVenv "Scripts\python.exe"
+    if (-not (Test-Path $LpjPy)) {
+        $parts = $PythonBin.Split(" ")
+        & $parts[0] $parts[1..($parts.Length - 1)] -m venv $LpjVenv
+    }
+    & $LpjPy -m ensurepip --upgrade *>$null
+    $lpjOk = $true
+    # No NVIDIA GPU: the CPU torch wheel (~200MB instead of ~2.5GB of CUDA libraries).
+    & $LpjPy -c "import torch" 2>$null
+    if ($LASTEXITCODE -ne 0 -and -not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
+        & $LpjPy -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+        if ($LASTEXITCODE -ne 0) { $lpjOk = $false }
+    }
+    & $LpjPy -m pip install -r (Join-Path $RepoRoot "requirements-agentic-rag.txt")
+    if ($LASTEXITCODE -ne 0) { $lpjOk = $false }
+    if (-not $lpjOk) {
+        $Skipped.Add("Agentic RAG frameworks: $LpjPy -m pip install -r requirements-agentic-rag.txt")
+    } else {
+        Write-Host "-- Agentic RAG models (Hugging Face cache): bge-m3, bge-reranker-v2-m3 --"
+        $lpjModels = @"
+import os, sys
+os.environ.pop("HF_HUB_OFFLINE", None)
+import yaml
+from huggingface_hub import snapshot_download
+cfg = yaml.safe_load(open(os.path.join(sys.argv[1], "config.yaml"), encoding="utf-8"))
+repos = {cfg["embed"]["model"], cfg["search"]["reranker"], cfg["chunk"]["tokenizer"]} - {"regex"}
+for repo in sorted(repos):
+    print("downloading", repo, flush=True)
+    snapshot_download(repo, allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "sentencepiece*", "1_Pooling/*"])
+print(cfg["llm"]["model"])
+"@
+        $lpjOut = $lpjModels | & $LpjPy - $LpjPipelineDir
+        if ($LASTEXITCODE -ne 0) {
+            $Skipped.Add("Agentic RAG models (bge-m3 / bge-reranker-v2-m3)")
+        } else {
+            $lpjOut | Select-Object -SkipLast 1 | ForEach-Object { Write-Host $_ }
+            $lpjLlm = ($lpjOut | Select-Object -Last 1).Trim()
+            if (Get-Command ollama -ErrorAction SilentlyContinue) {
+                Write-Host "-- Agentic RAG answer model (Ollama): $lpjLlm --"
+                ollama pull $lpjLlm
+                if ($LASTEXITCODE -ne 0) { $Skipped.Add("ollama pull $lpjLlm (Agentic RAG)") }
+            } else {
+                Write-Host "[skip] ollama not on PATH -- the Agentic RAG tab needs it (install from https://ollama.com, then: ollama pull $lpjLlm)" -ForegroundColor Yellow
+                $Skipped.Add("ollama + $lpjLlm (Agentic RAG)")
+            }
+        }
+    }
+    if (-not (Test-Path "C:\Program Files\Tesseract-OCR\tesseract.exe")) {
+        Write-Host "[note] the LPJ index build OCRs with Tesseract (paths.tesseract in its config.yaml)." -ForegroundColor Yellow
+    }
+    $lpjIndex = Join-Path (Split-Path $LpjPipelineDir -Parent) "work\lancedb"
+    if (-not (Test-Path $lpjIndex)) {
+        Write-Host "[note] No index yet -- build it once: cd $LpjPipelineDir; .venv\Scripts\python -m lpj_rag all" -ForegroundColor Yellow
+    }
 }
 Write-Host ""
 

@@ -1,0 +1,31 @@
+# Agentic RAG tab: the LPJ pipeline's own venv (RAG_LPJ/pipeline/.venv, package lpj_rag).
+# It is a separate project with its own environment -- do NOT install this into the app's .venv.
+# scripts/setup.ps1 / setup.sh create that venv and install this file into it, then download the
+# models below into the Hugging Face cache (lpj_rag forces HF_HUB_OFFLINE=1, so it can't fetch them):
+#   BAAI/bge-m3 (embeddings + tokenizer), BAAI/bge-reranker-v2-m3 (reranker), and the Ollama model
+#   in pipeline/config.yaml (llm.model). Vector store: LanceDB (lancedb/ under RAG_LPJ/work).
+# torch: setup installs the CPU wheel from download.pytorch.org when no NVIDIA GPU is found.
+
+# index + tables
+lancedb>=0.39
+pyarrow>=18
+pandas>=2.2
+numpy>=1.26
+
+# embeddings, reranker, tokenizer
+torch>=2.4
+sentence-transformers>=3.0
+transformers>=4.44
+huggingface_hub[cli]>=0.24
+
+# extraction (PDF text layer + Tesseract OCR, Word, Excel, images)
+pymupdf>=1.24
+pytesseract>=0.3.10
+python-docx>=1.1
+openpyxl>=3.1
+Pillow>=10.4
+langdetect>=1.0.9
+
+# CLI + config
+typer>=0.12
+PyYAML>=6.0

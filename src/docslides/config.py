@@ -133,6 +133,13 @@ class LegalRetrievalConfig(BaseModel):
     # fp32 on a CPU, 40 pairs at 1024 tokens took minutes per question. None = no CPU limit.
     cpu_rerank_candidates: int | None = 16
     cpu_rerank_max_length: int | None = 512
+    # The reranker loads into this process's RAM (~2.3GB in fp32, more while loading) only with at
+    # least this many GB free; else retrieval goes on without it (embedding order). Out of RAM, the
+    # load doesn't fail politely: the Rust tokenizer aborts the whole app. None = no check.
+    min_free_ram_gb_for_reranker: float | None = 3.0
+    # The embedder is needed, so without this much free it raises (an error message) rather than
+    # crash the app while loading. None = no check.
+    min_free_ram_gb_for_embedder: float | None = 2.5
     # Calibrated on the 16-question elections eval with scripts/eval_retrieval.py: every
     # answerable question's best score was >= 0.48, the unanswerable C2's 0.23.
     rerank_margin: float | None = 0.6  # keep hits scoring within this of the best one...

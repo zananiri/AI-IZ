@@ -15,6 +15,20 @@ from functools import lru_cache
 def _get_embedder(model_name: str, device: str | None = None, full_precision: bool = False):
     from sentence_transformers import SentenceTransformer
 
+    from docslides.config import get_config
+    from docslides.system_memory import has_room
+
+    # Out of RAM, loading doesn't raise: the Rust tokenizer aborts the whole app. Raise instead
+    # (not cached, so the next call tries again).
+    needed = get_config().legal.retrieval.min_free_ram_gb_for_embedder
+    ok, free = has_room(needed)
+    if not ok:
+        raise MemoryError(
+            f"Not enough free RAM to load the embedding model {model_name}: "
+            f"{(free or 0) / 1024**3:.1f} GB free, {needed} GB needed. Close other programs "
+            "(or use a smaller LLM in Ollama) and try again."
+        )
+
     if device and device.startswith("cuda") and not full_precision:
         # fp16 halves time and memory on a GPU. Cast on the CPU, then move: loading in fp32 on a GPU
         # the LLM has nearly filled can fail before the cast frees anything (the 30 Sep reranker OOM).

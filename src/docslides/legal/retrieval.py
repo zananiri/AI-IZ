@@ -298,12 +298,42 @@ def named_sections(query: str) -> list[tuple[str, str | None]]:
     return found
 
 
-@lru_cache(maxsize=2)
+_reranker_room_checked: set[tuple[str, str | None]] = set()
+
+
 def _reranker(model_name: str, device: str | None = None):
     """The cross-encoder, or None if it can't be loaded (then retrieval ranks
-    by embedding distance alone, as before the reranker existed). `device` None lets
-    sentence-transformers choose; on a GPU the model runs in fp16, cast on the CPU before it moves
-    (loaded in fp32 straight onto a GPU the LLM has nearly filled, the 30 Sep cast OOM'd)."""
+    by embedding distance alone, as before the reranker existed). Not loaded without
+    legal.retrieval.min_free_ram_gb_for_reranker GB of RAM free: out of RAM the tokenizer aborts the
+    whole app (the 6 Nov case-file crash) instead of raising. That skip isn't cached, so a later
+    search loads it once there's room."""
+    key = (model_name, device)
+    if key not in _reranker_room_checked:
+        from docslides.system_memory import has_room
+
+        needed = get_config().legal.retrieval.min_free_ram_gb_for_reranker
+        ok, free = has_room(needed)
+        if not ok:
+            logger.warning("legal_reranker_skipped_low_ram", model=model_name, needed_gb=needed,
+                           free_gb=round((free or 0) / 1024**3, 2))
+            return None
+        _reranker_room_checked.add(key)
+    return _load_reranker(model_name, device)
+
+
+def _reranker_cache_clear() -> None:
+    _load_reranker.cache_clear()
+    _reranker_room_checked.clear()
+
+
+_reranker.cache_clear = _reranker_cache_clear  # type: ignore[attr-defined]
+
+
+@lru_cache(maxsize=2)
+def _load_reranker(model_name: str, device: str | None = None):
+    """`device` None lets sentence-transformers choose; on a GPU the model runs in fp16, cast on the
+    CPU before it moves (loaded in fp32 straight onto a GPU the LLM has nearly filled, the 30 Sep
+    cast OOM'd)."""
     try:
         from sentence_transformers import CrossEncoder
 

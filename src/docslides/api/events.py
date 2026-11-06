@@ -56,6 +56,7 @@ class Event:
 
 SESSION_HEADER = "X-Client-Session"
 CANCELLED_MESSAGE = "Stopped: the page was refreshed or closed."
+STOPPED_MESSAGE = "Stopped."
 # Closed sessions remembered, so a job a closing page was still starting is refused rather than run.
 # Session ids are per page load, never reused, so the oldest are safe to forget.
 _MAX_CLOSED_SESSIONS = 1000
@@ -112,6 +113,17 @@ class EventBus:
             if job_id in self._queues:
                 self._queues[job_id].put_nowait(Event(kind="error", data={"message": CANCELLED_MESSAGE}))
         return cancelled
+
+    def cancel_job(self, job_id: str) -> bool:
+        """Cancels one running job (the chat's Stop button). Anyone listening gets an "error"
+        event, so its stream ends. Returns whether the job was still running."""
+        task = self._tasks.pop(job_id, None)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        if job_id in self._queues:
+            self._queues[job_id].put_nowait(Event(kind="error", data={"message": STOPPED_MESSAGE}))
+        return True
 
     def get(self, job_id: str) -> asyncio.Queue[Event]:
         if job_id not in self._queues:

@@ -115,6 +115,8 @@ APP_CSS = """
    Hebrew line reads right-to-left (punctuation and numbers in place) next to
    an English one. APP_HEAD sets dir="auto" on the chat messages' blocks. */
 .chat-log .message-content [dir="auto"] { text-align: start !important; }
+/* The Stop button under each chat's message box, at its right edge. */
+.chat-stop-row { justify-content: flex-end; }
 .chat-input textarea {
   unicode-bidi: plaintext; text-align: start !important;
 }
@@ -212,6 +214,85 @@ def _reset_session(request: gr.Request) -> None:
             client.post(f"{API_BASE_URL}/api/sessions/{session}/cancel")
     except httpx.HTTPError:
         pass
+
+
+# The request each chat is running right now, per page (Gradio session) and tab: a backend job id,
+# or the open stream to the Agentic RAG service. The tab's Stop button stops it (_stop_chat).
+_RUNNING: dict[tuple[str, str], str | httpx.Response] = {}
+
+
+def _running_key(request: gr.Request | None, tab: str) -> tuple[str, str] | None:
+    session = getattr(request, "session_hash", None)
+    return (session, tab) if session else None
+
+
+def _start_job(endpoint: str, payload: dict, request: gr.Request | None, tab: str) -> str:
+    """POSTs `payload` to /api/`endpoint`, which starts a job, and remembers its id as `tab`'s
+    running request so Stop can cancel it."""
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(f"{API_BASE_URL}/api/{endpoint}", json=payload, headers=_session_headers(request))
+        resp.raise_for_status()
+        job_id = resp.json()["job_id"]
+    if key := _running_key(request, tab):
+        _RUNNING[key] = job_id
+    return job_id
+
+
+def _stop_chat(tab: str, request: gr.Request | None) -> bool:
+    """The tab's running request, stopped: its backend job cancelled (the model stops generating),
+    or the Agentic RAG stream closed (the service stops at the disconnect). Best effort; returns
+    whether something was still running."""
+    key = _running_key(request, tab)
+    running = _RUNNING.pop(key, None) if key else None
+    if isinstance(running, httpx.Response):
+        was_open = not running.is_closed
+        try:
+            running.close()
+        except Exception:  # noqa: BLE001 -- already closed
+            pass
+        return was_open
+    if running:
+        try:
+            with httpx.Client(timeout=10) as client:
+                return bool(client.post(f"{API_BASE_URL}/api/jobs/{running}/cancel").json().get("cancelled"))
+        except (httpx.HTTPError, ValueError):
+            pass
+    return False
+
+
+_STOPPED_NOTE = "_⏹ Stopped._"
+
+
+def _mark_stopped(history: list) -> list:
+    """The chat with the interrupted answer marked as stopped (or a stopped reply added when the
+    model hadn't started answering)."""
+    history = list(history or [])
+    if history and history[-1].get("role") == "assistant":
+        text = _message_text(history[-1].get("content")).rstrip()
+        if text.startswith("_") and text.endswith("..._"):  # just the "_Working..._" placeholder
+            text = ""
+        history[-1] = {"role": "assistant", "content": f"{text}\n\n{_STOPPED_NOTE}".strip()}
+    elif history:
+        history.append({"role": "assistant", "content": _STOPPED_NOTE})
+    return history
+
+
+def _add_stop_button(tab: str, events: list, chatbot, box, status) -> gr.Button:
+    """A Stop button for a chat tab: it stops `events` (the tab's send handlers) at once, cancels
+    what they started on the server, marks the interrupted answer in `chatbot`, and returns the
+    message box `box` to idle with `status` (the LLM status line) saying it was stopped."""
+    stop = gr.Button("⏹ Stop", variant="stop", size="sm", scale=0, min_width=90, elem_classes=["chat-stop"])
+
+    def on_stop(history: list, request: gr.Request):
+        stopped = _stop_chat(tab, request)
+        return (
+            _mark_stopped(history) if stopped else gr.update(),
+            gr.update(elem_classes=_IDLE_CLASSES),
+            gr.update(value="⏹ Stopped" if stopped else "_Idle_"),
+        )
+
+    stop.click(fn=on_stop, inputs=chatbot, outputs=[chatbot, box, status], cancels=events, queue=False)
+    return stop
 
 
 def _sizes_selectable() -> bool:
@@ -373,10 +454,7 @@ def send_chat_message(message: dict, history: list, size: str | None = None, req
         payload["attachment_path"] = attachment["path"]
     payload["model_size"] = size
 
-    with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/chat", json=payload, headers=_session_headers(request))
-        resp.raise_for_status()
-        job_id = resp.json()["job_id"]
+    job_id = _start_job("chat", payload, request, "general")
 
     yield from _stream_job(job_id, history, rtl_hint=False)
 
@@ -416,10 +494,7 @@ def send_tone_rewrite(
     if attachment:
         payload["attachment_path"] = attachment["path"]
 
-    with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/tone-rewrite", json=payload, headers=_session_headers(request))
-        resp.raise_for_status()
-        job_id = resp.json()["job_id"]
+    job_id = _start_job("tone-rewrite", payload, request, "general")
 
     yield from _stream_job(job_id, history, rtl_hint=False)
 
@@ -454,6 +529,7 @@ def build_chat_tab(model_size_selector: gr.Radio) -> None:
         elem_id="general-msg",
         elem_classes=_IDLE_CLASSES,
     )
+    stop_row = gr.Row(elem_classes=["chat-stop-row"])  # its Stop button is added with the send events below
 
     with gr.Accordion("Tone control", open=False):
         gr.Markdown(
@@ -474,12 +550,14 @@ def build_chat_tab(model_size_selector: gr.Radio) -> None:
 
     chat_outputs = [chatbot, reasoning_panel, msg_box, llm_status]
     send = _glow_while_running(send_chat_message, chat_outputs, msg_box)
-    msg_box.submit(fn=send, inputs=[msg_box, chatbot, model_size_selector], outputs=chat_outputs)
-    rewrite_btn.click(
+    send_event = msg_box.submit(fn=send, inputs=[msg_box, chatbot, model_size_selector], outputs=chat_outputs)
+    rewrite_event = rewrite_btn.click(
         fn=_glow_while_running(send_tone_rewrite, chat_outputs, msg_box),
         inputs=[msg_box, professionalism_slider, creativity_slider, chatbot, model_size_selector],
         outputs=chat_outputs,
     )
+    with stop_row:
+        _add_stop_button("general", [send_event, rewrite_event], chatbot, msg_box, llm_status)
 
 
 # ---------------------------------------------------------------------------
@@ -719,10 +797,7 @@ def send_legal_message(
         payload["attachment_path"] = attachment["path"]
 
     endpoint = "legal-case" if case_mode else "legal-chat"
-    with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/{endpoint}", json=payload, headers=_session_headers(request))
-        resp.raise_for_status()
-        job_id = resp.json()["job_id"]
+    job_id = _start_job(endpoint, payload, request, "legal")
 
     yield from _stream_legal_job(job_id, history)
 
@@ -739,10 +814,7 @@ def _send_case_files_question(text: str, history: list, size: str | None, matter
     scope = f" -- {matter}" if matter else ""
     history = history + [{"role": "user", "content": f"{_FILES_MARKER}{scope}\n\n{text}"}]
     payload = {"messages": [*earlier, {"role": "user", "content": text}], "model_size": size, "matter": matter}
-    with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/legal-case-files", json=payload, headers=_session_headers(request))
-        resp.raise_for_status()
-        job_id = resp.json()["job_id"]
+    job_id = _start_job("legal-case-files", payload, request, "legal")
     yield from _stream_legal_job(job_id, history)
 
 
@@ -862,10 +934,7 @@ def send_case_folder(
         "documents": [{"path": u["path"], "name": u["name"] or Path(p).name} for u, p in zip(uploaded, documents)],
         "model_size": size,
     }
-    with httpx.Client(timeout=60) as client:
-        resp = client.post(f"{API_BASE_URL}/api/legal-case", json=payload, headers=_session_headers(request))
-        resp.raise_for_status()
-        job_id = resp.json()["job_id"]
+    job_id = _start_job("legal-case", payload, request, "legal")
 
     yield from _stream_legal_job(job_id, history)
 
@@ -962,6 +1031,7 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
                 elem_id="legal-msg",
                 elem_classes=_IDLE_CLASSES,
             )
+            legal_stop_row = gr.Row(elem_classes=["chat-stop-row"])
         with gr.Column(scale=1):
             save_docx_button = gr.Button("💾 Save analysis as Word", variant="secondary")
             docx_file = gr.File(label="Word document", visible=False, interactive=False)
@@ -973,7 +1043,7 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
     send_inputs = [legal_msg_box, legal_mode, legal_chatbot, model_size_selector, matter_dropdown]
     send_outputs = [legal_chatbot, legal_reasoning_panel, legal_msg_box, citations_panel, legal_llm_status, memo_view]
     send = _glow_while_running(send_legal_message, send_outputs, legal_msg_box)
-    legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
+    send_event = legal_msg_box.submit(fn=send, inputs=send_inputs, outputs=send_outputs)
     def on_mode(mode: str):
         files = mode == LEGAL_MODE_FILES
         matters = gr.update(visible=True, choices=[_ALL_MATTERS, *_case_file_matters()]) if files else gr.update(visible=False)
@@ -983,11 +1053,13 @@ def build_legal_tab(model_size_selector: gr.Radio) -> None:
     legal_mode.change(fn=on_mode, inputs=legal_mode,
                       outputs=[case_folder_button, matter_dropdown, index_button, legal_msg_box])
     index_button.click(fn=index_case_files, inputs=matter_dropdown, outputs=matter_dropdown)
-    case_folder_button.upload(
+    folder_event = case_folder_button.upload(
         fn=_glow_while_running(send_case_folder, send_outputs, legal_msg_box),
         inputs=[case_folder_button, legal_msg_box, legal_chatbot, model_size_selector],
         outputs=send_outputs,
     )
+    with legal_stop_row:
+        _add_stop_button("legal", [send_event, folder_event], legal_chatbot, legal_msg_box, legal_llm_status)
     save_docx_button.click(fn=save_case_analysis_docx, inputs=legal_chatbot, outputs=docx_file)
 
 
@@ -1052,7 +1124,7 @@ def _link_lpj_citations(answer: str, sources: list[dict]) -> str:
     return re.sub(r"\[(S\d+)\]", lambda m: f"[[{m[1]}]]({urls[m[1]]})" if m[1] in urls else m[0], answer)
 
 
-def send_lpj_message(text: str, history: list, size: str | None = None):
+def send_lpj_message(text: str, history: list, size: str | None = None, request: gr.Request = None):
     """Streams the service's events (lpj_rag/serve.py: status, sources, delta, done, error) into the
     chat. Outputs: chatbot, message box, sources panel, status line."""
     text = (text or "").strip()
@@ -1068,6 +1140,8 @@ def send_lpj_message(text: str, history: list, size: str | None = None):
             with client.stream("POST", f"{LPJ_RAG_URL}/ask",
                                json={"question": text, "model": choice.model if choice else None}) as resp:
                 resp.raise_for_status()
+                if key := _running_key(request, "lpj"):
+                    _RUNNING[key] = resp  # Stop closes it
                 for line in resp.iter_lines():
                     if not line:
                         continue
@@ -1219,6 +1293,7 @@ def build_lpj_tab(tab: gr.Tab, model_size_selector: gr.Radio) -> None:
                 elem_id="lpj-msg",
                 elem_classes=_IDLE_CLASSES,
             )
+            lpj_stop_row = gr.Row(elem_classes=["chat-stop-row"])
         with gr.Column(scale=1):
             refresh = gr.Button("🔄 Check index", variant="secondary")
             save_docx_button = gr.Button("💾 Save chat as Word", variant="secondary")
@@ -1231,8 +1306,10 @@ def build_lpj_tab(tab: gr.Tab, model_size_selector: gr.Radio) -> None:
     save_docx_button.click(fn=save_rag_chat_docx, inputs=chatbot, outputs=docx_file)
     pptx_button.click(fn=make_rag_chat_pptx, inputs=[chatbot, model_size_selector], outputs=pptx_file)
     outputs = [chatbot, msg_box, sources_panel, llm_status]
-    msg_box.submit(fn=_glow_while_running(send_lpj_message, outputs, msg_box),
-                   inputs=[msg_box, chatbot, model_size_selector], outputs=outputs)
+    send_event = msg_box.submit(fn=_glow_while_running(send_lpj_message, outputs, msg_box),
+                                inputs=[msg_box, chatbot, model_size_selector], outputs=outputs)
+    with lpj_stop_row:
+        _add_stop_button("lpj", [send_event], chatbot, msg_box, llm_status)
     tab.select(fn=_lpj_status, outputs=status_line)
     refresh.click(fn=_lpj_status, outputs=status_line)
 
